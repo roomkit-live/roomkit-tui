@@ -170,12 +170,33 @@ fn centered_welcome_reuses_the_composer_and_restores_conversation_layout() {
         conversation: "room-a".into(),
         text: "Please check this setting".into(),
     });
+    // A notice at the start, such as a setup step, keeps the welcome layout:
+    // it shows above the composer instead of replacing the whole screen.
+    let noticed = draw(&s, 140, 40);
+    let text = noticed.lines.join("\n");
+    assert!(text.contains("Please check this setting"), "{text}");
     assert!(
-        draw(&s, 140, 40)
-            .lines
-            .join("\n")
-            .contains("Please check this setting")
+        text.contains("CUSTOM MARK"),
+        "The notice hid the welcome screen"
     );
+    assert!(noticed.sidebar.is_none());
+    let notice_row = noticed
+        .lines
+        .iter()
+        .position(|row| row.contains("Please check this setting"))
+        .unwrap();
+    assert!(usize::from(noticed.cursor.unwrap().1) > notice_row);
+    // A long notice is cut to a few rows, and says so.
+    s.notice = "word ".repeat(200);
+    let long = draw(&s, 140, 40);
+    let rows: Vec<_> = long
+        .lines
+        .iter()
+        .filter(|row| row.contains("word"))
+        .collect();
+    assert_eq!(rows.len(), 3);
+    assert!(rows[2].trim_end().ends_with('…'));
+    assert!(long.lines.join("\n").contains("CUSTOM MARK"));
     s.notice.clear();
     for width in [0, 11, 40, 60, 80, 140] {
         for height in [0, 7, 18, 20, 24, 40] {

@@ -225,7 +225,8 @@ sanitized and clipped; it requires no terminal image protocol or external fonts.
 
 The welcome screen temporarily hides the sidebar. The first message or active
 execution restores the conversation layout; new empty snapshots restore the
-welcome screen. Small windows fall back to the conversation layout without
+welcome screen. A host notice, such as a setup step to complete first, appears
+above the composer, up to three rows, without leaving the welcome screen. Small windows fall back to the conversation layout without
 losing the draft. `UiOptions::bottom_margin` reserves up to three blank rows
 below the interface.
 

@@ -6,10 +6,13 @@ use unicode_width::UnicodeWidthStr;
 
 use super::composer::{self, Layout};
 use super::footer::{hints, settings};
-use super::text::{fit, pad};
+use super::text::{fit, pad, wrap};
 use super::{Frame, Line, Tone, View, frame, line, span};
 use crate::Session;
 use crate::session::Focus;
+
+/// Rows of a notice shown on the welcome screen; longer ones are cut.
+const NOTICE_LINES: usize = 3;
 
 pub(super) fn screen(view: &View<'_>, width: u16, height: u16) -> Option<Frame> {
     let (session, options) = (view.session, view.options);
@@ -23,7 +26,6 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16) -> Option<Frame> 
             session.execution_outcome(),
             Some(RunOutcome::Failed | RunOutcome::Interrupted)
         )
-        || !session.notice.is_empty()
         || !matches!(session.focus(), Focus::Composer | Focus::Sidebar)
     {
         return None;
@@ -45,6 +47,20 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16) -> Option<Frame> 
         lines.push(center(info, inner, Tone::Muted));
     }
     lines.push(Vec::new());
+    // A notice, such as a setup step the host asks for, stays on the welcome
+    // screen above the composer rather than replacing the whole layout.
+    if !session.notice.is_empty() {
+        let mut notice = wrap(&session.notice, inner);
+        if notice.len() > NOTICE_LINES {
+            notice.truncate(NOTICE_LINES);
+            if let Some(last) = notice.last_mut() {
+                let kept = fit(last, inner.saturating_sub(1));
+                *last = format!("{kept}…");
+            }
+        }
+        lines.extend(notice.iter().map(|text| center(text, inner, Tone::Warning)));
+        lines.push(Vec::new());
+    }
     let body_offset = lines.len();
     lines.extend(composer.spans.into_iter().skip(start));
     if lines.len() + 2 > rows {
