@@ -128,13 +128,23 @@ class Screen:
         elif final == b"G":
             self.col = min(max(first, 1), self.cols) - 1
         elif final == b"m":
-            self._attributes(params or [0])
+            self._attributes(raw.split(";"))
 
     def _attributes(self, params):
-        for param in params:
-            if param in (0, 27):
+        """Apply SGR parameters. An extended color (38, 48 or 58) carries its
+        operands, never attributes; the colon form keeps them in one parameter."""
+        index = 0
+        while index < len(params):
+            param, index = params[index], index + 1
+            if ":" in param:
+                continue
+            code = int(param) if param.isdigit() else 0
+            if code in (38, 48, 58):
+                mode = params[index] if index < len(params) else ""
+                index += {"5": 2, "2": 4}.get(mode, 1)
+            elif code in (0, 27):
                 self.reverse = False
-            elif param == 7:
+            elif code == 7:
                 self.reverse = True
 
     def _alternate(self, enter):
