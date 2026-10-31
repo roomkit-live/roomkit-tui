@@ -70,6 +70,11 @@ pub enum Event {
     },
     /// Replace the host's statement of what exiting stops, such as running
     /// processes. While it is set, detaching also asks for confirmation.
+    ///
+    /// Send it before the events that announce that work, such as a
+    /// background status, and clear it only once the work has stopped. The
+    /// terminal reads keys between host events, so a Ctrl+D read after the
+    /// announcement but before the warning detaches at once.
     ExitWarning {
         /// View in which the warning is valid.
         conversation: ConversationId,
