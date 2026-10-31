@@ -29,7 +29,9 @@ Initial public release.
     breakdown whose remainder follows each measurement, with categorical theme
     colors, or distinct glyphs without color;
   - mouse tool expansion, OSC 52 copy, clipboard image attachments and
-    optional OSC 7501 program status;
+    optional OSC 7501 program status. A selection in the conversation
+    scrolls it, by the wheel or past its edge while the button is held, and
+    copies lines no longer on screen; once copied it stays highlighted;
   - passive session observation and deterministic headless rendering;
   - a host `ExitWarning` stating what exiting stops: the exit hint shows it,
     and Ctrl+D then asks for a second press within two seconds.

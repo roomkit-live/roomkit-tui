@@ -1,16 +1,24 @@
 //! The conversation history, laid out from the newest item backwards and only
 //! as far as the frame needs, so a long session costs what the screen shows.
 
+use std::ops::RangeInclusive;
+
 use roomkit_tui_protocol::{Item, Snapshot, ToolCall, ToolState};
 use unicode_width::UnicodeWidthStr;
 
 use super::activity::Group;
 use super::{Line, Tone, ToolTarget, View, approval, line, message, span, spinner};
 
+/// Where a laid-out line comes from: the index of its segment's first item,
+/// and the line's index within that segment's block.
+pub(crate) type Origin = (usize, usize);
+
 /// Laid-out history, possibly without its oldest part.
 #[derive(Default)]
 pub(super) struct Timeline {
     pub lines: Vec<Line>,
+    /// Origin of each line; empty when the lines are not history.
+    pub origins: Vec<Origin>,
     pub targets: Vec<ToolTarget>,
     /// Row after the focused tool, when tool focus is active.
     pub focused_end: Option<usize>,
@@ -24,6 +32,8 @@ enum Segment<'a> {
 
 #[derive(Default)]
 struct Block {
+    /// Index of the segment's first item.
+    item: usize,
     lines: Vec<Line>,
     /// Targets with rows relative to the block.
     targets: Vec<ToolTarget>,
@@ -48,8 +58,11 @@ pub(super) fn timeline(view: &View<'_>, cols: usize, rows: usize, scroll: usize)
     let mut blocks = Vec::new();
     let mut total = 0;
     let mut below_focus = None;
-    for segment in segments.iter().rev() {
-        let block = render(view, snapshot, segment, cols);
+    for (item, segment) in segments.iter().rev() {
+        let block = Block {
+            item: *item,
+            ..render(view, snapshot, segment, cols)
+        };
         if let Some(end) = block.focused_end.filter(|_| below_focus.is_none()) {
             below_focus = Some(total + block.lines.len() - end);
         }
@@ -69,6 +82,10 @@ fn assemble(blocks: Vec<Block>, below_focus: Option<usize>) -> Timeline {
     let mut timeline = Timeline::default();
     for block in blocks.into_iter().rev() {
         let offset = timeline.lines.len();
+        let item = block.item;
+        timeline
+            .origins
+            .extend((0..block.lines.len()).map(|line| (item, line)));
         timeline
             .targets
             .extend(block.targets.into_iter().map(|mut target| {
@@ -81,16 +98,38 @@ fn assemble(blocks: Vec<Block>, below_focus: Option<usize>) -> Timeline {
     timeline
 }
 
-fn segments<'a>(view: &View<'_>, items: &'a [Item]) -> Vec<Segment<'a>> {
+/// Lay out, oldest first, the plain lines of the segments whose first item
+/// is within `items`, exactly as the timeline shows them at `cols` columns.
+pub(super) fn blocks<'a>(
+    view: View<'a>,
+    cols: usize,
+    items: RangeInclusive<usize>,
+) -> impl Iterator<Item = (usize, Vec<String>)> + 'a {
+    let (first, last) = items.into_inner();
+    let snapshot = view.session.snapshot.as_ref();
+    let segments = snapshot.map_or_else(Vec::new, |snapshot| segments(&view, &snapshot.items));
+    segments
+        .into_iter()
+        .skip_while(move |(item, _)| *item < first)
+        .take_while(move |(item, _)| *item <= last)
+        .filter_map(move |(item, segment)| {
+            let lines = render(&view, snapshot?, &segment, cols).lines;
+            Some((item, super::frame(lines, cols, None).lines))
+        })
+}
+
+/// The history's segments, each with the index of its first item.
+fn segments<'a>(view: &View<'_>, items: &'a [Item]) -> Vec<(usize, Segment<'a>)> {
     let grouping = view.options.tool_activity && !view.session.expanded;
     let mut segments = Vec::new();
     let mut index = 0;
     while index < items.len() {
         if grouping && let Some(group) = Group::from_items(&items[index..]) {
-            index += group.len;
-            segments.push(Segment::Group(group));
+            let len = group.len;
+            segments.push((index, Segment::Group(group)));
+            index += len;
         } else {
-            segments.push(Segment::Item(&items[index]));
+            segments.push((index, Segment::Item(&items[index])));
             index += 1;
         }
     }

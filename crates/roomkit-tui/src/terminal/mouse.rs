@@ -1,17 +1,25 @@
 //! Mouse selection, clicks and wheel scrolling. Every click target belongs to
-//! the frame it was drawn in and is checked against the current session.
+//! the frame it was drawn in and is checked against the current session. A
+//! selection in the conversation is painted on the live screen and scrolls
+//! with its text; any other one freezes the frame it was made in.
 
+use std::borrow::Cow;
 use std::io::{self, Write};
+use std::time::Duration;
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use roomkit_tui_protocol::Command;
 
 use super::{View, send};
-use crate::selection::{TextSelection, clipboard_sequence};
+use crate::Session;
+use crate::render::{self, Frame};
+use crate::selection::{Edge, TextSelection, clipboard_sequence};
 use crate::session::Focus;
 
 const WHEEL_LINES: usize = 3;
 const MAX_SCROLL: usize = 65_536;
+/// Pace of scrolling while a selection is held past the conversation's edge.
+const EDGE_SCROLL: Duration = Duration::from_millis(50);
 
 impl View {
     pub(super) fn mouse(&mut self, mouse: MouseEvent) -> io::Result<()> {
@@ -31,34 +39,90 @@ impl View {
             }
         }
         match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.redraw.dirty = true;
-                if let Some(frame) = &self.frame {
-                    self.selection =
-                        Some(TextSelection::new(frame.clone(), mouse.column, mouse.row));
-                }
-            }
-            MouseEventKind::Drag(MouseButton::Left) => {
-                self.redraw.dirty = true;
-                if let Some(selection) = &mut self.selection {
-                    selection.extend(mouse.column, mouse.row);
-                }
-            }
-            MouseEventKind::Up(MouseButton::Left) => {
-                self.redraw.dirty = true;
-                if let Some(mut selected) = self.selection.take() {
-                    selected.extend(mouse.column, mouse.row);
-                    self.release(&selected)?;
-                }
-            }
+            MouseEventKind::Down(MouseButton::Left) => self.press(mouse),
+            MouseEventKind::Drag(MouseButton::Left) => self.drag(mouse),
+            MouseEventKind::Up(MouseButton::Left) => return self.lift(mouse),
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 self.redraw.dirty = true;
-                self.selection = None;
+                // Only a selection anchored in the conversation scrolls with it.
+                if !self.selection.as_ref().is_some_and(TextSelection::scrolls) {
+                    self.selection = None;
+                }
                 self.wheel(mouse);
             }
             _ => {}
         }
         Ok(())
+    }
+
+    /// Whether a screen selection holds the screen still.
+    pub(super) fn frozen(&self) -> bool {
+        self.selection
+            .as_ref()
+            .is_some_and(|selection| !selection.scrolls())
+    }
+
+    /// A press starts a selection in the frame on screen, replacing any other.
+    fn press(&mut self, mouse: MouseEvent) {
+        self.redraw.dirty = true;
+        if let Some(frame) = &self.frame {
+            self.selection = Some(TextSelection::new(
+                frame.clone(),
+                mouse.column,
+                mouse.row,
+                &self.session,
+            ));
+        }
+    }
+
+    fn drag(&mut self, mouse: MouseEvent) {
+        self.redraw.dirty = true;
+        if let (Some(selection), Some(frame)) = (&mut self.selection, &self.frame)
+            && selection.held()
+        {
+            selection.hold(mouse.column, mouse.row, frame, &self.session);
+        }
+    }
+
+    /// Releasing the button clicks or copies. A copied conversation selection
+    /// stays highlighted until the next press, key, paste or resize.
+    fn lift(&mut self, mouse: MouseEvent) -> io::Result<()> {
+        self.redraw.dirty = true;
+        let Some(mut selected) = self.selection.take_if(|selection| selection.held()) else {
+            return Ok(());
+        };
+        if let Some(frame) = &self.frame {
+            selected.hold(mouse.column, mouse.row, frame, &self.session);
+        }
+        selected.release();
+        self.release(&selected)?;
+        if selected.scrolls() && selected.dragged() {
+            self.selection = Some(selected);
+        }
+        Ok(())
+    }
+
+    /// While a held conversation selection points past the conversation's
+    /// edge, scroll one line towards it per interval. Returns whether it did.
+    pub(super) fn scroll_at_edge(&mut self, now: Duration) -> bool {
+        let edge = self
+            .selection
+            .as_ref()
+            .zip(self.frame.as_ref())
+            .and_then(|(selection, frame)| selection.edge(frame));
+        let Some(edge) = edge else {
+            return false;
+        };
+        if now.saturating_sub(self.edge_scrolled) < EDGE_SCROLL {
+            return false;
+        }
+        self.edge_scrolled = now;
+        let before = self.session.scroll();
+        match edge {
+            Edge::Above => self.session.scroll_back(1),
+            Edge::Below => self.session.scroll_forward(1),
+        }
+        self.session.scroll() != before
     }
 
     /// A click activates the target under it; a drag copies its text.
@@ -106,7 +170,17 @@ impl View {
             }
             return Ok(());
         }
-        match selected.text() {
+        self.copy(selected, now)
+    }
+
+    /// Ask the terminal to put the selected text on the clipboard. Lines
+    /// off screen are laid out again as the conversation shows them.
+    fn copy(&mut self, selected: &TextSelection, now: Duration) -> io::Result<()> {
+        let text = selected.text(&self.session, |items, width| {
+            let options = &self.terminal.options;
+            render::timeline_text(&self.session, &self.renderers, options, now, width, items)
+        });
+        match text {
             Ok(Some(text)) => {
                 self.terminal
                     .stdout
@@ -156,5 +230,22 @@ impl View {
             _ if backwards => self.session.scroll_back(WHEEL_LINES),
             _ => self.session.scroll_forward(WHEEL_LINES),
         }
+    }
+}
+
+/// What the terminal shows of `frame`: a conversation selection is painted
+/// on a copy, so the kept frame stays free of it for the next press.
+pub(super) fn shown<'a>(
+    frame: &'a Frame,
+    selection: Option<&TextSelection>,
+    session: &Session,
+) -> Cow<'a, Frame> {
+    match selection.filter(|selection| selection.scrolls()) {
+        Some(selection) => {
+            let mut shown = frame.clone();
+            selection.paint(&mut shown, session);
+            Cow::Owned(shown)
+        }
+        None => Cow::Borrowed(frame),
     }
 }

@@ -20,6 +20,7 @@ mod timeline;
 mod tool_cache;
 mod welcome;
 
+pub(crate) use frame::TimelineRows;
 pub use frame::{ActionTarget, BackToBottomTarget, Frame, PermissionTarget, ToolTarget};
 pub use presenters::{Renderers, ToolRenderer};
 pub use sidebar::SidebarArea;
@@ -179,6 +180,25 @@ pub fn screen_with_options(
         result.spans.resize_with(usize::from(height), Vec::new);
     }
     result
+}
+
+/// The plain lines of the conversation segments whose first item is within
+/// `items`, oldest first, laid out at `cols` columns as the screen shows them.
+pub(crate) fn timeline_text<'a>(
+    session: &'a Session,
+    renderers: &'a Renderers,
+    options: &'a UiOptions,
+    elapsed: Duration,
+    cols: usize,
+    items: std::ops::RangeInclusive<usize>,
+) -> impl Iterator<Item = (usize, Vec<String>)> + 'a {
+    let view = View {
+        session,
+        renderers,
+        options,
+        elapsed,
+    };
+    timeline::blocks(view, cols, items)
 }
 
 /// Everything a layout reads: state, presentations, settings and the clock.

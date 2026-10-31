@@ -21,6 +21,7 @@ use crate::selection::TextSelection;
 use crate::session::Focus;
 use crate::{Client, Session, SessionObserver, UiOptions};
 use keys::Outcome;
+use mouse::shown;
 use requests::{interrupt, paste, send};
 use screen::Terminal;
 
@@ -101,6 +102,7 @@ fn run_session(
         redraw: Redraw::default(),
         frame: None,
         started: Instant::now(),
+        edge_scrolled: Duration::ZERO,
     }
     .run()
 }
@@ -116,6 +118,8 @@ struct View {
     redraw: Redraw,
     frame: Option<Frame>,
     started: Instant,
+    /// When a selection held past the conversation's edge last scrolled it.
+    edge_scrolled: Duration,
 }
 
 impl View {
@@ -127,6 +131,7 @@ impl View {
             let now = self.now();
             self.redraw.dirty |= self.clipboard.poll(&mut self.session, now);
             self.redraw.dirty |= self.session.expire_quit_hint(now);
+            self.redraw.dirty |= self.scroll_at_edge(now);
             self.draw_if_due()?;
             if !event::poll(POLL)? || self.frame.is_none() {
                 continue;
@@ -161,8 +166,9 @@ impl View {
     }
 
     /// Timed frames only animate activity; content changes draw at once.
+    /// A frozen screen selection shows no activity.
     fn ticking(&self) -> bool {
-        self.selection.is_none()
+        !self.frozen()
             && (self.session.is_executing()
                 || (self.terminal.options.animations && self.session.has_running_tool()))
     }
@@ -172,32 +178,44 @@ impl View {
         if !self.redraw.due(now, self.ticking()) {
             return Ok(());
         }
-        let (width, height) = crossterm::terminal::size()?;
-        let next = match &self.selection {
-            Some(selection) => selection.highlighted(),
-            None => render::screen_with_options(
-                &self.session,
-                width,
-                height,
-                &self.renderers,
-                &self.terminal.options,
-                now,
-            ),
-        };
-        self.terminal.draw(&next)?;
-        if self.selection.is_none()
+        let next = self.next_frame(now)?;
+        let shown = shown(&next, self.selection.as_ref(), &self.session);
+        self.terminal.draw(&shown)?;
+        let live = !self.frozen();
+        if live
             && self.session.form.is_none()
-            && next.cursor.is_some()
+            && shown.cursor.is_some()
             && let Some(status) = &mut self.terminal.status
         {
             status.drawn();
         }
-        if self.selection.is_none() {
+        if live {
             self.session.sync(&next, now);
         }
         self.frame = Some(next);
         self.redraw.drawn(self.now());
         Ok(())
+    }
+
+    /// The next frame: a screen selection's frozen frame, or the live screen,
+    /// along which a held conversation selection follows its pointer.
+    fn next_frame(&mut self, now: Duration) -> io::Result<Frame> {
+        if let Some(frozen) = self.selection.as_ref().and_then(TextSelection::frozen) {
+            return Ok(frozen);
+        }
+        let (width, height) = crossterm::terminal::size()?;
+        let next = render::screen_with_options(
+            &self.session,
+            width,
+            height,
+            &self.renderers,
+            &self.terminal.options,
+            now,
+        );
+        if let Some(selection) = &mut self.selection {
+            selection.follow(&next, &self.session);
+        }
+        Ok(next)
     }
 
     fn input(&mut self, input: Input) -> io::Result<Option<ExitReason>> {

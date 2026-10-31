@@ -3,6 +3,7 @@
 
 use roomkit_tui_protocol::{ActorId, CallId, ConversationId, RunId};
 
+use super::timeline::Origin;
 use super::{SidebarArea, Span};
 
 /// A visible tool disclosure target, scoped to a call rather than its screen row.
@@ -107,4 +108,21 @@ pub struct Frame {
     pub permission_scroll: Option<usize>,
     /// The pending permission whose card this frame shows in full.
     pub approval: Option<roomkit_tui_protocol::PermissionId>,
+    /// The conversation area, so a selection can refer to content, not rows.
+    pub(crate) timeline: Option<TimelineRows>,
+}
+
+/// The conversation area of a frame and the history line each row shows.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TimelineRows {
+    /// Conversation shown.
+    pub conversation: ConversationId,
+    /// First screen row of the area.
+    pub top: usize,
+    /// Rows of the area, including blank rows below a short history.
+    pub height: usize,
+    /// Columns the history was laid out at, starting from the first column.
+    pub width: usize,
+    /// Origin of each history line shown, from `top` downwards.
+    pub origins: Vec<Origin>,
 }

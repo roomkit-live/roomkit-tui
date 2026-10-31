@@ -27,6 +27,7 @@ terminal-check:
 	python3 scripts/check-terminal.py
 	python3 scripts/check-terminal-status.py
 	python3 scripts/check-sidebar.py
+	python3 scripts/check-selection.py
 
 deps:
 	python3 scripts/check-boundaries.py

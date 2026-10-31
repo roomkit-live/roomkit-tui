@@ -4,9 +4,10 @@ use unicode_width::UnicodeWidthStr;
 
 use super::chrome;
 use super::text::{fit, input_gutter, pad, sanitize, wrap};
-use super::timeline::{Timeline, timeline};
+use super::timeline::{Origin, Timeline, timeline};
 use super::{
-    Frame, Line, Tone, View, approval, footer, form, frame, line, menus, panel, span, welcome,
+    Frame, Line, TimelineRows, Tone, ToolTarget, View, approval, footer, form, frame, line, menus,
+    panel, span, welcome,
 };
 use crate::session::Focus;
 
@@ -142,16 +143,10 @@ fn assemble(
         );
     }
     let offset = parts.header.len();
-    let targets = history
-        .targets
-        .into_iter()
-        .filter(|target| (start..end).contains(&target.row))
-        .map(|mut target| {
-            target.row = offset + target.row - start;
-            target
-        })
-        .collect();
+    let targets = shown_targets(history.targets, (start, end), offset);
     let unseen_below = history.lines.len() - end;
+    let conversation =
+        conversation_rows(view, &history.origins, (start, end), (offset, space), cols);
     let mut lines = parts.header;
     lines.extend(history.lines.into_iter().skip(start).take(end - start));
     lines.resize_with(
@@ -169,7 +164,44 @@ fn assemble(
     result.tool_targets = targets;
     (result.back_to_bottom, result.action_targets) = result_targets;
     result.scroll = (!session.has_tool_focus()).then_some(unseen_below);
+    result.timeline = parts.activity_row.and(conversation);
     result
+}
+
+/// The tool targets on the history lines from `start` to `end`, moved to
+/// their screen rows below a header `offset` rows high.
+fn shown_targets(
+    targets: Vec<ToolTarget>,
+    (start, end): (usize, usize),
+    offset: usize,
+) -> Vec<ToolTarget> {
+    targets
+        .into_iter()
+        .filter(|target| (start..end).contains(&target.row))
+        .map(|mut target| {
+            target.row = offset + target.row - start;
+            target
+        })
+        .collect()
+}
+
+/// The conversation area shown from screen row `top`, `height` rows high, and
+/// the origins of the history lines from `start` to `end` displayed in it.
+fn conversation_rows(
+    view: &View<'_>,
+    origins: &[Origin],
+    (start, end): (usize, usize),
+    (top, height): (usize, usize),
+    width: usize,
+) -> Option<TimelineRows> {
+    let snapshot = view.session.snapshot.as_ref()?;
+    Some(TimelineRows {
+        conversation: snapshot.conversation.clone(),
+        top,
+        height,
+        width,
+        origins: origins.get(start..end).unwrap_or_default().to_vec(),
+    })
 }
 
 /// Rows of the history to show: following the latest activity, browsing

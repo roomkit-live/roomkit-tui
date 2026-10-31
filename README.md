@@ -345,6 +345,9 @@ terminal status, session observation) in detail.
 A permission card accepts an answer once it has been on screen for half a
 second, so a key meant for the composer never answers it. With the default
 mouse mode, click a tool's link to expand it and drag across text to copy it.
+To copy more than the screen shows, keep the button held and turn the wheel,
+or hold the pointer above or below the conversation: it scrolls and the
+selection follows. Copied text stays highlighted until the next key or click.
 Pastes keep their newlines and never send by themselves.
 
 ## Platform support
