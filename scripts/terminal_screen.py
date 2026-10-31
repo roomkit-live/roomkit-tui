@@ -22,6 +22,9 @@ class Screen:
     def __init__(self, rows, cols):
         self.rows, self.cols = rows, cols
         self.grid = self._blank()
+        # Reverse video per cell: the monochrome form of a highlight.
+        self.inverse = self._flags()
+        self.reverse = False
         self.row = self.col = 0
         self.saved = None
         self.pending = b""
@@ -31,10 +34,14 @@ class Screen:
     def _blank(self):
         return [[" "] * self.cols for _ in range(self.rows)]
 
+    def _flags(self):
+        return [[False] * self.cols for _ in range(self.rows)]
+
     def resize(self, rows, cols):
         """A resized terminal is repainted in full by the application."""
         self.rows, self.cols = rows, cols
         self.grid = self._blank()
+        self.inverse = self._flags()
         self.row = self.col = 0
 
     def feed(self, data):
@@ -82,8 +89,10 @@ class Screen:
         if self.col + width > self.cols:
             return
         self.grid[self.row][self.col] = char
+        self.inverse[self.row][self.col] = self.reverse
         if width == 2:
             self.grid[self.row][self.col + 1] = ""
+            self.inverse[self.row][self.col + 1] = self.reverse
         self.col += width
 
     def _control(self, match):
@@ -118,27 +127,37 @@ class Screen:
                 self.col = max(self.col - step, 0)
         elif final == b"G":
             self.col = min(max(first, 1), self.cols) - 1
+        elif final == b"m":
+            self._attributes(params or [0])
+
+    def _attributes(self, params):
+        for param in params:
+            if param in (0, 27):
+                self.reverse = False
+            elif param == 7:
+                self.reverse = True
 
     def _alternate(self, enter):
         if enter:
-            self.saved = (self.grid, self.row, self.col)
-            self.grid = self._blank()
+            self.saved = (self.grid, self.inverse, self.row, self.col)
+            self.grid, self.inverse = self._blank(), self._flags()
         elif self.saved is not None:
-            grid, self.row, self.col = self.saved
+            grid, inverse, self.row, self.col = self.saved
             self.saved = None
             # The main screen keeps its size only if the terminal did not change.
             if len(grid) == self.rows and len(grid[0]) == self.cols:
-                self.grid = grid
+                self.grid, self.inverse = grid, inverse
             else:
-                self.grid = self._blank()
+                self.grid, self.inverse = self._blank(), self._flags()
 
     def _erase_screen(self, mode):
         if mode in (2, 3):
-            self.grid = self._blank()
+            self.grid, self.inverse = self._blank(), self._flags()
             return
         rows = range(self.row + 1, self.rows) if mode == 0 else range(0, self.row)
         for row in rows:
             self.grid[row] = [" "] * self.cols
+            self.inverse[row] = [False] * self.cols
         self._erase_line(mode)
 
     def _erase_line(self, mode):
@@ -146,6 +165,7 @@ class Screen:
         span = {0: range(self.col, self.cols), 1: range(0, self.col + 1)}.get(mode, range(self.cols))
         for column in span:
             line[column] = " "
+            self.inverse[self.row][column] = False
 
     def lines(self):
         return ["".join(row).rstrip() for row in self.grid]
@@ -163,6 +183,11 @@ class Screen:
     def ever(self, marker):
         """Whether any screen so far showed `marker`."""
         return any(_text(marker) in text for text in self.history)
+
+    def reversed_text(self, row):
+        """The characters of 1-based `row` shown in reverse video."""
+        cells = zip(self.grid[row - 1], self.inverse[row - 1])
+        return "".join(char for char, reverse in cells if reverse)
 
     def row_of(self, marker):
         """The 1-based row of the last line showing `marker`, or None."""
