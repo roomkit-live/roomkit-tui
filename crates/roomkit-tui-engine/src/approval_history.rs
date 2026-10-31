@@ -8,13 +8,12 @@ use roomkit::model::{
 use roomkit::{CommitEventOptions, ConversationStore, RoomKit};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Stored format of decision receipts. These names predate the crate's
-/// current name and stay unchanged, so histories written earlier restore.
-pub(crate) const RECEIPT_KEY: &str = "roomkit_cli_approval";
+/// Metadata key holding a stored decision receipt.
+pub(crate) const RECEIPT_KEY: &str = "roomkit_tui_approval";
 /// Metadata key linking a stored receipt to its tool call.
-pub(crate) const RECEIPT_TOOL_KEY: &str = "roomkit_cli_approval_tool_id";
+pub(crate) const RECEIPT_TOOL_KEY: &str = "roomkit_tui_approval_tool_id";
 /// Prefix of a stored receipt's event identity.
-const RECEIPT_ID_PREFIX: &str = "cli-";
+const RECEIPT_ID_PREFIX: &str = "tui-";
 
 pub(crate) async fn persist<S: ConversationStore>(
     kit: &RoomKit<S>,
@@ -164,7 +163,7 @@ mod tests {
         row.r#type = EventType::Observation;
         row.responds_to = None;
         row.metadata.insert(
-            "roomkit_cli_approval".into(),
+            RECEIPT_KEY.into(),
             json!({
                 "permission": {
                     "id": id, "actor": agent, "run": format!("{agent}:{turn}"),
@@ -174,8 +173,7 @@ mod tests {
             }),
         );
         if let Some(call) = call {
-            row.metadata
-                .insert("roomkit_cli_approval_tool_id".into(), call.into());
+            row.metadata.insert(RECEIPT_TOOL_KEY.into(), call.into());
         }
         row
     }

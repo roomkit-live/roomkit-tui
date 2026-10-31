@@ -272,13 +272,13 @@ async fn verify_decision_history(linked: bool) {
         .unwrap();
     let receipts: Vec<_> = rows
         .iter()
-        .filter(|row| row.metadata.contains_key("roomkit_cli_approval"))
+        .filter(|row| row.metadata.contains_key("roomkit_tui_approval"))
         .collect();
     assert_eq!(receipts.len(), 2);
     assert!(
         receipts
             .iter()
-            .all(|row| row.metadata.contains_key("roomkit_cli_approval_tool_id") == linked)
+            .all(|row| row.metadata.contains_key("roomkit_tui_approval_tool_id") == linked)
     );
     assert!(receipts.iter().all(|r| !r.visibility.admits(
         &config().agent,
