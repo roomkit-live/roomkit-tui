@@ -26,14 +26,7 @@ pub(super) struct Terminal {
 impl Terminal {
     pub fn enter(options: UiOptions) -> io::Result<Self> {
         terminal::enable_raw_mode()?;
-        let colors = match options.color {
-            ColorMode::Always => true,
-            ColorMode::Never => false,
-            _ => {
-                std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
-                    && std::env::var_os("TERM").is_none_or(|value| value != "dumb")
-            }
-        };
+        let colors = colors_enabled(options.color);
         // Crossterm has its own memoized NO_COLOR filter. Align it with the
         // host's explicit policy while we own this terminal, then restore it.
         let previous_colors_disabled = style::Colored::ansi_color_disabled_memoized();
@@ -135,29 +128,23 @@ impl Terminal {
     }
 }
 
+/// The application's explicit color policy, or else the environment's:
+/// a nonempty `NO_COLOR` or `TERM=dumb` disables colors.
+fn colors_enabled(mode: ColorMode) -> bool {
+    match mode {
+        ColorMode::Always => true,
+        ColorMode::Never => false,
+        _ => {
+            std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
+                && std::env::var_os("TERM").is_none_or(|value| value != "dumb")
+        }
+    }
+}
+
 fn appearance(tone: Tone, theme: &crate::Theme, colors: bool) -> style::ContentStyle {
     let mut result = style::ContentStyle::default();
     if colors {
-        let foreground = match tone {
-            Tone::Primary => theme.primary,
-            Tone::Accent | Tone::InputPrompt => theme.accent,
-            Tone::Muted | Tone::Placeholder => theme.muted,
-            Tone::Border => theme.border,
-            Tone::Success => theme.success,
-            Tone::Warning => theme.warning,
-            Tone::Error => theme.error,
-            Tone::Selected => theme.selection_text,
-            Tone::Input => theme.input_text,
-            Tone::Heading => theme.heading,
-            Tone::Code => theme.code,
-            Tone::Link => theme.link,
-            Tone::Keyword => theme.keyword,
-            Tone::String => theme.string,
-            Tone::Number => theme.number,
-            Tone::Comment => theme.comment,
-            _ => theme.text,
-        };
-        result.foreground_color = Some(foreground.to_crossterm());
+        result.foreground_color = Some(foreground(tone, theme).to_crossterm());
         result.background_color = Some(match tone {
             Tone::Selected => theme.selection.to_crossterm(),
             Tone::Input | Tone::InputPrompt | Tone::Placeholder => theme.surface.to_crossterm(),
@@ -176,6 +163,29 @@ fn appearance(tone: Tone, theme: &crate::Theme, colors: bool) -> style::ContentS
         result.attributes.set(style::Attribute::Reverse);
     }
     result
+}
+
+/// The theme's foreground color for a semantic tone.
+fn foreground(tone: Tone, theme: &crate::Theme) -> crate::Color {
+    match tone {
+        Tone::Primary => theme.primary,
+        Tone::Accent | Tone::InputPrompt => theme.accent,
+        Tone::Muted | Tone::Placeholder => theme.muted,
+        Tone::Border => theme.border,
+        Tone::Success => theme.success,
+        Tone::Warning => theme.warning,
+        Tone::Error => theme.error,
+        Tone::Selected => theme.selection_text,
+        Tone::Input => theme.input_text,
+        Tone::Heading => theme.heading,
+        Tone::Code => theme.code,
+        Tone::Link => theme.link,
+        Tone::Keyword => theme.keyword,
+        Tone::String => theme.string,
+        Tone::Number => theme.number,
+        Tone::Comment => theme.comment,
+        _ => theme.text,
+    }
 }
 
 /// Leave raw mode and the alternate screen before the panic message is

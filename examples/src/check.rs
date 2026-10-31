@@ -2,7 +2,7 @@
 
 use std::error::Error;
 
-use roomkit_tui::{Session, SessionObserver};
+use roomkit_tui::{Session, SessionObservation, SessionObserver};
 use roomkit_tui_protocol::*;
 
 use crate::{Demo, Profile};
@@ -40,6 +40,22 @@ pub fn check(profile: Profile) -> Result<Vec<Event>, Box<dyn Error>> {
         events.push(event);
     }
     observations.push(observer.latest().ok_or("Missing completion observation")?);
+    verify_lifecycle(&observations)?;
+    let snapshot = session.snapshot().ok_or("No snapshot")?;
+    if session.active_run().is_some() || !session.permissions().is_empty() {
+        return Err("Execution did not settle".into());
+    }
+    let success = snapshot.items.iter().any(|item| matches!(item, Item::Tool { call, .. } if call.state == ToolState::Succeeded && call.data.is_some()));
+    let answer = snapshot.items.iter().any(|item| matches!(item, Item::Message(message) if message.id.as_str() == "assistant-1" && !message.text.is_empty()));
+    if !success || !answer || session.context().and_then(ContextUsage::percent) != Some(12.5) {
+        return Err("Scripted scenario did not produce the expected observed state".into());
+    }
+    Ok(events)
+}
+
+/// The initial, permission, decision and completion observations follow the
+/// host-confirmed lifecycle of one run in the example conversation.
+fn verify_lifecycle(observations: &[SessionObservation]) -> Result<(), Box<dyn Error>> {
     if observations[0].run.is_some()
         || observations[1].permissions.is_empty()
         || !observations[2].permissions.is_empty()
@@ -54,14 +70,5 @@ pub fn check(profile: Profile) -> Result<Vec<Event>, Box<dyn Error>> {
     {
         return Err("Session observation did not follow the host-confirmed lifecycle".into());
     }
-    let snapshot = session.snapshot().ok_or("No snapshot")?;
-    if session.active_run().is_some() || !session.permissions().is_empty() {
-        return Err("Execution did not settle".into());
-    }
-    let success = snapshot.items.iter().any(|item| matches!(item, Item::Tool { call, .. } if call.state == ToolState::Succeeded && call.data.is_some()));
-    let answer = snapshot.items.iter().any(|item| matches!(item, Item::Message(message) if message.id.as_str() == "assistant-1" && !message.text.is_empty()));
-    if !success || !answer || session.context().and_then(ContextUsage::percent) != Some(12.5) {
-        return Err("Scripted scenario did not produce the expected observed state".into());
-    }
-    Ok(events)
+    Ok(())
 }

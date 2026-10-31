@@ -5,6 +5,7 @@ mod approval;
 pub(crate) mod cache;
 mod chrome;
 mod composer;
+mod context;
 mod footer;
 mod form;
 mod frame;

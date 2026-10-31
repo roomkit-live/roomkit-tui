@@ -119,8 +119,6 @@ fn content(session: &Session, state: &SidebarState, inner: usize) -> Vec<Row> {
             index: next_action(section.action.as_ref()),
         });
         let body = match &section.content {
-            SidebarContent::Agent => agent(session),
-            SidebarContent::Context => context(session, inner),
             SidebarContent::Entries { entries } => {
                 for entry in entries {
                     let index = next_action(entry.action.as_ref());
@@ -128,7 +126,7 @@ fn content(session: &Session, state: &SidebarState, inner: usize) -> Vec<Row> {
                 }
                 Vec::new()
             }
-            _ => Vec::new(),
+            content => body(session, content, inner),
         };
         rows.extend(
             crate::content::wrap(&body, inner, false)
@@ -138,6 +136,15 @@ fn content(session: &Session, state: &SidebarState, inner: usize) -> Vec<Row> {
         rows.push(Row::text(Vec::new()));
     }
     rows
+}
+
+/// Lines of a section that projects conversation state.
+fn body(session: &Session, content: &SidebarContent, inner: usize) -> Vec<Line> {
+    match content {
+        SidebarContent::Agent => agent(session),
+        SidebarContent::Context => super::context::context(session, inner),
+        _ => Vec::new(),
+    }
 }
 
 fn agent(session: &Session) -> Vec<Line> {
@@ -154,57 +161,6 @@ fn agent(session: &Session) -> Vec<Line> {
         lines.push(line(format!("Effort: {effort}"), Tone::Muted));
     }
     lines
-}
-
-fn context(session: &Session, inner: usize) -> Vec<Line> {
-    let mut lines = Vec::new();
-    match session.displayed_context() {
-        None => lines.push(line("Awaiting usage report", Tone::Muted)),
-        Some((usage, previous)) => {
-            if previous {
-                lines.push(line("Last report", Tone::Muted));
-            }
-            let estimate = if usage.estimated { "~" } else { "" };
-            let capacity = usage
-                .capacity
-                .filter(|c| *c > 0)
-                .map_or_else(|| "?".into(), |c| c.to_string());
-            let tokens = format!("{estimate}{} / {capacity} tokens", usage.tokens);
-            lines.push(line(tokens, Tone::Text));
-            if let Some(percent) = usage.percent() {
-                lines.extend(gauge(percent, inner));
-            }
-        }
-    }
-    if let Some(usage) = session.usage() {
-        let count = |n: Option<u64>| n.map_or_else(|| "?".into(), |n| n.to_string());
-        let (input, output) = (count(usage.input_tokens), count(usage.output_tokens));
-        lines.push(line(
-            format!("Turn: {input} in / {output} out"),
-            Tone::Muted,
-        ));
-        if !usage.complete {
-            lines.push(line("Partial usage report", Tone::Warning));
-        }
-    }
-    lines
-}
-
-fn gauge(percent: f64, inner: usize) -> Vec<Line> {
-    let tone = if percent >= 90.0 {
-        Tone::Warning
-    } else {
-        Tone::Accent
-    };
-    let filled = ((percent / 100.0).clamp(0.0, 1.0) * inner as f64).round() as usize;
-    let left = (100.0 - percent).max(0.0);
-    vec![
-        vec![
-            span("━".repeat(filled), tone),
-            span("─".repeat(inner - filled), Tone::Border),
-        ],
-        line(format!("{percent:.1}% used · {left:.1}% left"), tone),
-    ]
 }
 
 fn entry_rows(entry: &SidebarEntry, index: Option<usize>, inner: usize) -> Vec<Row> {
