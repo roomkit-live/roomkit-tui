@@ -12,6 +12,8 @@ import subprocess
 import termios
 import time
 
+from terminal_screen import Screen
+
 def require(condition, message):
     """Fail the check explicitly; unlike assert, this survives python -O."""
     if not condition:
@@ -30,11 +32,13 @@ original = termios.tcgetattr(slave)
 process = subprocess.Popen([str(binary), "--no-animation"], stdin=slave, stdout=slave, stderr=slave,
                            env={**os.environ, "NO_COLOR": "1"})
 captured = bytearray()
+screen = Screen(32, 140)
 
 
 def wait_for(marker, after=0):
     deadline = time.monotonic() + 10
-    while marker not in re.sub(rb"\x1b\[[0-9;:]*[A-Za-z]", b"", captured[after:]):
+    """Wait until the screen shows `marker`."""
+    while not screen.shows(marker):
         if time.monotonic() >= deadline:
             raise RuntimeError(f"Missing sidebar output {marker!r}: {bytes(captured[-1500:])!r}")
         if not select.select([master], [], [], .1)[0]:
@@ -48,6 +52,7 @@ def wait_for(marker, after=0):
         if not data:
             raise RuntimeError("Terminal closed early")
         captured.extend(data)
+        screen.feed(data)
 
 
 try:
@@ -55,7 +60,7 @@ try:
     # Without colors, the context breakdown tells its parts apart by glyph.
     wait_for("█ System prompt".encode())
     wait_for("▄ Messages".encode())
-    require("■".encode() not in captured, "a colored legend marker without colors")
+    require(not screen.ever("■"), "a colored legend marker without colors")
     os.write(master, b"Keep my draft")
     wait_for(b"Keep my draft")
     start = len(captured)
@@ -70,10 +75,12 @@ try:
     wait_for(b"Keep my draft")
     start = len(captured)
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 90, 0, 0))
+    screen.resize(24, 90)
     os.kill(process.pid, __import__("signal").SIGWINCH)
     wait_for(b"F7 sidebar", start)
     start = len(captured)
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 140, 0, 0))
+    screen.resize(32, 140)
     os.kill(process.pid, __import__("signal").SIGWINCH)
     wait_for(b"F7 hide", start)
     os.write(master, b"\x04")

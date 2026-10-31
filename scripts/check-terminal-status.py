@@ -13,6 +13,8 @@ import subprocess
 import termios
 import time
 
+from terminal_screen import Screen
+
 def require(condition, message):
     """Fail the check explicitly; unlike assert, this survives python -O."""
     if not condition:
@@ -38,6 +40,7 @@ osc = re.compile(rb"\x1b\]7501;([^\x1b]*)\x1b\\")
 class Terminal:
     def __init__(self, args, term="xterm-256color"):
         self.master, self.slave = pty.openpty()
+        self.screen = Screen(24, 100)
         self.resize(24, 100)
         self.original = termios.tcgetattr(self.slave)
         self.output = bytearray()
@@ -46,6 +49,7 @@ class Terminal:
 
     def resize(self, rows, cols):
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        self.screen.resize(rows, cols)
         if hasattr(self, "process"):
             os.kill(self.process.pid, signal.SIGWINCH)
 
@@ -57,11 +61,14 @@ class Terminal:
         while not predicate():
             remaining = deadline - time.monotonic()
             if remaining <= 0 or not select.select([self.master], [], [], max(0, remaining))[0]:
-                raise AssertionError(f"Terminal deadline; reports={self.reports()}, tail={self.output[-1000:]!r}")
-            self.output.extend(os.read(self.master, 65536))
+                raise AssertionError(f"Terminal deadline; reports={self.reports()}, screen:\n{self.screen.text()}\ntail={self.output[-1000:]!r}")
+            chunk = os.read(self.master, 65536)
+            self.output.extend(chunk)
+            self.screen.feed(chunk)
 
     def text(self, text, after=0):
-        self.wait(lambda: text in self.output[after:])
+        """Wait until the screen shows `text`."""
+        self.wait(lambda: self.screen.shows(text))
 
     def reports(self):
         return [value.decode("ascii") for value in osc.findall(self.output)]

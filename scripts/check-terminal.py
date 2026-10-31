@@ -14,6 +14,8 @@ import subprocess
 import termios
 import time
 
+from terminal_screen import Screen
+
 def require(condition, message):
     """Fail the check explicitly; unlike assert, this survives python -O."""
     if not condition:
@@ -37,14 +39,16 @@ def scenario(allow, enhanced=False, escape=False):
         args += ["--native-selection"]
     process = subprocess.Popen(args, stdin=slave, stdout=slave, stderr=slave)
     captured = bytearray()
+    screen = Screen(24, 100)
 
     def wait_for(marker, after=0):
+        """Wait until the screen shows `marker`; raw sequences are searched in
+        the bytes written since `after`."""
         deadline = time.monotonic() + 10
         def found():
-            if isinstance(marker, re.Pattern):
-                plain = re.sub(rb"\x1b\[[0-9;:]*[A-Za-z]", b"", captured[after:])
-                return marker.search(plain) is not None
-            return marker in captured[after:]
+            if isinstance(marker, bytes) and marker.startswith(b"\x1b"):
+                return marker in captured[after:]
+            return screen.shows(marker)
         while not found():
             if time.monotonic() >= deadline:
                 raise RuntimeError(f"Terminal did not display {marker!r}; output: {bytes(captured[-2000:])!r}")
@@ -60,13 +64,13 @@ def scenario(allow, enhanced=False, escape=False):
             if not chunk:
                 raise RuntimeError("Terminal output closed unexpectedly")
             captured.extend(chunk)
+            screen.feed(chunk)
 
     def click(marker):
-        index = captured.rfind(marker)
-        positions = re.findall(rb"\x1b\[(\d+);(\d+)H", captured[:index])
-        if index < 0 or not positions:
+        row = screen.row_of(marker)
+        if row is None:
             raise RuntimeError("No visible tool disclosure target")
-        row = positions[-1][0]
+        row = str(row).encode()
         os.write(master, b"\x1b[<0;10;" + row + b"M\x1b[<0;10;" + row + b"m")
 
     try:
@@ -78,7 +82,7 @@ def scenario(allow, enhanced=False, escape=False):
             wait_for(b"Choices")
             os.write(master, b"\x1b[B\r")
             wait_for(b"$model fast")
-            if b"scripted/fast" in captured:
+            if screen.ever(b"scripted/fast"):
                 raise RuntimeError("Selecting a menu item unexpectedly executed it")
             os.write(master, b"\r")
             wait_for(b"scripted/fast")
@@ -95,7 +99,7 @@ def scenario(allow, enhanced=False, escape=False):
             wait_for(b"approved")
             wait_for(b"Read record 42")
         else:
-            require(b"approved" not in captured and b"denied" not in captured, "An interruption is not a human approval or denial")
+            require(not screen.ever(b"approved") and not screen.ever(b"denied"), "An interruption is not a human approval or denial")
         if enhanced:
             offset = len(captured)
             click(b"F2 expand")
@@ -116,6 +120,7 @@ def scenario(allow, enhanced=False, escape=False):
                 raise RuntimeError("Monochrome mode emitted palette colors")
         # Resize the real terminal before detaching.
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 60, 0, 0))
+        screen.resize(12, 60)
         if escape:
             os.write(master, b"Draft to clear")
             wait_for(b"Draft to clear")
