@@ -1,0 +1,182 @@
+//! The RoomKit transport channel shared by local views of a room.
+
+use roomkit::model::{
+    ChannelCategory, ChannelDirection, ChannelId, ChannelType, RoomEvent, RoomId,
+};
+use roomkit::{ChannelDeclaration, ToolCallEvent};
+use roomkit_tui_protocol::{Decision, Event, Item, RunId};
+use tokio::sync::broadcast;
+
+use crate::activity::{Active, Activity, Stopping};
+use crate::approvals::{Approvals, Details};
+use crate::{PermissionRequest, projection};
+
+/// Events retained for a slow view before it must reattach.
+const EVENT_BUFFER: usize = 1_024;
+
+/// A RoomKit transport shared by independent local client connections.
+///
+/// The application registers and attaches this channel. Stream reading belongs
+/// to the engine, not to a view: disconnects and queue overflow never drop the
+/// engine's delivery stream. Events are bounded; lagging clients must reattach.
+/// Streaming exposes text before broadcast hooks judge the final row. Use
+/// [`Self::buffered`] when the application's policy requires pre-display review.
+#[derive(Clone, Debug)]
+pub struct ConversationChannel {
+    declaration: ChannelDeclaration,
+    pub(crate) events: broadcast::Sender<(String, Event)>,
+    pub(crate) activity: Activity,
+    pub(crate) stopping: Stopping,
+    pub(crate) approvals: Approvals,
+}
+
+impl ConversationChannel {
+    /// Create a streaming transport, without registering it or starting tasks.
+    pub fn new(id: ChannelId) -> Self {
+        Self::with_streaming(id, true)
+    }
+
+    /// Create a transport that delivers committed rows only, for rooms with
+    /// output moderation hooks. Approvals are unavailable in this mode.
+    pub fn buffered(id: ChannelId) -> Self {
+        Self::with_streaming(id, false)
+    }
+
+    fn with_streaming(id: ChannelId, streaming: bool) -> Self {
+        let mut declaration = ChannelDeclaration::new(
+            id,
+            ChannelType::WEBSOCKET,
+            ChannelCategory::Transport,
+            ChannelDirection::Bidirectional,
+        );
+        declaration.supports_streaming_delivery = streaming;
+        declaration.receives_tool_calls = true;
+        let events = broadcast::channel(EVENT_BUFFER).0;
+        Self {
+            declaration,
+            approvals: Approvals::new(events.clone()),
+            events,
+            activity: Activity::default(),
+            stopping: Stopping::default(),
+        }
+    }
+
+    /// Identity used when the application registers and attaches this channel.
+    pub fn id(&self) -> &ChannelId {
+        &self.declaration.channel_id
+    }
+
+    /// Wait for a one-time decision from an attached view of this room and
+    /// agent. The host awaits this before executing the concrete action.
+    /// Streaming delivery must be enabled. Missing views, oversized details,
+    /// cancellation, timeout and disconnect all refuse the action. This does
+    /// not grant filesystem, shell or engine permissions by itself.
+    pub async fn ask_permission(
+        &self,
+        room: &RoomId,
+        agent: &ChannelId,
+        request: PermissionRequest,
+    ) -> Decision {
+        self.ask(room.as_str(), agent.as_str(), request, None).await
+    }
+
+    /// Ask before a concrete engine tool call. The confirmed decision is kept
+    /// beside that call in the session history.
+    pub async fn ask_tool_permission(
+        &self,
+        event: &ToolCallEvent,
+        request: PermissionRequest,
+    ) -> Decision {
+        let call = Some(event.call.id.to_string());
+        let (room, agent) = (event.room_id.as_str(), event.channel_id.as_str());
+        self.ask(room, agent, request, call).await
+    }
+
+    async fn ask(
+        &self,
+        room: &str,
+        agent: &str,
+        request: PermissionRequest,
+        tool_call_id: Option<String>,
+    ) -> Decision {
+        if !self.streams() {
+            return Decision::Deny;
+        }
+        let details = Details {
+            title: request.title,
+            detail: request.detail,
+            summary: request.summary,
+            tool_call_id,
+        };
+        self.approvals
+            .ask(room, agent, details, request.timeout)
+            .await
+    }
+
+    /// Wait until no operation or delivery is active in any room, so their
+    /// decisions are stored. Call this before closing the engine.
+    pub async fn idle(&self) {
+        self.activity.idle().await;
+    }
+
+    pub(crate) fn streams(&self) -> bool {
+        self.declaration.supports_streaming_delivery
+    }
+
+    pub(crate) fn declared(&self) -> &ChannelDeclaration {
+        &self.declaration
+    }
+
+    pub(crate) fn publish(&self, room: &str, event: Event) {
+        // No subscribers is normal: the engine keeps executing and persisting.
+        let _ = self.events.send((room.into(), event));
+    }
+
+    pub(crate) fn busy(&self, room: &str) -> bool {
+        self.activity.busy(room)
+    }
+
+    pub(crate) fn reserve(&self, room: &str) -> Option<Active> {
+        self.activity.reserve(room)
+    }
+
+    /// Publish a committed row: measurements, then its item. A cancelled
+    /// answer replaces the draft its interrupted stream was writing.
+    pub(crate) fn row(&self, row: &RoomEvent) {
+        let room = row.room_id.as_str();
+        if let Some(event) = crate::measurements::event(row) {
+            self.publish(room, event);
+        }
+        let Some(item) = projection::item(row) else {
+            return;
+        };
+        if let Item::Message(message) = &item
+            && let Some(draft) = self.cancelled_draft(row)
+        {
+            let conversation = room.into();
+            let message = message.clone();
+            let event = Event::MessageFinalized {
+                conversation,
+                draft,
+                message,
+            };
+            self.publish(room, event);
+            return;
+        }
+        let conversation = room.into();
+        self.publish(room, Event::Item { conversation, item });
+    }
+
+    fn cancelled_draft(&self, row: &RoomEvent) -> Option<roomkit_tui_protocol::MessageId> {
+        let cancelled = row
+            .metadata
+            .get("cancelled")
+            .and_then(serde_json::Value::as_bool);
+        let trigger = row
+            .responds_to
+            .as_ref()
+            .filter(|_| cancelled == Some(true))?;
+        let run: RunId = projection::run_id(&row.source.channel_id, trigger);
+        self.stopping.take_draft(row.room_id.as_str(), &run)
+    }
+}

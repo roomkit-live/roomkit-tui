@@ -1,0 +1,29 @@
+[advisories]
+version = 2
+ignore = [
+    # Syntect 5 uses bincode 1.3.3 for its bundled syntax grammars only.
+    # We do not deserialize user-supplied syntax dumps or enable file loaders.
+    # Remove this maintenance exception when Syntect replaces bincode.
+    { id = "RUSTSEC-2025-0141", reason = "Syntect only loads trusted bundled grammars; no external bincode input" },
+]
+
+[licenses]
+version = 2
+allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "Unicode-3.0", "ISC", "Zlib", "CDLA-Permissive-2.0"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = ["https://github.com/roomkit-live/roomkit-rs"]
+
+# arboard's optional Windows clipboard backend; scoped to these two dependencies.
+[[licenses.exceptions]]
+name = "clipboard-win"
+allow = ["BSL-1.0"]
+[[licenses.exceptions]]
+name = "error-code"
+allow = ["BSL-1.0"]

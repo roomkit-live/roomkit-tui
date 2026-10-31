@@ -1,0 +1,36 @@
+name: Bug report
+description: Something in the terminal, the protocol or the RoomKit adapter does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report security issues privately instead: see SECURITY.md.
+        Never paste API keys, private conversations or provider responses.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The smallest steps, ideally with an example binary (`assistant-demo`, `order-support` or `roomkit-chat`).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Operating system and terminal emulator
+      placeholder: macOS 15, iTerm2 3.5
+    validations:
+      required: true

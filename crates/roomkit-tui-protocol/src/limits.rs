@@ -1,0 +1,38 @@
+//! Bounds shared by terminals and hosts. A host may accept less; a terminal
+//! rejects or truncates anything larger instead of growing without limit.
+
+/// Maximum bytes of a submitted message, command arguments or streamed text.
+pub const MAX_TEXT_BYTES: usize = 65_536;
+/// Maximum bytes of an operation identity.
+pub const MAX_OPERATION_ID_BYTES: usize = 256;
+/// Maximum bytes of a permission title.
+pub const MAX_PERMISSION_TITLE_BYTES: usize = 256;
+/// Maximum bytes of the details a person approves. Larger requests are refused,
+/// never shown truncated: a person must see everything they approve.
+pub const MAX_PERMISSION_DETAIL_BYTES: usize = 65_536;
+/// Maximum bytes of a permission's history summary.
+pub const MAX_PERMISSION_SUMMARY_BYTES: usize = 512;
+/// Maximum permissions waiting at once in one conversation.
+pub const MAX_PENDING_PERMISSIONS: usize = 64;
+/// Maximum bytes of a short label: a title, caption, status or argument value.
+pub const MAX_LABEL_BYTES: usize = 256;
+/// Maximum advertised commands, actors or composer actions in one snapshot.
+pub const MAX_SNAPSHOT_ENTRIES: usize = 256;
+/// Maximum choices in one selector, mode list or form field.
+pub const MAX_CHOICES: usize = 1_024;
+/// Maximum fields in one form.
+pub const MAX_FORM_FIELDS: usize = 32;
+/// Maximum bytes of a submitted form value.
+pub const MAX_FORM_VALUE_BYTES: usize = 8_192;
+/// Maximum bytes of a form field name.
+pub const MAX_FORM_NAME_BYTES: usize = 64;
+/// Maximum number of images submitted in one message.
+pub const MAX_IMAGES: usize = 4;
+/// Maximum encoded file size per image before base64 transport (4 MiB).
+pub const MAX_IMAGE_BYTES: usize = 4 * 1024 * 1024;
+/// Maximum base64 text length of one image, derived from [`MAX_IMAGE_BYTES`].
+pub const MAX_IMAGE_BASE64_BYTES: usize = MAX_IMAGE_BYTES.div_ceil(3) * 4;
+/// Maximum decoded pixel count accepted from the clipboard or by a host.
+pub const MAX_IMAGE_PIXELS: u64 = 16_000_000;
+/// Maximum bytes of an image's display name.
+pub const MAX_IMAGE_NAME_BYTES: usize = 128;

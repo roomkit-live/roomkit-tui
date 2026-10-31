@@ -1,0 +1,207 @@
+//! The status and hint rows under the composer.
+
+use std::time::Duration;
+
+use roomkit_tui_protocol::{SidebarContent, Snapshot};
+
+use super::text::sanitize;
+use super::{Line, Session, Tone, line, span};
+use unicode_width::UnicodeWidthStr;
+
+pub(super) fn footer(
+    session: &Session,
+    cols: usize,
+    sidebar: bool,
+    elapsed: Duration,
+) -> Vec<Line> {
+    let mut lines = status(session, cols, sidebar);
+    // A short mode indicator shares the hint row while the sidebar carries
+    // session details. Keep full-width hints if a special input mode needs them.
+    if sidebar && let Some(last) = lines.last_mut() {
+        let used: usize = last.iter().map(|part| sanitize(&part.text).width()).sum();
+        let available = cols.saturating_sub(used + 2);
+        let hints = hints(session, available, sidebar, elapsed);
+        if available >= 40 && sanitize(&hints).width() <= available {
+            last.push(span(" ·", Tone::Muted));
+            last.push(span(hints, Tone::Muted));
+            return lines;
+        }
+    }
+    lines.push(line(hints(session, cols, sidebar, elapsed), Tone::Muted));
+    lines
+}
+
+pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Duration) -> String {
+    let action_hint = session.input_action().map(|action| {
+        format!(
+            " {} {} · Enter run · Alt+Enter newline · Ctrl+C clear",
+            action.prefix, action.description
+        )
+    });
+    let quit_hint = match &session.exit_warning {
+        Some(warning) => format!(" Press {} again to exit · {warning}", session.quit_key),
+        None => format!(" Press {} again to exit", session.quit_key),
+    };
+    let hints = if session
+        .quit_until
+        .is_some_and(|deadline| elapsed < deadline)
+    {
+        quit_hint.as_str()
+    } else if session.picker.is_some() {
+        " Type to filter · ↑↓ choose · Enter confirm · Esc cancel"
+    } else if session.menu.visible {
+        " ↑↓ choose · Enter/Tab insert · Esc close · Enter again to send"
+    } else if let Some(hint) = action_hint.as_deref() {
+        hint
+    } else if session
+        .snapshot
+        .as_ref()
+        .is_some_and(|snapshot| snapshot.active_run.is_some() && snapshot.can_interrupt)
+        && !session.interrupting()
+    {
+        " Esc interrupt · Enter send · Alt+Enter newline · F2 details"
+    } else if session
+        .snapshot
+        .as_ref()
+        .is_none_or(|snapshot| snapshot.commands.is_empty())
+    {
+        if cols >= 80 {
+            " Enter send · Alt+Enter newline · F2 details · Alt+↑↓ tools · Ctrl+D detach"
+        } else {
+            " Enter send · Alt+Enter newline · F2 details"
+        }
+    } else if session
+        .snapshot
+        .as_ref()
+        .is_some_and(|s| s.can_attach_images)
+        && cols >= 80
+    {
+        " Enter send · Ctrl+V paste image · Alt+Enter newline · Tab commands · F2 details"
+    } else if cols >= 100 {
+        " Enter send · Alt+Enter newline · Tab commands · F2 details · Alt+↑↓ tools · PgUp/PgDn scroll"
+    } else if cols >= 60 {
+        " Enter send · Alt+Enter newline · Tab commands · F2 details"
+    } else {
+        " Enter send · Tab menu · F2 details"
+    };
+    if session.sidebar.is_some() && !sidebar {
+        format!(" F7 sidebar ·{hints}")
+    } else {
+        hints.to_string()
+    }
+}
+
+pub(super) fn settings(
+    session: &Session,
+    snapshot: &Snapshot,
+    include_agent: bool,
+    compact: bool,
+) -> Line {
+    let mut parts = Vec::new();
+    if let Some(mode) = &snapshot.mode
+        && let Some(choice) = mode
+            .choices
+            .iter()
+            .find(|choice| choice.value == mode.selected)
+    {
+        parts.push(span(format!(" [{}]", choice.label), Tone::Warning));
+    }
+    if include_agent {
+        if !parts.is_empty() {
+            parts.push(span(" ·", Tone::Muted));
+        }
+        parts.push(span(
+            format!(" {}", session.actor_name(&snapshot.selected_agent)),
+            Tone::Primary,
+        ));
+        if let Some(model) = &snapshot.model {
+            parts.push(span(
+                if compact {
+                    format!(" · {}", model.model)
+                } else {
+                    format!(" · {}/{}", model.provider, model.model)
+                },
+                Tone::Accent,
+            ));
+            parts.push(span(
+                format!(" · effort {}", model.effort.as_deref().unwrap_or("n/a")),
+                Tone::Muted,
+            ));
+        }
+    }
+    parts
+}
+
+fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
+    let Some(snapshot) = &session.snapshot else {
+        return vec![line(" Waiting for the host", Tone::Muted)];
+    };
+    let in_sidebar = |content| {
+        sidebar
+            && session.sidebar.as_ref().is_some_and(|s| {
+                s.spec
+                    .sections
+                    .iter()
+                    .any(|section| section.content == content)
+            })
+    };
+    let mut parts = settings(session, snapshot, !in_sidebar(SidebarContent::Agent), false);
+    if in_sidebar(SidebarContent::Context) {
+        return if parts.is_empty() {
+            Vec::new()
+        } else {
+            vec![parts]
+        };
+    }
+    let mut settings = std::mem::take(&mut parts);
+    let context = session.displayed_context().map_or_else(
+        || "context ?".into(),
+        |(usage, previous)| {
+            let estimate = if usage.estimated { "~" } else { "" };
+            // Put freshness before the numbers so clipping a narrow footer
+            // cannot make an earlier report look like a current measurement.
+            let label = if previous {
+                "context (last report)"
+            } else {
+                "context"
+            };
+            match usage.percent() {
+                Some(percent) => format!(
+                    "{label} {estimate}{}/{} · {:.1}% left · {percent:.1}% used",
+                    usage.tokens,
+                    usage.capacity.unwrap_or(0),
+                    (100.0 - percent).max(0.0)
+                ),
+                None => format!("{label} {estimate}{} tokens / ?", usage.tokens),
+            }
+        },
+    );
+    parts.push(span(format!(" {context}"), Tone::Accent));
+    if let Some(usage) = session.usage() {
+        let input = usage
+            .input_tokens
+            .map_or_else(|| "?".into(), |n| n.to_string());
+        let output = usage
+            .output_tokens
+            .map_or_else(|| "?".into(), |n| n.to_string());
+        let partial = if usage.complete { "" } else { " (partial)" };
+        parts.push(span(
+            format!(" · turn {input} in / {output} out{partial}"),
+            Tone::Muted,
+        ));
+    }
+    let combined_width: usize = settings
+        .iter()
+        .chain(&parts)
+        .map(|part| sanitize(&part.text).width())
+        .sum();
+    if settings.is_empty() || combined_width.saturating_add(2) <= width {
+        if !settings.is_empty() {
+            settings.push(span(" ·", Tone::Muted));
+        }
+        settings.extend(parts);
+        vec![settings]
+    } else {
+        vec![settings, parts]
+    }
+}

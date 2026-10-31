@@ -1,0 +1,20 @@
+[package]
+name = "roomkit-tui-protocol"
+description = "Runtime-independent interaction contracts for RoomKit terminal hosts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords = ["ai", "chat", "llm", "protocol", "terminal"]
+categories = ["data-structures", "encoding"]
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

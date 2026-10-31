@@ -1,0 +1,120 @@
+//! Ported from feat/exit-warning: a host warning makes Ctrl+D ask first.
+#![allow(clippy::unwrap_used, reason = "Test fixtures fail on invalid state")]
+use super::*;
+
+fn ctrl_d() -> KeyEvent {
+    KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL)
+}
+
+fn warn(session: &mut Session, text: Option<&str>) {
+    session.apply(Event::ExitWarning {
+        conversation: "room".into(),
+        text: text.map(Into::into),
+    });
+}
+
+fn footer(session: &Session) -> String {
+    let frame = render::screen_with_options(
+        session,
+        120,
+        30,
+        &Renderers::default(),
+        &UiOptions::default(),
+        Duration::ZERO,
+    );
+    frame.lines.join("\n")
+}
+
+#[test]
+fn ctrl_d_detaches_at_once_without_an_exit_warning() {
+    let (mut session, client, _host) = fixture(false);
+    assert!(press(&mut session, &client, ctrl_d(), Duration::ZERO));
+    warn(&mut session, Some("1 running process will be stopped"));
+    warn(&mut session, None);
+    assert!(press(&mut session, &client, ctrl_d(), Duration::ZERO));
+}
+
+#[test]
+fn exit_warning_makes_ctrl_d_ask_once_and_names_what_exiting_stops() {
+    let (mut session, client, _host) = fixture(false);
+    session.insert("Draft");
+    warn(&mut session, Some("1 running process will be stopped"));
+    assert!(!press(&mut session, &client, ctrl_d(), Duration::ZERO));
+    assert!(
+        footer(&session).contains("Press Ctrl+D again to exit · 1 running process will be stopped")
+    );
+    assert_eq!(session.draft(), "Draft", "Detaching keeps the draft");
+    let mut held = ctrl_d();
+    held.kind = KeyEventKind::Repeat;
+    assert!(
+        !press(&mut session, &client, held, Duration::ZERO),
+        "A held key must not confirm"
+    );
+    assert!(press(
+        &mut session,
+        &client,
+        ctrl_d(),
+        Duration::from_millis(500)
+    ));
+}
+
+#[test]
+fn armed_exit_expires_typing_disarms_and_ctrl_c_also_confirms() {
+    let (mut session, client, _host) = fixture(false);
+    warn(&mut session, Some("2 running processes will be stopped"));
+    assert!(!press(&mut session, &client, ctrl_d(), Duration::ZERO));
+    // After the confirmation window, Ctrl+D asks again instead of leaving.
+    assert!(!press(&mut session, &client, ctrl_d(), QUIT_TIMEOUT));
+    assert!(!press(
+        &mut session,
+        &client,
+        key(KeyCode::Char('x')),
+        QUIT_TIMEOUT
+    ));
+    assert!(!press(&mut session, &client, ctrl_d(), QUIT_TIMEOUT));
+    assert!(press(&mut session, &client, ctrl_c(), QUIT_TIMEOUT));
+    // Ctrl+C arms with its own key name and the same warning.
+    let (mut session, client, _host) = fixture(false);
+    warn(&mut session, Some("2 running processes will be stopped"));
+    assert!(!press(&mut session, &client, ctrl_c(), Duration::ZERO));
+    assert!(
+        footer(&session)
+            .contains("Press Ctrl+C again to exit · 2 running processes will be stopped")
+    );
+}
+
+#[test]
+fn an_open_picker_or_permission_cannot_skip_the_exit_confirmation() {
+    let (mut session, client, _host) = fixture(false);
+    warn(&mut session, Some("1 running process will be stopped"));
+    session.picker = Some(crate::ChoicePicker::new(
+        "action".into(),
+        "Choices".into(),
+        vec![],
+    ));
+    assert!(!press(&mut session, &client, ctrl_d(), Duration::ZERO));
+    assert!(press(&mut session, &client, ctrl_d(), Duration::ZERO));
+    let (mut session, client, _host) = fixture(true);
+    warn(&mut session, Some("1 running process will be stopped"));
+    request_permission(&mut session, "p", Duration::ZERO);
+    assert!(!press(&mut session, &client, ctrl_d(), Duration::ZERO));
+    assert!(press(&mut session, &client, ctrl_d(), Duration::ZERO));
+}
+
+#[test]
+fn exit_warning_is_scoped_bounded_and_cleared_by_a_new_view() {
+    let (mut session, _client, _host) = fixture(false);
+    let snapshot = session.snapshot().cloned().unwrap();
+    warn(&mut session, Some("1 running process will be stopped"));
+    session.apply(Event::ExitWarning {
+        conversation: "other".into(),
+        text: None,
+    });
+    warn(&mut session, Some(&"x".repeat(257)));
+    assert_eq!(
+        session.exit_warning(),
+        Some("1 running process will be stopped")
+    );
+    session.apply(Event::Snapshot(snapshot));
+    assert!(session.exit_warning().is_none());
+}

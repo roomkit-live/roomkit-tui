@@ -1,0 +1,57 @@
+[workspace]
+resolver = "3"
+members = ["crates/roomkit-tui-protocol", "crates/roomkit-tui", "crates/roomkit-tui-transport", "crates/roomkit-tui-engine", "examples"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+repository = "https://github.com/roomkit-live/roomkit-tui"
+publish = false
+
+[workspace.dependencies]
+roomkit-tui-transport = { path = "crates/roomkit-tui-transport", version = "0.1.0" }
+roomkit-tui-engine = { path = "crates/roomkit-tui-engine", version = "0.1.0" }
+# One validated main commit for all engine crates; never depend on a sibling checkout.
+roomkit = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "dd6ab1b2186518d159b0f38c830a4307834bf199" }
+roomkit-ai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "dd6ab1b2186518d159b0f38c830a4307834bf199" }
+roomkit-openai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "dd6ab1b2186518d159b0f38c830a4307834bf199" }
+roomkit-sqlite = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "dd6ab1b2186518d159b0f38c830a4307834bf199" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+roomkit-tui-protocol = { path = "crates/roomkit-tui-protocol", version = "0.1.0" }
+roomkit-tui = { path = "crates/roomkit-tui", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+# Explicit native clipboard access and bounded PNG encoding belong only to the TUI.
+arboard = { version = "3.7", features = ["wayland-data-control"] }
+png = "0.18"
+# Terminal I/O stays in the TUI crate; the protocol owns no runtime.
+crossterm = { version = "0.29", default-features = false, features = ["events", "bracketed-paste"] }
+unicode-segmentation = "1.13"
+unicode-width = "0.2"
+# Pure presentation parsers; never in the protocol or engine adapter.
+pulldown-cmark = { version = "0.13", default-features = false }
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+dbg_macro = "warn"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "warn"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

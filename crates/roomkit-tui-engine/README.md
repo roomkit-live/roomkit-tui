@@ -1,0 +1,148 @@
+# roomkit-tui-engine
+
+Local adapter for an application-owned RoomKit engine. It depends on the generic
+client protocol and in-process transport, and has no terminal dependency.
+
+Hosts may install `SessionLifecycle` through `LocalSession::with_lifecycle`.
+Admission runs before input enters history; preparation can be interrupted.
+`started`/`finished` surround the entire logical request, not each model or tool
+round. `finished` also releases a refused/interrupted admission that never called
+`started`. A view detach does not stop callbacks for accepted work, and does not
+mean session shutdown. The host supplies bounded callbacks and owns session end.
+
+The application:
+
+1. Constructs its kit with its own store, agents, providers, tools and policies.
+2. Creates a `ConversationChannel`, registers it on the kit and attaches it to
+   the authorized room. `ConversationChannel::buffered` creates one that shows
+   only committed rows, when output must be moderated before it reaches a person.
+3. Builds `SessionConfig` with a room, selected agent and authenticated sender,
+   and the agent's `ModelInfo` under the provider name the engine reports.
+4. Runs `LocalSession::run` with the host endpoint of a
+   `roomkit_tui_transport::connection` while a UI consumes the client endpoint.
+5. Owns shutdown of the kit and its runtime independently of each view: it
+   awaits `ConversationChannel::idle` so the current turn stores its
+   decisions, then closes the kit.
+
+`snapshot()` restores a bounded visible timeline from the engine's store. It
+checks read access, hides blocked/internal rows and preserves durable identities.
+Tool items carry the identity of their run (`agent:trigger`, as announced by
+`RunStarted`), which also keeps provider call IDs of different turns apart.
+Tool data is forwarded only from authoritative structured content.
+Optional public tool intentions are copied from the engine into `ToolCall.intent`,
+including live updates and restored history. The host enables their generation
+on its agent with `with_tool_call_intents(true)`. Intentions never determine tool
+state or permission decisions; the adapter does not normalize them a second time.
+
+The adapter drains engine streams even when a view disconnects. Queue overflow
+ends a lagging attachment with `AdapterError::Lagged`, requiring reattachment
+after the active response finishes; it does not interrupt the engine. Submission
+operation IDs are scoped to the room, channel and host-assigned sender, then
+deduplicated by the engine, including across SQLite restarts.
+
+Accepted submissions and `CommandResult::Execute` publish `OperationStarted`
+before any run and `OperationFinished` after processing and cleanup. These events
+carry the request's stable operation identity and conversation. Errors before
+streaming and engine policy blocks settle as failed operations without inventing
+a run. Replayed submissions can complete without a new run. Run events retain
+their own outcomes; successful processing does not mean every run succeeded.
+The conversation stays busy throughout admission and finalization; wait for
+`OperationFinished` before restoring an idle snapshot or switching views.
+
+Applications can set `SessionConfig::commands` and use `run_with_commands` with
+their own `CommandHandler`. Commands are never sent to the model and default to
+idle-only. A handler may opt individual control commands into `allow_while_busy`;
+conversation switches remain idle-only. A handler can publish generic choice selectors
+or request a different `SessionConfig`; the adapter validates the replacement
+before changing the view. Failed switches preserve the current conversation.
+The application owns command authorization, persistence and retry deduplication.
+
+`SessionConfig::input_actions` optionally maps composer prefixes to advertised
+commands. The TUI sends the remaining input verbatim; a leading backslash escapes
+an action prefix. Hosts without this capability receive ordinary text.
+
+A handler can return `CommandResult::Execute(CommandExecution::new(...))` for
+long-running work. The callback starts only after acceptance and receives an
+`ExecutionContext` for item updates and cooperative cancellation. Return the
+outcome after cleanup and durable writes. The adapter publishes run activity and
+completion, rejects concurrent submissions, and keeps opted-in controls available.
+The host owns resource shutdown, authorization and operation deduplication; neither
+view detachment nor dropping the adapter cancels this application-owned work.
+
+For streaming channels, a host's `before_tool_use` hook can await
+`ConversationChannel::ask_tool_permission(&event, request)` with the hook's
+`ToolCallEvent` before allowing the concrete action:
+
+```rust
+let request = PermissionRequest::new("Delete the build?", "rm -rf build", Duration::from_secs(60))
+    .with_summary("Deleted the build directory");
+let decision = channel.ask_tool_permission(&event, request).await;
+```
+
+This retains the call identity so its confirmed decision appears beside the
+tool when restoring history. `ask_permission(room, agent, request)` serves
+actions without an engine tool call.
+The broker scopes answers to the current room, agent, run and one decision.
+When a person started the run from a view, only that person may answer; a
+decision is recorded only once the waiting action has received it.
+No live view, timeout, cancellation, oversized detail or the last view's
+disconnection refuses the waiting action. An action already allowed continues
+independently of the view. A hook must keep its timeout above the requested
+approval timeout. Buffered channels refuse requests for interactive approval.
+The broker does not implement tool policy; the host chooses which calls need it.
+Explicit decisions are saved after execution settles, outside model context.
+Restoration changes their display order only: older receipts without a call
+identity appear before their turn's final answer. If the linked action is outside
+the visible history, the receipt keeps its stored position; it is never attached
+to a different action by matching its label.
+
+`SessionConfig::mode` optionally advertises a generic `ModeState`. Its command
+accepts an explicit choice value; publish `Event::ModeChanged` after applying
+policy. The adapter retains it for its next snapshot. Mode assignments and retry
+handling belong to the application, as does the meaning of each choice.
+
+Scoped interruption uses the detached delivery handle of the execution started
+by this attachment. Wrong-room, stale and foreign run requests are refused.
+Acknowledgment only requests cancellation; the terminal outcome follows engine
+cleanup, including pending permissions and tool finalizers. Completed external
+effects and application-owned background processes remain. The shared kit stays
+open, and detaching still does not implicitly interrupt.
+
+The adapter projects provider-reported measurements from AI turn records,
+distinguishing cumulative consumption from the last generation. It restores idle
+conversations; a remote service, automatic event replay and authentication are
+not implemented. It is not an authentication boundary for untrusted callers.
+
+A view reserves its room atomically before starting work, so two views never
+start two operations in one room, and it keeps forwarding events while it awaits
+the application's command handler. Before closing the engine, an application
+can await `ConversationChannel::idle` so the current turn settles and stores its
+decisions. `SessionConfig.model` must name the provider the engine reports in
+its usage metadata (`openai` for `roomkit-openai`); otherwise context and token
+usage are not shown. Use `ConversationChannel::buffered` for rooms whose output
+hooks must review an answer before it is displayed.
+
+The API is unpublished and may change before 1.0. Engine dependencies use one
+pinned revision from `roomkit-rs/main`; no adjacent checkout is required.
+
+## Measurements
+
+`SessionConfig.context_capacity` is the host-confirmed capacity of its configured
+model. With matching `ai_model`/`ai_provider` metadata, `ai_last_usage` supplies
+the last completed generation's input (including cached tokens) plus output.
+This is the last measured exchange, not a prediction of the next request or a
+sum of the session. Unknown counters or capacity remain unknown. `ai_usage`
+feeds a separate latest-execution total, marked partial when accounting is
+incomplete. Neither figure compacts or changes the model's context.
+
+Snapshots restore only the latest applicable visible message's measurements.
+New runs and model changes clear old measurements. Hosts configuring OpenAI
+use the provider identity `openai`, matching the engine's attribution.
+
+
+`CommandHandler` also receives `SubmitForm` for advertised commands, with the
+same conversation and idle checks as other configuration controls. It must
+validate its own issued form token and return errors safe for the terminal.
+`SessionConfig::submission_error` disables ordinary messages during application
+setup without disabling configuration commands. `actor_names` supplies display
+names while stable engine channel identities continue to own history.

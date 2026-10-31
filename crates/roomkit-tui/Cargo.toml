@@ -1,0 +1,31 @@
+[package]
+name = "roomkit-tui"
+description = "Embeddable terminal interactions for host-owned AI conversations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords = ["tui", "terminal", "ai", "chat", "llm"]
+categories = ["command-line-interface", "command-line-utilities"]
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE"]
+
+[dependencies]
+roomkit-tui-transport.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+roomkit-tui-protocol.workspace = true
+crossterm.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+arboard.workspace = true
+png.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
+pulldown-cmark.workspace = true
+syntect.workspace = true
+
+[lints]
+workspace = true

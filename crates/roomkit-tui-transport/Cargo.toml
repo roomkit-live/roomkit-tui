@@ -1,0 +1,19 @@
+[package]
+name = "roomkit-tui-transport"
+description = "Bounded in-process connections for RoomKit conversation clients"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords = ["ai", "chat", "llm", "channel", "terminal"]
+categories = ["concurrency"]
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE"]
+
+[dependencies]
+roomkit-tui-protocol.workspace = true
+
+[lints]
+workspace = true

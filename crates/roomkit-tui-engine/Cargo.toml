@@ -1,0 +1,29 @@
+[package]
+name = "roomkit-tui-engine"
+description = "Local RoomKit engine adapter for conversation clients"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords = ["roomkit", "ai", "agent", "chat", "llm"]
+categories = ["command-line-interface", "api-bindings"]
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE"]
+
+[dependencies]
+roomkit.workspace = true
+roomkit-tui-protocol.workspace = true
+roomkit-tui-transport.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+roomkit-ai.workspace = true
+roomkit-sqlite.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
