@@ -9,11 +9,13 @@ pub use theme::{Color, Theme};
 #[non_exhaustive]
 pub enum ColorMode {
     /// Honor a nonempty `NO_COLOR` and `TERM=dumb` when starting the terminal.
+    /// Headless rendering reads no environment and draws this like `Always`.
     #[default]
     Auto,
     /// Use the application's palette regardless of environment preferences.
     Always,
-    /// Keep labels and emphasis, without foreground or background colors.
+    /// Keep labels and emphasis, without foreground or background colors;
+    /// sidebar meter parts are told apart by distinct glyphs instead.
     Never,
 }
 

@@ -307,6 +307,9 @@ audit log. The `order-support --check` example exercises it without a terminal.
 `render::screen_with_options` produces deterministic styled frames from explicit
 UI state and elapsed time, without a terminal or engine. Plain text remains
 available through `Frame::lines` for headless consumers and layout checks.
+The renderer reads no environment: `UiOptions::color` set to `Never` draws
+meter parts with distinct glyphs, while `Auto` draws them as with colors; the
+interactive terminal resolves `Auto` from `NO_COLOR` and `TERM` when it starts.
 Headless consumers use `Session::apply_at` and the renderer with the same
 monotonic epoch; plain `apply` leaves timing unknown. Read state through the
 session's accessors (`snapshot`, `permissions`, `draft`, `focus`, …) and call

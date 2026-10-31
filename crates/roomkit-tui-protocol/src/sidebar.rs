@@ -143,13 +143,13 @@ impl MeterSegment {
 /// A categorical color slot. Hosts choose a slot, never a color, so the
 /// part stays readable in every theme and without color.
 ///
-/// The wire form is `{"series": n}` or `"muted"`; any other value, from a
-/// newer host, reads as [`MeterColor::Muted`].
+/// The wire form is `{"series": n}`, with `n` from 0 to 255, or `"muted"`;
+/// any other value, from a newer host, reads as [`MeterColor::Muted`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum MeterColor {
-    /// One of eight categorical colors; larger indexes wrap modulo eight.
+    /// One of eight categorical colors; indexes 8 to 255 wrap modulo eight.
     Series(u8),
     /// Secondary parts.
     Muted,

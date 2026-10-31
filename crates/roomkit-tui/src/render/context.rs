@@ -36,7 +36,7 @@ pub(super) fn breakdown(
     let mut lines = measurement(session);
     match usage {
         None => lines.extend(meter::legend(&rows, None, inner, monochrome)),
-        Some(usage) => lines.extend(measured(usage, parts, &rows, inner, monochrome)),
+        Some(usage) => lines.extend(measured(usage, &rows, inner, monochrome)),
     }
     lines.extend(turn_usage(session));
     lines
@@ -44,20 +44,18 @@ pub(super) fn breakdown(
 
 /// The stacked bar, occupancy and legend of a measured breakdown, noting when
 /// the host's estimates exceed the measurement.
-fn measured(
-    usage: &ContextUsage,
-    parts: &[MeterSegment],
-    rows: &[Part<'_>],
-    inner: usize,
-    monochrome: bool,
-) -> Vec<Line> {
+fn measured(usage: &ContextUsage, rows: &[Part<'_>], inner: usize, monochrome: bool) -> Vec<Line> {
     let scale = meter::scale(rows, usage.capacity);
-    let mut lines: Vec<Line> = meter::bar(rows, scale, inner, monochrome)
-        .into_iter()
-        .chain(usage.percent().map(used_line))
-        .collect();
+    let mut lines = Vec::new();
+    // Like the gauge, no bar without a capacity: a full one would read as a full context.
+    if let Some(percent) = usage.percent() {
+        lines.extend(meter::bar(rows, scale, inner, monochrome));
+        lines.push(used_line(percent));
+    }
     lines.extend(meter::legend(rows, Some(scale), inner, monochrome));
-    if parts_total(parts) > usage.tokens {
+    // The remainder is at least zero, so the rows outgrow the measurement
+    // only when the host's estimates do.
+    if meter::sum(rows) > usage.tokens {
         let note = wrap_words("Estimates exceed the measurement", inner);
         lines.extend(note.into_iter().map(|part| line(part, Tone::Muted)));
     }
@@ -71,20 +69,15 @@ fn breakdown_parts<'a>(
     remainder: &'a str,
     usage: Option<&ContextUsage>,
 ) -> Vec<Part<'a>> {
-    let rest = Part {
+    let mut rows: Vec<Part<'a>> = parts.iter().map(Part::segment).collect();
+    let fixed = meter::sum(&rows);
+    rows.push(Part {
         label: remainder,
-        value: usage.map(|usage| usage.tokens.saturating_sub(parts_total(parts))),
+        value: usage.map(|usage| usage.tokens.saturating_sub(fixed)),
         fill: Fill::Remainder,
-        estimated: usage.is_some_and(|usage| usage.estimated) || parts.iter().any(|p| p.estimated),
-    };
-    parts.iter().map(Part::segment).chain([rest]).collect()
-}
-
-fn parts_total(parts: &[MeterSegment]) -> u64 {
-    parts
-        .iter()
-        .map(|part| part.value)
-        .fold(0, u64::saturating_add)
+        estimated: usage.is_some_and(|usage| usage.estimated) || rows.iter().any(|p| p.estimated),
+    });
+    rows
 }
 
 /// Freshness and `tokens / capacity` of the displayed measurement.

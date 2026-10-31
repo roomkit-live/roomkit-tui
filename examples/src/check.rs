@@ -46,6 +46,12 @@ pub fn check(profile: Profile) -> Result<Vec<Event>, Box<dyn Error>> {
     observations.push(observer.latest().ok_or("Missing completion observation")?);
     verify_lifecycle(&observations)?;
     verify_remainder(&unmeasured, &breakdown_remainder(&session)?)?;
+    verify_settled(&session)?;
+    Ok(events)
+}
+
+/// The run settled with a structured tool result, an answer and its context.
+fn verify_settled(session: &Session) -> Result<(), Box<dyn Error>> {
     let snapshot = session.snapshot().ok_or("No snapshot")?;
     if session.active_run().is_some() || !session.permissions().is_empty() {
         return Err("Execution did not settle".into());
@@ -55,7 +61,7 @@ pub fn check(profile: Profile) -> Result<Vec<Event>, Box<dyn Error>> {
     if !success || !answer || session.context().and_then(ContextUsage::percent) != Some(12.5) {
         return Err("Scripted scenario did not produce the expected observed state".into());
     }
-    Ok(events)
+    Ok(())
 }
 
 /// The initial, permission, decision and completion observations follow the

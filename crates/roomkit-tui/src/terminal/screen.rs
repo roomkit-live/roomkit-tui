@@ -18,7 +18,6 @@ pub(super) struct Terminal {
     pub status: Option<crate::status::Reporter>,
     previous: Option<render::Frame>,
     clear: bool,
-    colors: bool,
     previous_colors_disabled: bool,
     previous_hook: Option<Arc<PanicHook>>,
 }
@@ -26,14 +25,8 @@ pub(super) struct Terminal {
 impl Terminal {
     pub fn enter(mut options: UiOptions) -> io::Result<Self> {
         terminal::enable_raw_mode()?;
-        let colors = colors_enabled(options.color);
-        // The renderer stays pure: it reads the resolved policy, not the
-        // environment, to draw glyphs where colors would tell parts apart.
-        options.color = if colors {
-            ColorMode::Always
-        } else {
-            ColorMode::Never
-        };
+        options.color = resolved(options.color);
+        let colors = options.color == ColorMode::Always;
         // Crossterm has its own memoized NO_COLOR filter. Align it with the
         // host's explicit policy while we own this terminal, then restore it.
         let previous_colors_disabled = style::Colored::ansi_color_disabled_memoized();
@@ -49,7 +42,6 @@ impl Terminal {
             previous: None,
             clear: false,
             options,
-            colors,
             previous_colors_disabled,
             previous_hook: Some(install_panic_hook(mouse)),
         };
@@ -115,7 +107,8 @@ impl Terminal {
     }
 
     fn span(&mut self, span: &render::Span) -> io::Result<()> {
-        let mut appearance = appearance(span.tone, &self.options.theme, self.colors);
+        let colors = self.options.color == ColorMode::Always;
+        let mut appearance = appearance(span.tone, &self.options.theme, colors);
         for (enabled, attribute) in [
             (span.emphasis.bold, style::Attribute::Bold),
             (span.emphasis.italic, style::Attribute::Italic),
@@ -135,16 +128,18 @@ impl Terminal {
     }
 }
 
-/// The application's explicit color policy, or else the environment's:
-/// a nonempty `NO_COLOR` or `TERM=dumb` disables colors.
-fn colors_enabled(mode: ColorMode) -> bool {
+/// The application's explicit color policy, or else the environment's: a
+/// nonempty `NO_COLOR` or `TERM=dumb` resolves to `Never`. The renderer stays
+/// pure by reading this result, never the environment.
+fn resolved(mode: ColorMode) -> ColorMode {
+    let environment = || {
+        std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
+            && std::env::var_os("TERM").is_none_or(|value| value != "dumb")
+    };
     match mode {
-        ColorMode::Always => true,
-        ColorMode::Never => false,
-        _ => {
-            std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
-                && std::env::var_os("TERM").is_none_or(|value| value != "dumb")
-        }
+        ColorMode::Always | ColorMode::Never => mode,
+        _ if environment() => ColorMode::Always,
+        _ => ColorMode::Never,
     }
 }
 
@@ -267,6 +262,12 @@ mod tests {
                 (None, None)
             );
         }
-        assert!(!colors_enabled(ColorMode::Never) && colors_enabled(ColorMode::Always));
+        assert_eq!(resolved(ColorMode::Never), ColorMode::Never);
+        assert_eq!(resolved(ColorMode::Always), ColorMode::Always);
+        assert_ne!(
+            resolved(ColorMode::Auto),
+            ColorMode::Auto,
+            "Auto is resolved"
+        );
     }
 }

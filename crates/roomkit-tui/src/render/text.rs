@@ -45,10 +45,15 @@ pub(super) fn fit(text: &str, width: usize) -> String {
     result
 }
 
+/// Display columns of `text` as layout counts them, grapheme by grapheme.
+pub(super) fn columns(text: &str) -> usize {
+    text.graphemes(true).map(UnicodeWidthStr::width).sum()
+}
+
 /// The first line of `text` within `width` columns, ending in `…` when clipped.
 pub(super) fn ellipsize(text: &str, width: usize) -> String {
     let whole = fit(text, usize::MAX);
-    if whole.width() <= width {
+    if columns(&whole) <= width {
         return whole;
     }
     match width {

@@ -103,8 +103,8 @@ fn a_context_breakdown_follows_each_measurement_without_a_new_sidebar() {
     s.apply(measure("run-1", 100_000));
     let rows = side(&s);
     assert!(
-        rows.iter()
-            .any(|r| r == "~100000 / 131072 tokens" || r == "100000 / 131072 tokens")
+        rows.iter().any(|r| r == "100000 / 131072 tokens"),
+        "{rows:#?}"
     );
     assert!(rows.iter().any(|r| r == "76.3% used · 23.7% left"));
     assert!(row(&rows, "MCP github").ends_with("≈80.0k   61.0%"));
@@ -218,6 +218,56 @@ fn a_host_meter_shows_any_proportion_of_its_capacity() {
 }
 
 #[test]
+fn without_a_capacity_the_breakdown_draws_no_bar_like_the_gauge() {
+    let mut s = session();
+    s.apply(sidebar(breakdown(fixed_parts())));
+    started(&mut s, "run-1");
+    s.apply(Event::ContextUpdated {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+        provider: "local".into(),
+        model: "model-a".into(),
+        usage: ContextUsage::new(100_000),
+    });
+    let rows = side(&s);
+    assert!(rows.iter().any(|r| r == "100000 / ? tokens"), "{rows:#?}");
+    assert!(
+        !rows.iter().any(|r| r.contains('█')),
+        "A full bar would read as a full context: {rows:#?}"
+    );
+    assert!(row(&rows, "Messages").ends_with("≈18.0k   18.0%"));
+}
+
+#[test]
+fn a_legend_row_fits_however_its_label_is_shaped() {
+    let mut s = session();
+    let segments = vec![MeterSegment::new("لا لا", 2_500, MeterColor::Series(0))];
+    s.apply(sidebar(SidebarContent::Meter {
+        segments,
+        capacity: Some(10_000),
+    }));
+    let rows = side(&s);
+    let legend = rows.iter().find(|r| r.starts_with('■')).unwrap();
+    assert!(legend.ends_with("2.5k   25.0%"), "{rows:#?}");
+    // Narrower by `str::width` than by grapheme: clipping must count the same way.
+    let segments = vec![MeterSegment::new(
+        "لا".repeat(10),
+        2_500,
+        MeterColor::Series(0),
+    )];
+    s.apply(sidebar(SidebarContent::Meter {
+        segments,
+        capacity: Some(10_000),
+    }));
+    let rows = side(&s);
+    let legend = rows.iter().find(|r| r.starts_with('■')).unwrap();
+    assert!(
+        legend.contains('…') && legend.ends_with("2.5k   25.0%"),
+        "{rows:#?}"
+    );
+}
+
+#[test]
 fn an_out_of_bounds_meter_is_ignored_like_out_of_bounds_entries() {
     let segments = |count: usize, label: &str| -> Vec<MeterSegment> {
         (0..count)
@@ -229,9 +279,15 @@ fn an_out_of_bounds_meter_is_ignored_like_out_of_bounds_entries() {
         capacity: None,
     };
     let mut s = session();
+    let current = |s: &Session| s.sidebar.as_ref().unwrap().spec.sections[0].content.clone();
+    let mut longest_remainder = breakdown(segments(16, &"x".repeat(256)));
+    if let SidebarContent::ContextBreakdown { remainder, .. } = &mut longest_remainder {
+        *remainder = "x".repeat(256);
+    }
+    s.apply(sidebar(longest_remainder.clone()));
+    assert_eq!(current(&s), longest_remainder);
     let accepted = meter(segments(16, &"x".repeat(256)));
     s.apply(sidebar(accepted.clone()));
-    let current = |s: &Session| s.sidebar.as_ref().unwrap().spec.sections[0].content.clone();
     assert_eq!(current(&s), accepted);
     let mut long_remainder = breakdown(Vec::new());
     if let SidebarContent::ContextBreakdown { remainder, .. } = &mut long_remainder {

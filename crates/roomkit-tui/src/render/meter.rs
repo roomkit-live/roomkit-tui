@@ -4,9 +4,8 @@
 use std::cmp::Reverse;
 
 use roomkit_tui_protocol::{MeterColor, MeterSegment};
-use unicode_width::UnicodeWidthStr;
 
-use super::text::ellipsize;
+use super::text::{columns, ellipsize};
 use super::{Line, Tone, span};
 
 /// Narrower meters show only their legend.
@@ -36,15 +35,23 @@ impl Fill {
         }
     }
 
-    /// The bar cell and legend marker; color, when enabled, tells parts apart.
-    fn glyphs(self, monochrome: bool) -> (&'static str, &'static str) {
-        let glyph = match self {
-            _ if !monochrome => return ("█", "■"),
+    /// A bar cell: a block in the part's color, or its glyph without colors.
+    fn cell(self, monochrome: bool) -> &'static str {
+        if monochrome { self.glyph() } else { "█" }
+    }
+
+    /// A legend marker, drawn like the part's cells.
+    fn marker(self, monochrome: bool) -> &'static str {
+        if monochrome { self.glyph() } else { "■" }
+    }
+
+    /// What tells the part apart when colors are disabled.
+    fn glyph(self) -> &'static str {
+        match self {
             Self::Series(slot) => SERIES_GLYPHS[usize::from(slot) % SERIES_GLYPHS.len()],
             Self::Muted => "·",
             Self::Remainder => "▄",
-        };
-        (glyph, glyph)
+        }
     }
 }
 
@@ -93,7 +100,8 @@ pub(super) fn scale(parts: &[Part<'_>], capacity: Option<u64>) -> u64 {
     capacity.unwrap_or(0).max(sum(parts))
 }
 
-fn sum(parts: &[Part<'_>]) -> u64 {
+/// The known values added up.
+pub(super) fn sum(parts: &[Part<'_>]) -> u64 {
     parts
         .iter()
         .filter_map(|part| part.value)
@@ -111,12 +119,7 @@ pub(super) fn bar(parts: &[Part<'_>], scale: u64, inner: usize, monochrome: bool
         .iter()
         .zip(&cells)
         .filter(|(_, count)| **count > 0)
-        .map(|(part, count)| {
-            span(
-                part.fill.glyphs(monochrome).0.repeat(*count),
-                part.fill.tone(),
-            )
-        })
+        .map(|(part, count)| span(part.fill.cell(monochrome).repeat(*count), part.fill.tone()))
         .collect();
     let free = inner - cells.iter().sum::<usize>();
     if free > 0 {
@@ -182,7 +185,7 @@ pub(super) fn legend(
 ) -> Vec<Line> {
     let scale = scale.filter(|scale| *scale > 0);
     let values: Vec<String> = parts.iter().map(value).collect();
-    let value_width = values.iter().map(|v| v.width()).max().unwrap_or(0);
+    let value_width = values.iter().map(|v| columns(v)).max().unwrap_or(0);
     let share_width = if scale.is_some() { SHARE_WIDTH } else { 0 };
     let label_width = inner.saturating_sub(3 + value_width + share_width);
     parts
@@ -190,9 +193,9 @@ pub(super) fn legend(
         .zip(values)
         .map(|(part, value)| {
             let label = ellipsize(part.label, label_width);
-            let gap = label_width - label.width() + 1 + value_width - value.width();
+            let gap = label_width - columns(&label) + 1 + value_width - columns(&value);
             let mut row = vec![
-                span(part.fill.glyphs(monochrome).1, part.fill.tone()),
+                span(part.fill.marker(monochrome), part.fill.tone()),
                 span(format!(" {label}{}", " ".repeat(gap)), Tone::Text),
                 span(value, Tone::Text),
             ];
@@ -213,20 +216,21 @@ fn value(part: &Part<'_>) -> String {
     }
 }
 
-/// `921`, `9.9k`, `300.4k`, `1.2M`: one decimal from a thousand.
+/// `921`, `9.9k`, `300.4k`, `1.2M`: one decimal from a thousand, up to the
+/// `E` that `u64::MAX` (`18.4E`) needs.
 pub(super) fn compact(value: u64) -> String {
     if value < 1_000 {
         return value.to_string();
     }
     let mut scaled = value as f64 / 1_000.0;
-    for unit in ["k", "M"] {
+    for unit in ["k", "M", "G", "T", "P"] {
         // Promote before rounding could print `1000.0k`.
         if scaled < 999.95 {
             return format!("{scaled:.1}{unit}");
         }
         scaled /= 1_000.0;
     }
-    format!("{scaled:.1}G")
+    format!("{scaled:.1}E")
 }
 
 #[cfg(test)]
@@ -246,6 +250,8 @@ mod tests {
             (999_950, "1.0M"),
             (1_200_000, "1.2M"),
             (4_000_000_000, "4.0G"),
+            (2_500_000_000_000, "2.5T"),
+            (u64::MAX, "18.4E"),
         ];
         for (value, expected) in cases {
             assert_eq!(compact(value), expected, "{value}");
