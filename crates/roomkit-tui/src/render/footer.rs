@@ -141,21 +141,33 @@ pub(super) fn settings(
     parts
 }
 
+fn shows_agent(content: &SidebarContent) -> bool {
+    matches!(content, SidebarContent::Agent)
+}
+
+/// A context section, plain or broken down, makes the footer's redundant.
+fn shows_context(content: &SidebarContent) -> bool {
+    matches!(
+        content,
+        SidebarContent::Context | SidebarContent::ContextBreakdown { .. }
+    )
+}
+
 fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
     let Some(snapshot) = &session.snapshot else {
         return vec![line(" Waiting for the host", Tone::Muted)];
     };
-    let in_sidebar = |content| {
+    let in_sidebar = |shown: fn(&SidebarContent) -> bool| {
         sidebar
             && session.sidebar.as_ref().is_some_and(|s| {
                 s.spec
                     .sections
                     .iter()
-                    .any(|section| section.content == content)
+                    .any(|section| shown(&section.content))
             })
     };
-    let mut parts = settings(session, snapshot, !in_sidebar(SidebarContent::Agent), false);
-    if in_sidebar(SidebarContent::Context) {
+    let mut parts = settings(session, snapshot, !in_sidebar(shows_agent), false);
+    if in_sidebar(shows_context) {
         return if parts.is_empty() {
             Vec::new()
         } else {

@@ -1,5 +1,9 @@
 //! Bounded sidebar projection and keyboard selection; no application policy.
-use roomkit_tui_protocol::{SidebarAction, SidebarContent, SidebarSpec};
+use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
+use roomkit_tui_protocol::{MeterSegment, SidebarAction, SidebarContent, SidebarSpec};
+
+/// Parts of one meter; more cannot be told apart in a sidebar.
+const MAX_METER_SEGMENTS: usize = 16;
 
 /// Local navigation state for application-owned information.
 #[derive(Clone, Debug)]
@@ -37,20 +41,11 @@ impl SidebarState {
             return None;
         }
         for section in &spec.sections {
-            if section.title.len() > 256 || !section.action.as_ref().is_none_or(action_valid) {
+            if section.title.len() > 256
+                || !section.action.as_ref().is_none_or(action_valid)
+                || !content_fits(&section.content, &mut entries, &action_valid)
+            {
                 return None;
-            }
-            if let SidebarContent::Entries { entries: items } = &section.content {
-                entries += items.len();
-                if entries > 256
-                    || items.iter().any(|entry| {
-                        entry.label.len() > 256
-                            || entry.detail.len() > 1024
-                            || !entry.action.as_ref().is_none_or(action_valid)
-                    })
-                {
-                    return None;
-                }
             }
         }
         Some(Self {
@@ -90,4 +85,36 @@ impl SidebarState {
                 .min(total.saturating_sub(1))
         };
     }
+}
+
+/// Whether a section's content stays within the view's bounds; `entries`
+/// counts the entries of the whole sidebar.
+fn content_fits(
+    content: &SidebarContent,
+    entries: &mut usize,
+    action_valid: &impl Fn(&SidebarAction) -> bool,
+) -> bool {
+    match content {
+        SidebarContent::Entries { entries: items } => {
+            *entries += items.len();
+            *entries <= 256
+                && items.iter().all(|entry| {
+                    entry.label.len() <= 256
+                        && entry.detail.len() <= 1024
+                        && entry.action.as_ref().is_none_or(action_valid)
+                })
+        }
+        SidebarContent::Meter { segments, .. } => meter_fits(segments),
+        SidebarContent::ContextBreakdown { parts, remainder } => {
+            meter_fits(parts) && remainder.len() <= MAX_LABEL_BYTES
+        }
+        _ => true,
+    }
+}
+
+fn meter_fits(segments: &[MeterSegment]) -> bool {
+    segments.len() <= MAX_METER_SEGMENTS
+        && segments
+            .iter()
+            .all(|segment| segment.label.len() <= MAX_LABEL_BYTES)
 }

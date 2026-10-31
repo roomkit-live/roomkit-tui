@@ -38,5 +38,6 @@ pub use permissions::{Decision, Permission, PermissionDecision};
 pub use rejection::{ErrorCode, Rejection};
 pub use request::{Command, Request};
 pub use sidebar::{
-    SidebarAction, SidebarContent, SidebarEntry, SidebarSection, SidebarSpec, SidebarTone,
+    MeterColor, MeterSegment, SidebarAction, SidebarContent, SidebarEntry, SidebarSection,
+    SidebarSpec, SidebarTone,
 };

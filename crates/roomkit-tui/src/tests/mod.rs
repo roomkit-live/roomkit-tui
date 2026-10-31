@@ -7,6 +7,7 @@ mod commands;
 mod composer;
 mod layout;
 mod messages;
+mod meters;
 mod permissions;
 mod screens;
 mod sidebar;

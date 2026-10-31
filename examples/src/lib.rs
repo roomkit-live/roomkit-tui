@@ -71,7 +71,7 @@ pub fn launch(profile: Profile) -> Result<(), Box<dyn Error>> {
             [argument] if argument == "--check" => {
                 let events = check(profile)?;
                 println!(
-                    "Verified {} ordered events: permission, structured tool result, streaming, model context and completion.",
+                    "Verified {} ordered events: permission, structured tool result, streaming, model context, context breakdown and completion.",
                     events.len()
                 );
             }
@@ -106,31 +106,7 @@ pub fn launch(profile: Profile) -> Result<(), Box<dyn Error>> {
 }
 
 fn host_loop(host: Host, mut demo: Demo, stop: &AtomicBool) {
-    let mut outgoing = VecDeque::from([
-        demo.initial(),
-        Event::SidebarChanged {
-            conversation: demo.snapshot.conversation.clone(),
-            sidebar: Some(SidebarSpec::new(
-                "Session",
-                vec![
-                    SidebarSection::new("Agent / model", SidebarContent::Agent)
-                        .with_action(SidebarAction::new("model", String::new())),
-                    SidebarSection::new("Context", SidebarContent::Context),
-                    SidebarSection::new(
-                        "Application",
-                        SidebarContent::Entries {
-                            entries: vec![
-                                SidebarEntry::new("Help and commands")
-                                    .with_detail("Fictional records · scripted host")
-                                    .with_tone(SidebarTone::Accent)
-                                    .with_action(SidebarAction::new("help", String::new())),
-                            ],
-                        },
-                    ),
-                ],
-            )),
-        },
-    ]);
+    let mut outgoing = VecDeque::from([demo.initial(), demo.sidebar()]);
     let mut next_step = Instant::now();
     while !stop.load(Ordering::Acquire) {
         if let Some(event) = outgoing.pop_front() {

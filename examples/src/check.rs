@@ -2,6 +2,7 @@
 
 use std::error::Error;
 
+use roomkit_tui::render::{self, Renderers};
 use roomkit_tui::{Session, SessionObservation, SessionObserver};
 use roomkit_tui_protocol::*;
 
@@ -13,8 +14,11 @@ pub fn check(profile: Profile) -> Result<Vec<Event>, Box<dyn Error>> {
     let mut demo = Demo::new(profile);
     let observer = SessionObserver::default();
     let mut session = Session::default().with_observer(observer.clone());
-    let mut events = vec![demo.initial()];
-    session.apply(events[0].clone());
+    let mut events = vec![demo.initial(), demo.sidebar()];
+    for event in &events {
+        session.apply(event.clone());
+    }
+    let unmeasured = breakdown_remainder(&session)?;
     let mut observations = vec![observer.latest().ok_or("Missing initial observation")?];
     session.insert("Inspect the fictional record");
     let request = session.request(session.input_command()?)?;
@@ -41,6 +45,7 @@ pub fn check(profile: Profile) -> Result<Vec<Event>, Box<dyn Error>> {
     }
     observations.push(observer.latest().ok_or("Missing completion observation")?);
     verify_lifecycle(&observations)?;
+    verify_remainder(&unmeasured, &breakdown_remainder(&session)?)?;
     let snapshot = session.snapshot().ok_or("No snapshot")?;
     if session.active_run().is_some() || !session.permissions().is_empty() {
         return Err("Execution did not settle".into());
@@ -69,6 +74,36 @@ fn verify_lifecycle(observations: &[SessionObservation]) -> Result<(), Box<dyn E
             .any(|state| state.conversation.as_str() != "example")
     {
         return Err("Session observation did not follow the host-confirmed lifecycle".into());
+    }
+    Ok(())
+}
+
+/// The sidebar's remainder row, once every estimated part is in the legend.
+fn breakdown_remainder(session: &Session) -> Result<String, Box<dyn Error>> {
+    let frame = render::screen(session, 140, 32, &Renderers::default());
+    let sidebar: Vec<&str> = frame
+        .lines
+        .iter()
+        .filter_map(|line| line.rsplit_once("│ ").map(|(_, side)| side.trim()))
+        .collect();
+    for part in ["System prompt", "Tool schemas", "Skills"] {
+        if !sidebar.iter().any(|row| row.contains(part)) {
+            return Err(format!("The context breakdown does not list {part}").into());
+        }
+    }
+    let remainder = sidebar.iter().find(|row| row.contains("Messages"));
+    Ok(remainder
+        .ok_or("The context breakdown has no remainder")?
+        .to_string())
+}
+
+/// The remainder is unknown before the usage report and measured after it:
+/// 4096 reported tokens less 3780 estimated ones.
+fn verify_remainder(before: &str, after: &str) -> Result<(), Box<dyn Error>> {
+    if !before.ends_with('—') || !after.contains("≈316") {
+        return Err(
+            format!("The remainder did not follow the usage report: {before} → {after}").into(),
+        );
     }
     Ok(())
 }

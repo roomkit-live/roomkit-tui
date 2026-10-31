@@ -189,6 +189,17 @@ Sections can project the current `Agent` or `Context` state, or supply generic
 terminal owns no process, MCP or configuration logic, and a sidebar never
 executes an action automatically.
 
+A `Meter` section draws any proportion, such as storage or a quota, as a
+stacked bar and its legend: one `MeterSegment` per part, with a label, a value
+and a `MeterColor` slot, scaled to an optional capacity or else to the sum of
+the parts. The legend shows each value compactly (`9.9k`, `1.2M`), `≈` for an
+estimate, and its share. A `ContextBreakdown` section splits the context
+gauge: the host lists the parts it estimates, such as its system prompt or tool
+schemas, and the terminal adds the remainder of each new measurement under the
+host's label, so it stays current without the host resending the sidebar.
+Hosts pick slots, never colors: `Theme::series` holds eight categorical colors,
+and without color each slot has its own glyph.
+
 F7 shows or hides the sidebar; F8 focuses it. Up/Down or Tab selects an action,
 Enter opens it, and Escape returns to the unchanged composer. Mouse clicks open
 entries; the wheel scrolls only the pane under the pointer. Copy selections stay
@@ -201,8 +212,9 @@ modal views temporarily hide the sidebar. Agent, model, effort and context stay
 in the footer only when their sidebar sections are absent or the sidebar is
 hidden. A snapshot clears sidebar data; the host resends it for the new view.
 
-The projection accepts at most 16 sections and 256 entries, with bounded labels,
-details and action arguments. Invalid or out-of-scope updates are ignored.
+The projection accepts at most 16 sections, 256 entries and 16 parts per meter,
+with bounded labels, details and action arguments. Invalid or out-of-scope
+updates are ignored.
 
 ## Welcome screen
 

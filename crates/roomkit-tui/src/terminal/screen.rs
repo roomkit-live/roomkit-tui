@@ -24,9 +24,16 @@ pub(super) struct Terminal {
 }
 
 impl Terminal {
-    pub fn enter(options: UiOptions) -> io::Result<Self> {
+    pub fn enter(mut options: UiOptions) -> io::Result<Self> {
         terminal::enable_raw_mode()?;
         let colors = colors_enabled(options.color);
+        // The renderer stays pure: it reads the resolved policy, not the
+        // environment, to draw glyphs where colors would tell parts apart.
+        options.color = if colors {
+            ColorMode::Always
+        } else {
+            ColorMode::Never
+        };
         // Crossterm has its own memoized NO_COLOR filter. Align it with the
         // host's explicit policy while we own this terminal, then restore it.
         let previous_colors_disabled = style::Colored::ansi_color_disabled_memoized();
@@ -184,6 +191,7 @@ fn foreground(tone: Tone, theme: &crate::Theme) -> crate::Color {
         Tone::String => theme.string,
         Tone::Number => theme.number,
         Tone::Comment => theme.comment,
+        Tone::Series(slot) => theme.series[usize::from(slot) % theme.series.len()],
         _ => theme.text,
     }
 }
@@ -236,5 +244,29 @@ impl Drop for Terminal {
             let _ = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |info| previous(info)));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meter_slots_take_the_theme_series_and_vanish_without_colors() {
+        let theme = crate::Theme::dark();
+        let colored = appearance(Tone::Series(9), &theme, true);
+        assert_eq!(
+            colored.foreground_color,
+            Some(theme.series[1].to_crossterm()),
+            "Slot 9 wraps to slot 1"
+        );
+        for slot in 0..=u8::MAX {
+            let plain = appearance(Tone::Series(slot), &theme, false);
+            assert_eq!(
+                (plain.foreground_color, plain.background_color),
+                (None, None)
+            );
+        }
+        assert!(!colors_enabled(ColorMode::Never) && colors_enabled(ColorMode::Always));
     }
 }

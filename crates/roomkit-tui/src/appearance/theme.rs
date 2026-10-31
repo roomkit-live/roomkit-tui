@@ -108,6 +108,10 @@ pub struct Theme {
     pub number: Color,
     /// Syntax comments.
     pub comment: Color,
+    /// Categorical colors of meter parts; hosts choose a slot, never a color.
+    /// Each stays distinct from the canvas, the surface and `accent`, which
+    /// marks a context breakdown's measured remainder.
+    pub series: [Color; 8],
 }
 
 impl Default for Theme {
@@ -139,6 +143,16 @@ impl Theme {
             success: Color::rgb(74, 222, 128),
             warning: Color::rgb(251, 191, 36),
             error: Color::rgb(251, 113, 133),
+            series: [
+                Color::rgb(96, 165, 250),
+                Color::rgb(253, 224, 71),
+                Color::rgb(52, 211, 153),
+                Color::rgb(232, 121, 249),
+                Color::rgb(248, 113, 113),
+                Color::rgb(251, 146, 60),
+                Color::rgb(163, 230, 53),
+                Color::rgb(167, 139, 250),
+            ],
         }
     }
 
@@ -162,6 +176,16 @@ impl Theme {
             success: Color::rgb(21, 128, 61),
             warning: Color::rgb(146, 64, 14),
             error: Color::rgb(190, 18, 60),
+            series: [
+                Color::rgb(37, 99, 235),
+                Color::rgb(202, 138, 4),
+                Color::rgb(5, 150, 105),
+                Color::rgb(192, 38, 211),
+                Color::rgb(220, 38, 38),
+                Color::rgb(234, 88, 12),
+                Color::rgb(77, 124, 15),
+                Color::rgb(124, 58, 237),
+            ],
             ..Self::dark()
         }
     }
@@ -188,6 +212,36 @@ impl Theme {
             success: Color::Green,
             warning: Color::Yellow,
             error: Color::Red,
+            series: [
+                Color::Blue,
+                Color::Yellow,
+                Color::Green,
+                Color::Magenta,
+                Color::Red,
+                Color::DarkYellow,
+                Color::DarkCyan,
+                Color::DarkMagenta,
+            ],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_theme_has_eight_distinct_readable_series_colors() {
+        for theme in [Theme::dark(), Theme::light(), Theme::terminal()] {
+            let mut seen = Vec::new();
+            for color in theme.series {
+                assert!(!seen.contains(&color), "{color:?} repeats in {theme:?}");
+                for background in [Color::Reset, theme.surface] {
+                    assert_ne!(color, background, "A part would vanish on its canvas");
+                }
+                assert_ne!(color, theme.accent, "A part would read as the remainder");
+                seen.push(color);
+            }
         }
     }
 }

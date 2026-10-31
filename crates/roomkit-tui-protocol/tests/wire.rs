@@ -244,6 +244,69 @@ fn entries_keep_their_wire_shape() {
 }
 
 #[test]
+fn meters_keep_their_wire_shape() {
+    let meter = SidebarContent::Meter {
+        segments: vec![
+            MeterSegment::new("Images", 921, MeterColor::Series(2)),
+            MeterSegment::new("Other", 40, MeterColor::Muted).estimated(),
+        ],
+        capacity: Some(4096),
+    };
+    let encoded = round_trip(&meter);
+    assert_eq!(
+        encoded,
+        json!({"kind": "meter", "capacity": 4096, "segments": [
+            {"label": "Images", "value": 921, "color": {"series": 2}, "estimated": false},
+            {"label": "Other", "value": 40, "color": "muted", "estimated": true},
+        ]})
+    );
+    let breakdown = SidebarContent::ContextBreakdown {
+        parts: vec![MeterSegment::new("Tools", 9_900, MeterColor::Series(0)).estimated()],
+        remainder: "Messages".into(),
+    };
+    let encoded = round_trip(&breakdown);
+    assert_eq!(encoded["kind"], "context_breakdown");
+    assert_eq!(encoded["remainder"], "Messages");
+    let without_capacity: SidebarContent =
+        serde_json::from_value(json!({"kind": "meter", "segments": []})).unwrap();
+    assert_eq!(
+        without_capacity,
+        SidebarContent::Meter {
+            segments: Vec::new(),
+            capacity: None
+        }
+    );
+    let context: SidebarContent = serde_json::from_value(json!({"kind": "context"})).unwrap();
+    assert_eq!(context, SidebarContent::Context);
+}
+
+#[test]
+fn a_meter_color_from_a_newer_host_reads_as_muted() {
+    for future in [
+        json!("gradient"),
+        json!({"rgb": [1, 2, 3]}),
+        json!({"series": 300}),
+        json!(4),
+        json!(null),
+    ] {
+        let color: MeterColor = serde_json::from_value(future.clone()).unwrap();
+        assert_eq!(color, MeterColor::Muted, "{future}");
+    }
+    let color: MeterColor = serde_json::from_value(json!({"series": 9})).unwrap();
+    assert_eq!(color, MeterColor::Series(9), "The terminal wraps the slot");
+    let segment: SidebarContent = serde_json::from_value(json!({
+        "kind": "context_breakdown",
+        "remainder": "Messages",
+        "parts": [{"label": "MCP", "value": 1, "color": "neon", "estimated": true}],
+    }))
+    .unwrap();
+    assert!(
+        matches!(&segment, SidebarContent::ContextBreakdown { parts, .. } if parts[0].color == MeterColor::Muted),
+        "A breakdown with a future color stays a breakdown: {segment:?}"
+    );
+}
+
+#[test]
 fn unknown_capacity_is_not_a_zero_percent_measurement() {
     assert_eq!(ContextUsage::new(100).estimated().percent(), None);
     assert_eq!(ContextUsage::new(100).with_capacity(0).percent(), None);

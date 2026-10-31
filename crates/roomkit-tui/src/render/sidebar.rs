@@ -54,12 +54,13 @@ pub(super) fn compose(
     cols: usize,
     rows: usize,
     width: usize,
+    monochrome: bool,
 ) -> Frame {
     let Some(state) = &session.sidebar else {
         return main;
     };
     let left = cols - width;
-    let content = content(session, state, width - 4);
+    let content = content(session, state, width - 4, monochrome);
     let space = rows - 4;
     let scroll = scroll(state, &content, space);
     let mut side = vec![line(&state.spec.title, Tone::Primary), Vec::new()];
@@ -99,7 +100,7 @@ pub(super) fn compose(
     result
 }
 
-fn content(session: &Session, state: &SidebarState, inner: usize) -> Vec<Row> {
+fn content(session: &Session, state: &SidebarState, inner: usize, monochrome: bool) -> Vec<Row> {
     let mut rows = Vec::new();
     let mut actions = 0;
     let mut next_action = |action: Option<&SidebarAction>| {
@@ -126,7 +127,7 @@ fn content(session: &Session, state: &SidebarState, inner: usize) -> Vec<Row> {
                 }
                 Vec::new()
             }
-            content => body(session, content, inner),
+            content => body(session, content, inner, monochrome),
         };
         rows.extend(
             crate::content::wrap(&body, inner, false)
@@ -138,11 +139,18 @@ fn content(session: &Session, state: &SidebarState, inner: usize) -> Vec<Row> {
     rows
 }
 
-/// Lines of a section that projects conversation state.
-fn body(session: &Session, content: &SidebarContent, inner: usize) -> Vec<Line> {
+/// Lines of a section that projects conversation state or host measures.
+/// Without colors, meter parts are told apart by glyphs.
+fn body(session: &Session, content: &SidebarContent, inner: usize, monochrome: bool) -> Vec<Line> {
     match content {
         SidebarContent::Agent => agent(session),
         SidebarContent::Context => super::context::context(session, inner),
+        SidebarContent::ContextBreakdown { parts, remainder } => {
+            super::context::breakdown(session, parts, remainder, inner, monochrome)
+        }
+        SidebarContent::Meter { segments, capacity } => {
+            super::meter::meter(segments, *capacity, inner, monochrome)
+        }
         _ => Vec::new(),
     }
 }

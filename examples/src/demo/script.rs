@@ -40,6 +40,39 @@ pub(super) fn snapshot(profile: Profile) -> Snapshot {
 }
 
 impl Demo {
+    /// The application's sidebar: model settings, the context split into
+    /// fictional estimates of the host's fixed parts, and a help link.
+    /// The terminal measures the remainder after each usage report.
+    pub fn sidebar(&self) -> Event {
+        let breakdown = SidebarContent::ContextBreakdown {
+            parts: vec![
+                MeterSegment::new("System prompt", 1_200, MeterColor::Series(0)).estimated(),
+                MeterSegment::new("Tool schemas", 2_400, MeterColor::Series(1)).estimated(),
+                MeterSegment::new("Skills", 180, MeterColor::Series(2)).estimated(),
+            ],
+            remainder: "Messages".into(),
+        };
+        let help = SidebarEntry::new("Help and commands")
+            .with_detail("Fictional records · scripted host")
+            .with_tone(SidebarTone::Accent)
+            .with_action(SidebarAction::new("help", String::new()));
+        let sections = vec![
+            SidebarSection::new("Agent / model", SidebarContent::Agent)
+                .with_action(SidebarAction::new("model", String::new())),
+            SidebarSection::new("Context", breakdown),
+            SidebarSection::new(
+                "Application",
+                SidebarContent::Entries {
+                    entries: vec![help],
+                },
+            ),
+        ];
+        Event::SidebarChanged {
+            conversation: self.snapshot.conversation.clone(),
+            sidebar: Some(SidebarSpec::new("Session", sections)),
+        }
+    }
+
     pub(super) fn start(&mut self, id: RequestId, text: String) -> Vec<Event> {
         if self.snapshot.active_run.is_some() {
             return vec![reply(id, Some("An execution is already active"))];

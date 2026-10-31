@@ -25,7 +25,10 @@ binary = Path(metadata["target_directory"]) / "debug" / "assistant-demo"
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 140, 0, 0))
 original = termios.tcgetattr(slave)
-process = subprocess.Popen([str(binary), "--no-color", "--no-animation"], stdin=slave, stdout=slave, stderr=slave)
+# NO_COLOR, not --no-color: the terminal resolves the environment's policy
+# for the renderer, which then draws glyphs instead of colors.
+process = subprocess.Popen([str(binary), "--no-animation"], stdin=slave, stdout=slave, stderr=slave,
+                           env={**os.environ, "NO_COLOR": "1"})
 captured = bytearray()
 
 
@@ -49,6 +52,10 @@ def wait_for(marker, after=0):
 
 try:
     wait_for(b"F7 hide")
+    # Without colors, the context breakdown tells its parts apart by glyph.
+    wait_for("█ System prompt".encode())
+    wait_for("▄ Messages".encode())
+    require("■".encode() not in captured, "a colored legend marker without colors")
     os.write(master, b"Keep my draft")
     wait_for(b"Keep my draft")
     start = len(captured)
@@ -72,10 +79,11 @@ try:
     os.write(master, b"\x04")
     require(process.wait(timeout=5) == 0, 'process.wait(timeout=5) == 0')
     require(termios.tcgetattr(slave) == original, 'termios.tcgetattr(slave) == original')
+    require(not re.search(rb"\x1b\[(?:38|48);", captured), "NO_COLOR emitted a color")
 finally:
     if process.poll() is None:
         process.kill()
         process.wait(timeout=5)
     os.close(master)
     os.close(slave)
-print("Sidebar terminal checks passed: visibility, keyboard actions, draft preservation, resize and restoration.")
+print("Sidebar terminal checks passed: visibility, keyboard actions, draft preservation, resize, uncolored context breakdown and restoration.")

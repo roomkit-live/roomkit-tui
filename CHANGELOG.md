@@ -25,6 +25,9 @@ Initial public release.
   - elapsed run time, interruption, and context and token usage display;
   - branding, themes, `NO_COLOR` support, a configurable composer, an optional
     sidebar and welcome screen;
+  - sidebar meters: a stacked bar and legend for any proportion, and a context
+    breakdown whose remainder follows each measurement, with categorical theme
+    colors, or distinct glyphs without color;
   - mouse tool expansion, OSC 52 copy, clipboard image attachments and
     optional OSC 7501 program status;
   - passive session observation and deterministic headless rendering;

@@ -45,6 +45,18 @@ pub(super) fn fit(text: &str, width: usize) -> String {
     result
 }
 
+/// The first line of `text` within `width` columns, ending in `…` when clipped.
+pub(super) fn ellipsize(text: &str, width: usize) -> String {
+    let whole = fit(text, usize::MAX);
+    if whole.width() <= width {
+        return whole;
+    }
+    match width {
+        0 => String::new(),
+        _ => format!("{}…", fit(&whole, width - 1)),
+    }
+}
+
 /// Wrap on grapheme boundaries, respecting terminal display columns.
 pub fn wrap(text: &str, width: usize) -> Vec<String> {
     if width == 0 {

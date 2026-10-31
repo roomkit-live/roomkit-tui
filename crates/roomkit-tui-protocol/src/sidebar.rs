@@ -65,6 +65,22 @@ pub enum SidebarContent {
         /// Entries in display order.
         entries: Vec<SidebarEntry>,
     },
+    /// A stacked bar and its legend, for any proportion: storage, quotas, budget.
+    Meter {
+        /// Parts in display order; the terminal accepts at most sixteen.
+        segments: Vec<MeterSegment>,
+        /// Full scale of the bar; absent or zero scales to the sum of the values.
+        capacity: Option<u64>,
+    },
+    /// The context gauge split into host-estimated parts. The terminal adds
+    /// the remainder of the latest measurement, so it stays current without
+    /// the host resending the sidebar.
+    ContextBreakdown {
+        /// Parts the host measured or estimated; at most sixteen.
+        parts: Vec<MeterSegment>,
+        /// Label of the measured remainder, such as `Messages`; at most 256 bytes.
+        remainder: String,
+    },
     /// Content introduced by a newer host. Terminals omit the section.
     #[serde(other)]
     Unknown,
@@ -89,6 +105,69 @@ pub enum SidebarTone {
     #[default]
     #[serde(other)]
     Neutral,
+}
+
+/// One part of a stacked meter.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct MeterSegment {
+    /// Legend label, bounded to 256 bytes by the terminal.
+    pub label: String,
+    /// Amount in the meter's unit, such as tokens or bytes.
+    pub value: u64,
+    /// Categorical slot; the terminal's theme picks the actual color.
+    pub color: MeterColor,
+    /// Whether the value is an estimate, shown with `≈`.
+    pub estimated: bool,
+}
+
+impl MeterSegment {
+    /// A measured part.
+    pub fn new(label: impl Into<String>, value: u64, color: MeterColor) -> Self {
+        Self {
+            label: label.into(),
+            value,
+            color,
+            estimated: false,
+        }
+    }
+
+    /// Mark the value as an estimate.
+    #[must_use]
+    pub fn estimated(mut self) -> Self {
+        self.estimated = true;
+        self
+    }
+}
+
+/// A categorical color slot. Hosts choose a slot, never a color, so the
+/// part stays readable in every theme and without color.
+///
+/// The wire form is `{"series": n}` or `"muted"`; any other value, from a
+/// newer host, reads as [`MeterColor::Muted`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum MeterColor {
+    /// One of eight categorical colors; larger indexes wrap modulo eight.
+    Series(u8),
+    /// Secondary parts.
+    Muted,
+}
+
+impl<'de> Deserialize<'de> for MeterColor {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Series { series: u8 },
+            Other(serde::de::IgnoredAny),
+        }
+        Ok(match Wire::deserialize(deserializer)? {
+            Wire::Series { series } => Self::Series(series),
+            Wire::Other(_) => Self::Muted,
+        })
+    }
 }
 
 /// A compact item with optional secondary text and a host action.

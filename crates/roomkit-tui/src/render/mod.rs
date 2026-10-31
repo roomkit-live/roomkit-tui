@@ -11,6 +11,7 @@ mod form;
 mod frame;
 mod menus;
 mod message;
+mod meter;
 mod panel;
 mod presenters;
 mod sidebar;
@@ -29,7 +30,7 @@ use std::time::Duration;
 use roomkit_tui_protocol::ToolCall;
 use unicode_width::UnicodeWidthStr;
 
-use crate::{Session, UiOptions};
+use crate::{ColorMode, Session, UiOptions};
 use text::fit;
 
 /// Semantic emphasis resolved through the application's palette at draw time.
@@ -75,6 +76,8 @@ pub enum Tone {
     Number,
     /// Code comments.
     Comment,
+    /// A categorical meter part: the theme's series color, wrapping modulo eight.
+    Series(u8),
 }
 
 /// Independent text attributes, preserved even when colors are disabled.
@@ -204,6 +207,7 @@ fn conversation_screen(view: &View<'_>, width: u16, height: u16) -> Frame {
             usize::from(width),
             usize::from(height),
             usize::from(side),
+            view.options.color == ColorMode::Never,
         ),
         None => main,
     }

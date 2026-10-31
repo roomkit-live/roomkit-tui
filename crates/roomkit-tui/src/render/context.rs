@@ -1,6 +1,10 @@
-//! The sidebar's context section: the displayed measurement, its gauge and
-//! the turn's consumption.
+//! The sidebar's context section: the displayed measurement, its gauge or
+//! its split into host-estimated parts, and the turn's consumption.
 
+use roomkit_tui_protocol::{ContextUsage, MeterSegment};
+
+use super::meter::{self, Fill, Part};
+use super::text::wrap_words;
 use super::{Line, Tone, line, span};
 use crate::Session;
 
@@ -15,6 +19,72 @@ pub(super) fn context(session: &Session, inner: usize) -> Vec<Line> {
     }
     lines.extend(turn_usage(session));
     lines
+}
+
+/// The measurement split into the host's parts and the remainder they leave,
+/// with a stacked bar in place of the gauge. Without a measurement, only the
+/// parts are listed and the remainder reads `—`.
+pub(super) fn breakdown(
+    session: &Session,
+    parts: &[MeterSegment],
+    remainder: &str,
+    inner: usize,
+    monochrome: bool,
+) -> Vec<Line> {
+    let usage = session.displayed_context().map(|(usage, _)| usage);
+    let rows = breakdown_parts(parts, remainder, usage);
+    let mut lines = measurement(session);
+    match usage {
+        None => lines.extend(meter::legend(&rows, None, inner, monochrome)),
+        Some(usage) => lines.extend(measured(usage, parts, &rows, inner, monochrome)),
+    }
+    lines.extend(turn_usage(session));
+    lines
+}
+
+/// The stacked bar, occupancy and legend of a measured breakdown, noting when
+/// the host's estimates exceed the measurement.
+fn measured(
+    usage: &ContextUsage,
+    parts: &[MeterSegment],
+    rows: &[Part<'_>],
+    inner: usize,
+    monochrome: bool,
+) -> Vec<Line> {
+    let scale = meter::scale(rows, usage.capacity);
+    let mut lines: Vec<Line> = meter::bar(rows, scale, inner, monochrome)
+        .into_iter()
+        .chain(usage.percent().map(used_line))
+        .collect();
+    lines.extend(meter::legend(rows, Some(scale), inner, monochrome));
+    if parts_total(parts) > usage.tokens {
+        let note = wrap_words("Estimates exceed the measurement", inner);
+        lines.extend(note.into_iter().map(|part| line(part, Tone::Muted)));
+    }
+    lines
+}
+
+/// The host's parts, then the remainder of the measurement, at least zero;
+/// it is an estimate as soon as a part or the measurement is one.
+fn breakdown_parts<'a>(
+    parts: &'a [MeterSegment],
+    remainder: &'a str,
+    usage: Option<&ContextUsage>,
+) -> Vec<Part<'a>> {
+    let rest = Part {
+        label: remainder,
+        value: usage.map(|usage| usage.tokens.saturating_sub(parts_total(parts))),
+        fill: Fill::Remainder,
+        estimated: usage.is_some_and(|usage| usage.estimated) || parts.iter().any(|p| p.estimated),
+    };
+    parts.iter().map(Part::segment).chain([rest]).collect()
+}
+
+fn parts_total(parts: &[MeterSegment]) -> u64 {
+    parts
+        .iter()
+        .map(|part| part.value)
+        .fold(0, u64::saturating_add)
 }
 
 /// Freshness and `tokens / capacity` of the displayed measurement.
