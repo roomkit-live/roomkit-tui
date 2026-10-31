@@ -36,7 +36,9 @@ Initial public release.
 - `roomkit-tui-engine`: an adapter for application-owned RoomKit engines,
   with streaming, history restoration, approvals bridged from tool hooks,
   scoped cancellation, application commands and long-running host work, safe
-  engine diagnostics, usage measurements and host lifecycle callbacks.
+  engine diagnostics, usage measurements and host lifecycle callbacks. Started
+  tool calls show as running, and as pending while a decision of their turn
+  is unanswered.
 - Examples: two scripted hosts that need no credentials or network, and
   `roomkit-chat`, which runs the RoomKit engine with an OpenAI-compatible
   endpoint and SQLite persistence. Each has a headless `--check` mode.

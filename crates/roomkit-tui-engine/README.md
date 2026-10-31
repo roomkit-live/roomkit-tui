@@ -34,6 +34,13 @@ including live updates and restored history. The host enables their generation
 on its agent with `with_tool_call_intents(true)`. Intentions never determine tool
 state or permission decisions; the adapter does not normalize them a second time.
 
+The engine records a call's start and its end, nothing between: meanwhile the
+call waits for the decisions of its round, then executes with the round. A view
+therefore shows a started call of a running turn as `Running`, and as `Pending`
+while a permission of that turn is unanswered. A refused or expired decision
+keeps its round `Pending` until each of its calls ends, so a call is never shown
+running when it may not run. Restored history keeps the engine's states.
+
 The adapter drains engine streams even when a view disconnects. Queue overflow
 ends a lagging attachment with `AdapterError::Lagged`, requiring reattachment
 after the active response finishes; it does not interrupt the engine. Submission

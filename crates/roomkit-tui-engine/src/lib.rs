@@ -14,6 +14,7 @@ mod diagnostics;
 mod execution;
 mod lifecycle;
 mod measurements;
+mod progress;
 mod projection;
 mod session;
 mod stream;

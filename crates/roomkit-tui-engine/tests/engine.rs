@@ -29,6 +29,7 @@ mod approval_tests;
 mod command_tests;
 mod delivery_tests;
 mod lifecycle_tests;
+mod progress_tests;
 mod request_tests;
 mod review_tests;
 

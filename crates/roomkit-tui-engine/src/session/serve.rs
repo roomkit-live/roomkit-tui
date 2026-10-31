@@ -18,6 +18,7 @@ use super::requests::Step;
 use super::{AdapterError, CommandHandler, LocalSession};
 use crate::approvals;
 use crate::execution::Interrupter;
+use crate::progress::ToolProgress;
 
 /// Requests read ahead of the view, and requests held while another awaits
 /// application code. Beyond that, requests are refused as overloaded.
@@ -35,6 +36,8 @@ pub(super) struct View<'h, S: ConversationStore, H> {
     pub handler: &'h H,
     pub work: Option<Interrupter>,
     pub approvals: approvals::View,
+    /// Calls in flight, shown running or waiting for a decision.
+    progress: ToolProgress,
     /// A replacement conversation is being restored. Room events wait in
     /// the receiver meanwhile, then reach the view the switch selects.
     pub switching: bool,
@@ -61,6 +64,7 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
         handler,
         work: None,
         approvals,
+        progress: ToolProgress::default(),
         switching: false,
         updates: None,
         queue: VecDeque::new(),
@@ -109,6 +113,7 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         if let Some(lifecycle) = &self.session.lifecycle {
             lifecycle.attached(&self.session.config);
         }
+        self.progress = ToolProgress::new(snapshot.conversation.clone());
         self.send(Event::Snapshot(snapshot))?;
         self.updates = self.handler.subscribe(self.session.config.clone());
         if let Some(receiver) = &mut self.updates {
@@ -130,7 +135,8 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         match frame {
             Ok((room, mut event)) if room == self.session.config.conversation() => {
                 crate::measurements::for_view(&mut event, &self.session.config);
-                self.send(event)?;
+                let events = self.progress.apply(event);
+                self.send_all(events)?;
                 Ok(true)
             }
             Ok(_) => Ok(true),
