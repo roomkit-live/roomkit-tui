@@ -44,9 +44,10 @@ impl View {
             MouseEventKind::Up(MouseButton::Left) => return self.lift(mouse),
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 self.redraw.dirty = true;
-                // Only a selection anchored in the conversation scrolls with it.
-                if !self.selection.as_ref().is_some_and(TextSelection::scrolls) {
-                    self.selection = None;
+                match &mut self.selection {
+                    // Only a selection anchored in the conversation scrolls with it.
+                    Some(selection) if selection.scrolls() => selection.content_scrolled(),
+                    _ => self.selection = None,
                 }
                 self.wheel(mouse);
             }
@@ -122,7 +123,11 @@ impl View {
             Edge::Above => self.session.scroll_back(1),
             Edge::Below => self.session.scroll_forward(1),
         }
-        self.session.scroll() != before
+        let scrolled = self.session.scroll() != before;
+        if scrolled && let Some(selection) = &mut self.selection {
+            selection.content_scrolled();
+        }
+        scrolled
     }
 
     /// A click activates the target under it; a drag copies its text.

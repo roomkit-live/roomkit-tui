@@ -22,6 +22,8 @@ pub(super) struct Timeline {
     pub targets: Vec<ToolTarget>,
     /// Row after the focused tool, when tool focus is active.
     pub focused_end: Option<usize>,
+    /// Whether the lines reach back to the oldest segment.
+    pub complete: bool,
 }
 
 /// One item, or consecutive tool calls shown as a single activity.
@@ -73,7 +75,11 @@ pub(super) fn timeline(view: &View<'_>, cols: usize, rows: usize, scroll: usize)
             break;
         }
     }
-    assemble(blocks, below_focus)
+    let complete = blocks.len() == segments.len();
+    Timeline {
+        complete,
+        ..assemble(blocks, below_focus)
+    }
 }
 
 /// Join blocks laid out newest first; `below_focus` counts lines after the

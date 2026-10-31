@@ -235,9 +235,13 @@ below the interface.
 The default `SelectionMode::CopyOnSelect` enables tool clicks and captures
 visible text drags, sending an OSC 52 clipboard request on release, subject to
 terminal support and permissions (including across SSH or multiplexers). A copy
-request is not reported as confirmed clipboard success. Selection is limited to
-the visible frame and 64 KiB. Resizing or typing cancels a drag, a drag never
-triggers a tool click, and exiting restores the terminal's mouse modes.
+request is not reported as confirmed clipboard success. A selection started on
+the conversation's history scrolls it while the button is held, by the wheel or
+by holding the pointer above or below the history, and copies lines no longer
+on screen; once copied it stays highlighted and moves with its text. Any other
+selection is limited to the visible frame. A copy is limited to 64 KiB. A key,
+a paste or a resize cancels a selection, a drag never triggers a tool click,
+and exiting restores the terminal's mouse modes.
 `SelectionMode::Native` leaves all mouse behavior to the terminal and disables
 in-app clicks and clipboard requests.
 

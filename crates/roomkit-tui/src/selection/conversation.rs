@@ -4,69 +4,18 @@
 
 use std::ops::{Range, RangeInclusive};
 
-use roomkit_tui_protocol::{ActorId, CallId, ConversationId, Item, MessageId, PermissionId, RunId};
+use roomkit_tui_protocol::{ConversationId, Item, Message, MessageId};
 
 use super::{Copied, paint};
 use crate::Session;
 use crate::render::{Frame, TimelineRows};
 
-/// The identity [`Item::same_identity`] compares, without the item's content,
-/// so that an anchor never copies a long message.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum ItemKey {
-    Approval(ActorId, RunId, PermissionId),
-    Message(ActorId, MessageId),
-    Tool(ActorId, RunId, CallId),
-}
-
-impl ItemKey {
-    pub(super) fn of(item: &Item) -> Option<Self> {
-        match item {
-            Item::Approval(record) => {
-                let permission = &record.permission;
-                Some(Self::Approval(
-                    permission.actor.clone(),
-                    permission.run.clone(),
-                    permission.id.clone(),
-                ))
-            }
-            Item::Message(message) => {
-                Some(Self::Message(message.actor.clone(), message.id.clone()))
-            }
-            Item::Tool { actor, run, call } => {
-                Some(Self::Tool(actor.clone(), run.clone(), call.id.clone()))
-            }
-            _ => None,
-        }
-    }
-
-    pub(super) fn matches(&self, item: &Item) -> bool {
-        match (self, item) {
-            (Self::Approval(actor, run, id), Item::Approval(record)) => {
-                let permission = &record.permission;
-                permission.actor == *actor && permission.run == *run && permission.id == *id
-            }
-            (Self::Message(actor, id), Item::Message(message)) => {
-                message.actor == *actor && message.id == *id
-            }
-            (
-                Self::Tool(actor, run, id),
-                Item::Tool {
-                    actor: a,
-                    run: r,
-                    call,
-                },
-            ) => a == actor && r == run && call.id == *id,
-            _ => false,
-        }
-    }
-}
-
 /// A history position: the first item of a segment, a line of its block and
-/// a column.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// a column. The item is kept only for [`Item::same_identity`], the rule by
+/// which the session replaces an item with its update.
+#[derive(Clone, Debug)]
 struct Anchor {
-    item: ItemKey,
+    item: Item,
     line: usize,
     column: usize,
 }
@@ -82,14 +31,21 @@ impl Anchor {
         let shown = usize::from(row).saturating_sub(area.top).min(last);
         let (item, line) = area.origins[shown];
         Some(Self {
-            item: ItemKey::of(items.get(item)?)?,
+            item: items.get(item)?.clone(),
             line,
             column: usize::from(column).min(area.width.saturating_sub(1)),
         })
     }
 
+    fn same(&self, other: &Self) -> bool {
+        self.item.same_identity(&other.item)
+            && (self.line, self.column) == (other.line, other.column)
+    }
+
     fn position(&self, items: &[Item]) -> Option<Position> {
-        let index = items.iter().rposition(|item| self.item.matches(item))?;
+        let index = items
+            .iter()
+            .rposition(|item| self.item.same_identity(item))?;
         Some((index, self.line, self.column))
     }
 }
@@ -128,23 +84,35 @@ impl Extent {
         row: u16,
         session: &Session,
     ) -> bool {
-        if let Some(area) = frame
-            .timeline
-            .as_ref()
-            .filter(|area| area.conversation == self.conversation)
+        if let Some(area) = shown(&frame.timeline, &self.conversation)
             && let Some(head) = Anchor::under(area, column, row, items(session))
         {
             self.head = head;
             self.width = area.width;
         }
-        self.head != self.anchor
+        !self.head.same(&self.anchor)
+    }
+
+    /// A streamed draft became `message`: the ends on it move to the message.
+    pub(super) fn finalized(
+        &mut self,
+        conversation: &ConversationId,
+        draft: &MessageId,
+        message: &Message,
+    ) {
+        if *conversation != self.conversation {
+            return;
+        }
+        let draft = Item::Message(Message::new(draft.clone(), message.actor.clone(), ""));
+        for end in [&mut self.anchor, &mut self.head] {
+            if end.item.same_identity(&draft) {
+                end.item = Item::Message(message.clone());
+            }
+        }
     }
 
     /// Both ends in document order, while the conversation still has them.
     fn ends(&self, session: &Session) -> Option<(Position, Position)> {
-        if self.anchor == self.head {
-            return None;
-        }
         let snapshot = session
             .snapshot
             .as_ref()
@@ -159,14 +127,13 @@ impl Extent {
     }
 
     pub(super) fn paint(&self, frame: &mut Frame, session: &Session) {
-        let Some(area) = frame
-            .timeline
-            .as_ref()
-            .filter(|area| area.conversation == self.conversation)
-        else {
+        if self.anchor.same(&self.head) {
             return;
-        };
-        let Some(ends) = self.ends(session) else {
+        }
+        let (Some(ends), Some(area)) = (
+            self.ends(session),
+            shown(&frame.timeline, &self.conversation),
+        ) else {
             return;
         };
         for (offset, &(item, line)) in area.origins.iter().enumerate() {
@@ -176,6 +143,7 @@ impl Extent {
         }
     }
 
+    /// The selected text, or an error once an end has left the conversation.
     pub(super) fn text<I>(
         &self,
         session: &Session,
@@ -184,8 +152,11 @@ impl Extent {
     where
         I: Iterator<Item = (usize, Vec<String>)>,
     {
-        let Some(ends) = self.ends(session) else {
+        if self.anchor.same(&self.head) {
             return Ok(None);
+        }
+        let Some(ends) = self.ends(session) else {
+            return Err("Selected text is no longer in the conversation");
         };
         let mut copied = Copied::default();
         for (item, lines) in blocks(ends.0.0..=ends.1.0, self.width) {
@@ -198,6 +169,16 @@ impl Extent {
         }
         Ok(Some(copied.text()))
     }
+}
+
+/// The conversation area a frame shows, when it shows `conversation`.
+fn shown<'a>(
+    timeline: &'a Option<TimelineRows>,
+    conversation: &ConversationId,
+) -> Option<&'a TimelineRows> {
+    timeline
+        .as_ref()
+        .filter(|area| area.conversation == *conversation)
 }
 
 fn items(session: &Session) -> &[Item] {

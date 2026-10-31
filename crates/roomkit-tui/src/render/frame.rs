@@ -113,7 +113,7 @@ pub struct Frame {
 }
 
 /// The conversation area of a frame and the history line each row shows.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TimelineRows {
     /// Conversation shown.
     pub conversation: ConversationId,
@@ -125,4 +125,6 @@ pub(crate) struct TimelineRows {
     pub width: usize,
     /// Origin of each history line shown, from `top` downwards.
     pub origins: Vec<Origin>,
+    /// Whether the first line shown is the first line of the history.
+    pub starts_history: bool,
 }

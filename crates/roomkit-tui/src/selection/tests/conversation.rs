@@ -3,9 +3,7 @@
 
 use std::time::Duration;
 
-use roomkit_tui_protocol::{
-    Decision, Event, Item, Message, Permission, PermissionDecision, ToolCall, ToolState,
-};
+use roomkit_tui_protocol::{Event, Item, Message, ToolCall, ToolState};
 use serde_json::json;
 
 use super::*;
@@ -97,8 +95,13 @@ fn scrolling_while_held_extends_the_selection_beyond_the_screen() {
 
     // The wheel scrolls under the held pointer, which now points later on.
     session.scroll_to_bottom();
+    selection.content_scrolled();
     let bottom = draw(&mut session);
     selection.follow(&bottom, &session);
+    assert!(
+        selection.dragged(),
+        "the end follows the pointer after a scroll"
+    );
     let end = row_of(&bottom, "Paragraph 30");
     selection.hold(WIDTH - 1, end, &bottom, &session);
     selection.release();
@@ -157,6 +160,7 @@ fn the_highlight_follows_its_text_when_scrolled_and_a_message_arrives() {
         item: Item::Message(Message::new("next", "agent", "A newer reply")),
     });
     session.scroll_back(2);
+    selection.content_scrolled();
     let mut shown = draw(&mut session);
     // A released selection no longer moves with the pointer.
     selection.follow(&shown, &session);
@@ -238,7 +242,11 @@ fn a_selection_whose_text_left_the_conversation_copies_and_paints_nothing() {
     let mut shown = draw(&mut session);
     selection.paint(&mut shown, &session);
     assert!(selected_text(&shown).is_empty());
-    assert_eq!(copy(&selection, &session), Ok(None));
+    // Said rather than copying nothing in silence.
+    assert_eq!(
+        copy(&selection, &session),
+        Err("Selected text is no longer in the conversation")
+    );
 }
 
 #[test]
@@ -294,40 +302,123 @@ fn the_highlight_never_reaches_the_sidebar() {
     assert!(selected_text(&shown).contains("Paragraph 28 of the reply."));
 }
 
-#[test]
-fn an_anchor_identifies_an_item_as_the_protocol_does() {
-    let permission = Permission::new("p-1", "agent", "run-1", "Read", "detail");
-    let approval = |id: &str| {
-        Item::Approval(PermissionDecision::new(
-            Permission::new(id, "agent", "run-1", "Read", "other detail"),
-            Decision::Allow,
-            "person",
-        ))
-    };
-    let tool = |id: &str, state| Item::Tool {
+/// A press and a release on the same cell, with `arrive` applied between
+/// them and drawn as the terminal does.
+fn still_click(
+    session: &mut Session,
+    (column, row): (u16, u16),
+    arrive: impl FnOnce(&mut Session),
+) -> TextSelection {
+    let pressed = draw(session);
+    let mut selection = TextSelection::new(pressed, column, row, session);
+    arrive(session);
+    let next = draw(session);
+    selection.follow(&next, session);
+    selection.hold(column, row, &next, session);
+    selection.release();
+    selection
+}
+
+fn started(session: &mut Session) {
+    session.apply(Event::RunStarted {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+    });
+}
+
+fn streamed(session: &mut Session, text: &str) {
+    session.apply(Event::TextDelta {
+        conversation: "room-a".into(),
+        message: "draft:run-1:0".into(),
         actor: "agent".into(),
         run: "run-1".into(),
-        call: ToolCall::new(id, "search", json!({}), state),
-    };
-    let items = [
-        Item::Message(Message::new("m-1", "agent", "first")),
-        Item::Message(Message::new("m-1", "agent", "replaced")),
-        Item::Message(Message::new("m-1", "person", "first")),
-        tool("c-1", ToolState::Running),
-        tool("c-1", ToolState::Succeeded),
-        tool("c-2", ToolState::Running),
-        Item::Approval(PermissionDecision::new(
-            permission,
-            Decision::Allow,
-            "person",
-        )),
-        approval("p-1"),
-        approval("p-2"),
-    ];
-    for a in &items {
-        let key = crate::selection::conversation::ItemKey::of(a).unwrap();
-        for b in &items {
-            assert_eq!(key.matches(b), a.same_identity(b), "{a:?} / {b:?}");
-        }
-    }
+        text: text.into(),
+    });
+}
+
+#[test]
+fn text_streaming_under_a_still_pointer_selects_nothing() {
+    let mut session = conversation(30);
+    started(&mut session);
+    let row = row_of(&draw(&mut session), "Paragraph 28");
+    let selection = still_click(&mut session, (5, row), |session| {
+        streamed(session, "Streaming line one.\n\nStreaming line two.");
+    });
+    assert!(!selection.dragged());
+    assert_eq!(copy(&selection, &session), Ok(None));
+}
+
+#[test]
+fn a_tool_click_stays_a_click_while_a_message_arrives() {
+    let mut session = conversation(30);
+    let mut call = ToolCall::new("c-1", "search_records", json!({}), ToolState::Succeeded);
+    call.text = (1..=20)
+        .map(|n| format!("record {n}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let items = &mut session.snapshot.as_mut().unwrap().items;
+    items.push(Item::Tool {
+        actor: "agent".into(),
+        run: "run-1".into(),
+        call,
+    });
+    let target = draw(&mut session).tool_targets[0].clone();
+    let selection = still_click(
+        &mut session,
+        (target.start as u16, target.row as u16),
+        |session| {
+            session.apply(Event::Item {
+                conversation: "room-a".into(),
+                item: Item::Message(Message::new("next", "agent", "A newer reply")),
+            });
+        },
+    );
+    assert!(selection.scrolls());
+    assert_eq!(selection.tool_click().map(|t| t.call.as_str()), Some("c-1"));
+    assert_eq!(copy(&selection, &session), Ok(None));
+}
+
+#[test]
+fn a_selection_in_a_streamed_reply_survives_its_finalization() {
+    let mut session = conversation(3);
+    started(&mut session);
+    let reply = "Streamed first.\n\nStreamed second.\n\nStreamed third.";
+    streamed(&mut session, reply);
+    let frame = draw(&mut session);
+    let mut selection =
+        TextSelection::new(frame.clone(), 0, row_of(&frame, "Streamed first"), &session);
+    selection.hold(
+        WIDTH - 1,
+        row_of(&frame, "Streamed third"),
+        &frame,
+        &session,
+    );
+    let finalized = Message::new("stored-1", "agent", reply);
+    // The terminal shows the selection each event before the session applies it.
+    selection.finalized(&"room-a".into(), &"draft:run-1:0".into(), &finalized);
+    session.apply(Event::MessageFinalized {
+        conversation: "room-a".into(),
+        draft: "draft:run-1:0".into(),
+        message: finalized,
+    });
+    let mut shown = draw(&mut session);
+    selection.release();
+    selection.paint(&mut shown, &session);
+    assert!(selected_text(&shown).contains("Streamed second."));
+    let text = copy(&selection, &session).unwrap().unwrap();
+    assert!(text.starts_with("   Streamed first.") && text.ends_with("Streamed third."));
+}
+
+#[test]
+fn the_edge_above_the_start_of_the_history_scrolls_no_further() {
+    let mut session = conversation(30);
+    session.scroll_back(1_000);
+    let top = draw(&mut session);
+    let area = top.timeline.clone().unwrap();
+    let mut selection = TextSelection::new(top.clone(), 0, area.top as u16 + 2, &session);
+    selection.hold(0, 0, &top, &session);
+    assert_eq!(selection.edge(&top), None);
+    let below = (area.top + area.height) as u16;
+    selection.hold(0, below, &top, &session);
+    assert_eq!(selection.edge(&top), Some(Edge::Below));
 }

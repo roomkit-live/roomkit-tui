@@ -10,6 +10,7 @@ mod tests;
 use std::ops::{Range, RangeInclusive};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
+use roomkit_tui_protocol::{ConversationId, Message, MessageId};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -38,12 +39,14 @@ pub(crate) struct TextSelection {
     extent: Extent,
     /// Pointer position while the button is held.
     pointer: Option<(u16, u16)>,
+    /// The conversation scrolled under the held pointer since the end moved.
+    scrolled: bool,
     dragged: bool,
 }
 
 enum Extent {
     Screen(screen::Extent),
-    /// Boxed: its anchors carry item identities, the screen's two points do not.
+    /// Boxed: its anchors carry their items, the screen's two points do not.
     Conversation(Box<conversation::Extent>),
 }
 
@@ -58,13 +61,20 @@ impl TextSelection {
             press: (column, row),
             extent,
             pointer: Some((column, row)),
+            scrolled: false,
             dragged: false,
         }
     }
 
-    /// Move the selection's end under the held pointer. A conversation
+    /// Move the selection's end under the held pointer, once the pointer
+    /// moved or the conversation scrolled under it: content that only
+    /// arrives never turns a click into a selection. A conversation
     /// selection reads the content through `frame`, the frame on screen.
     pub(crate) fn hold(&mut self, column: u16, row: u16, frame: &Frame, session: &Session) {
+        let scrolled = std::mem::take(&mut self.scrolled);
+        if self.pointer == Some((column, row)) && !scrolled {
+            return;
+        }
         self.pointer = Some((column, row));
         self.dragged |= match &mut self.extent {
             Extent::Screen(extent) => extent.extend(&self.frame, column, row),
@@ -76,6 +86,24 @@ impl TextSelection {
     pub(crate) fn follow(&mut self, frame: &Frame, session: &Session) {
         if let Some((column, row)) = self.pointer {
             self.hold(column, row, frame, session);
+        }
+    }
+
+    /// The conversation scrolled under the pointer: while the button is
+    /// held, the next frame moves the end to what the pointer then shows.
+    pub(crate) fn content_scrolled(&mut self) {
+        self.scrolled |= self.held();
+    }
+
+    /// A streamed draft became `message`; an end on the draft stays on its text.
+    pub(crate) fn finalized(
+        &mut self,
+        conversation: &ConversationId,
+        draft: &MessageId,
+        message: &Message,
+    ) {
+        if let Extent::Conversation(extent) = &mut self.extent {
+            extent.finalized(conversation, draft, message);
         }
     }
 
@@ -105,7 +133,7 @@ impl TextSelection {
         let area = frame.timeline.as_ref()?;
         let row = usize::from(row);
         if row < area.top {
-            Some(Edge::Above)
+            (!area.starts_history).then_some(Edge::Above)
         } else if row >= area.top + area.height {
             Some(Edge::Below)
         } else {
