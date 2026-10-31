@@ -38,15 +38,9 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
             action.prefix, action.description
         )
     });
-    let quit_hint = match &session.exit_warning {
-        Some(warning) => format!(" Press {} again to exit · {warning}", session.quit_key),
-        None => format!(" Press {} again to exit", session.quit_key),
-    };
-    let hints = if session
-        .quit_until
-        .is_some_and(|deadline| elapsed < deadline)
-    {
-        quit_hint.as_str()
+    let quit = quit_hint(session, elapsed).map(|hint| format!(" {hint}"));
+    let hints = if let Some(hint) = quit.as_deref() {
+        hint
     } else if session.picker.is_some() {
         " Type to filter · ↑↓ choose · Enter confirm · Esc cancel"
     } else if session.menu.visible {
@@ -89,6 +83,21 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
     } else {
         hints.to_string()
     }
+}
+
+/// The armed exit's confirmation, naming what the host says exiting stops.
+/// Ctrl+D arms the exit whichever screen has focus, so every screen shows it.
+pub(super) fn quit_hint(session: &Session, elapsed: Duration) -> Option<String> {
+    if !session
+        .quit_until
+        .is_some_and(|deadline| elapsed < deadline)
+    {
+        return None;
+    }
+    Some(match &session.exit_warning {
+        Some(warning) => format!("Press {} again to exit · {warning}", session.quit_key),
+        None => format!("Press {} again to exit", session.quit_key),
+    })
 }
 
 pub(super) fn settings(

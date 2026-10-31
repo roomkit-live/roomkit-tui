@@ -1,8 +1,11 @@
+use std::time::Duration;
+
+use super::footer::quit_hint;
 use super::text::{sanitize, wrap};
 use super::{ActionTarget, Frame, Line, Tone, frame, line};
 use crate::Session;
 
-pub(super) fn screen(session: &Session, cols: usize, rows: usize) -> Frame {
+pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Duration) -> Frame {
     let Some(panel) = &session.panel else {
         return frame(Vec::new(), cols, None);
     };
@@ -35,10 +38,9 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize) -> Frame {
     let (rows, targets, cursor) = actions(session, cols, slots, lines.len());
     lines.extend(rows);
     lines.push(line(format!(" {}", session.notice), Tone::Warning));
-    lines.push(line(
-        " ↑↓/Tab actions · Enter select · PgUp/PgDn output · Esc close",
-        Tone::Muted,
-    ));
+    let help = quit_hint(session, elapsed)
+        .unwrap_or_else(|| "↑↓/Tab actions · Enter select · PgUp/PgDn output · Esc close".into());
+    lines.push(line(format!(" {help}"), Tone::Muted));
     let mut result = frame(lines, cols, cursor);
     result.action_targets = targets;
     result.panel_scroll = Some((panel.spec.id.clone(), scroll));

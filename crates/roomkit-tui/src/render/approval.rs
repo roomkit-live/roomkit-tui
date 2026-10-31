@@ -2,6 +2,7 @@
 
 use roomkit_tui_protocol::{Decision, Permission, PermissionDecision};
 
+use super::footer::quit_hint;
 use super::text::{format_duration, pad, wrap, wrap_words};
 use super::timeline::timeline;
 use super::{Frame, Line, PermissionTarget, Tone, View, frame, line, span};
@@ -47,10 +48,13 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
         ""
     };
     let shown = (start + count).min(detail.len());
-    card.push(filled(&format!(
-        "PgUp/PgDn details {shown}/{} · Esc interrupt{more}",
-        detail.len()
-    )));
+    let help = quit_hint(session, view.elapsed).unwrap_or_else(|| {
+        format!(
+            "PgUp/PgDn details {shown}/{} · Esc interrupt{more}",
+            detail.len()
+        )
+    });
+    card.push(filled(&help));
     card.push(filled(""));
     let notice = usize::from(!session.notice.is_empty());
     if card.len() + notice > rows {

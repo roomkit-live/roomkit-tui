@@ -1,10 +1,13 @@
 //! A host form: its fields, the field being edited and the save controls.
 //! Secrets are masked and choices show their labels, never their values.
 
+use std::time::Duration;
+
 use roomkit_tui_protocol::FieldKind;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use super::footer::quit_hint;
 use super::text::{fit, sanitize, wrap};
 use super::{Frame, Line, Tone, frame, line};
 use crate::{FormState, Session};
@@ -12,7 +15,7 @@ use crate::{FormState, Session};
 /// Rows of the edited field's input area.
 const INPUT_ROWS: usize = 3;
 
-pub(super) fn screen(session: &Session, cols: usize, rows: usize) -> Frame {
+pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Duration) -> Frame {
     let Some(form) = &session.form else {
         return frame(Vec::new(), cols, None);
     };
@@ -36,7 +39,7 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize) -> Frame {
     let (input, (column, row)) = input(form, cols.saturating_sub(4));
     let cursor = Some(((column + 2) as u16, (lines.len() + row) as u16));
     lines.extend(input);
-    lines.extend(controls(session, &field.kind));
+    lines.extend(controls(session, &field.kind, elapsed));
     frame(lines.into_iter().take(rows).collect(), cols, cursor)
 }
 
@@ -104,20 +107,22 @@ fn input(form: &FormState, width: usize) -> (Vec<Line>, (usize, usize)) {
     (lines, (caret.0, caret.1 - offset))
 }
 
-fn controls(session: &Session, kind: &FieldKind) -> [Line; 3] {
+fn controls(session: &Session, kind: &FieldKind, elapsed: Duration) -> [Line; 3] {
     let editing = match kind {
         FieldKind::Choice { .. } => " ← / → choose a value",
         FieldKind::Multiline => " Alt+Enter newline · Ctrl+U clear field",
         _ => " Ctrl+U clear field",
     };
-    let saving = if session.form_pending() {
-        " Saving…"
-    } else {
-        " Ctrl+S save · Esc cancel · Enter next field"
-    };
+    let saving = quit_hint(session, elapsed).unwrap_or_else(|| {
+        if session.form_pending() {
+            "Saving…".into()
+        } else {
+            "Ctrl+S save · Esc cancel · Enter next field".into()
+        }
+    });
     [
         line(editing, Tone::Muted),
         line(format!(" {}", session.notice), Tone::Warning),
-        line(saving, Tone::Accent),
+        line(format!(" {saving}"), Tone::Accent),
     ]
 }
