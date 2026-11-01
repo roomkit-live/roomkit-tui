@@ -14,10 +14,10 @@ publish = false
 roomkit-tui-transport = { path = "crates/roomkit-tui-transport", version = "0.1.0" }
 roomkit-tui-engine = { path = "crates/roomkit-tui-engine", version = "0.1.0" }
 # One validated main commit for all engine crates; never depend on a sibling checkout.
-roomkit = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "dd6ab1b2186518d159b0f38c830a4307834bf199" }
-roomkit-ai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "dd6ab1b2186518d159b0f38c830a4307834bf199" }
-roomkit-openai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "dd6ab1b2186518d159b0f38c830a4307834bf199" }
-roomkit-sqlite = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "dd6ab1b2186518d159b0f38c830a4307834bf199" }
+roomkit = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "e5ced400061a8558f9b59dbadbf16f9cbac97ba3" }
+roomkit-ai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "e5ced400061a8558f9b59dbadbf16f9cbac97ba3" }
+roomkit-openai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "e5ced400061a8558f9b59dbadbf16f9cbac97ba3" }
+roomkit-sqlite = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "e5ced400061a8558f9b59dbadbf16f9cbac97ba3" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
@@ -25,7 +25,7 @@ roomkit-tui-protocol = { path = "crates/roomkit-tui-protocol", version = "0.1.0"
 roomkit-tui = { path = "crates/roomkit-tui", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-base64 = "0.22"
+base64 = "0.23"
 # Explicit native clipboard access and bounded PNG encoding belong only to the TUI.
 arboard = { version = "3.7", features = ["wayland-data-control"] }
 png = "0.18"
