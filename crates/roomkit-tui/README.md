@@ -156,7 +156,9 @@ never while a decision is on screen.
 Hosts must keep a request's identity and title within 256 bytes, its details
 within 64 KiB and its summary within 512 bytes (`Permission::fits`): the view
 refuses to show what it cannot show in full, and the request then expires.
-Bidirectional text controls are removed, so the text approved is the text read.
+A run identity has the same 256-byte bound: the view ignores a `RunStarted`
+with a longer one, and the permissions of that run with it. Bidirectional text
+controls are removed, so the text approved is the text read.
 
 Hosts may provide a concise `Permission.summary` alongside the exact details.
 Only a host-confirmed `Item::Approval` produces a history receipt. A reply,

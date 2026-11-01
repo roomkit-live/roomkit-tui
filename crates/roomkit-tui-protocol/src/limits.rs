@@ -16,7 +16,8 @@ pub const MAX_PERMISSION_SUMMARY_BYTES: usize = 512;
 pub const MAX_PENDING_PERMISSIONS: usize = 64;
 /// Maximum bytes of a short label (a title, caption, status or argument value)
 /// or of an identity a terminal tracks: a conversation, run or permission.
-/// Terminals ignore an event whose run or permission identity is longer.
+/// Terminals ignore a `RunStarted` or `PermissionRequested` whose identity is
+/// longer.
 pub const MAX_LABEL_BYTES: usize = 256;
 /// Maximum advertised commands or actors in one snapshot.
 pub const MAX_SNAPSHOT_ENTRIES: usize = 256;
