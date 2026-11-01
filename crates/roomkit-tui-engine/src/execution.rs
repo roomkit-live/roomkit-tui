@@ -29,6 +29,8 @@ impl fmt::Debug for CommandExecution {
 impl CommandExecution {
     /// Prepare work without starting it. Return an outcome only after cleanup.
     /// Errors must be safe to display, without credentials or raw service bodies.
+    /// `run` is at most `MAX_LABEL_BYTES`: terminals ignore a longer run, so the
+    /// adapter rejects the command and starts nothing.
     pub fn new<F, Fut>(run: RunId, task: F) -> Self
     where
         F: FnOnce(ExecutionContext) -> Fut + Send + 'static,
@@ -38,6 +40,11 @@ impl CommandExecution {
             run,
             task: Box::new(move |context| Box::pin(task(context))),
         }
+    }
+
+    /// The identity announced by `RunStarted` and accepted by `Interrupt`.
+    pub(crate) fn run(&self) -> &RunId {
+        &self.run
     }
 
     /// Start in a room this view reserved.

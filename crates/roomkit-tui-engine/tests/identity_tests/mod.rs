@@ -1,5 +1,6 @@
-//! Identities the engine derives from the agent and its triggers stay within
-//! the bound terminals apply to identities, however long the agent's id.
+//! Identities the engine sends stay within the bound terminals apply to
+//! identities: those it derives, however long the agent's id, and those the
+//! application supplies.
 
 use super::*;
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
@@ -118,6 +119,72 @@ async fn a_long_agent_id_still_gives_runs_and_permissions_a_terminal_accepts() {
             .any(|item| matches!(item, Item::Tool { run: tool, .. } if *tool == run)),
         "Restored history keeps the run's identity"
     );
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
+
+/// Starts host work under the run identity given as the command's argument.
+struct Executor;
+
+impl roomkit_tui_engine::CommandHandler for Executor {
+    async fn handle(
+        &self,
+        request: Request,
+        _: SessionConfig,
+    ) -> Result<roomkit_tui_engine::CommandResult, Rejection> {
+        let Command::Invoke { arguments, .. } = request.command else {
+            return Err("Unsupported".into());
+        };
+        let work = roomkit_tui_engine::CommandExecution::new(arguments.into(), |_| async {
+            Ok(RunOutcome::Completed)
+        });
+        Ok(roomkit_tui_engine::CommandResult::Execute(work))
+    }
+}
+
+/// RMK-1104: a host run identity over the bound started work the terminal
+/// could neither show nor interrupt.
+#[tokio::test]
+async fn host_work_under_a_run_id_a_terminal_ignores_is_rejected() {
+    let kit = RoomKit::new(Default::default());
+    let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
+    let mut view = config();
+    view.commands.push(CommandSpec::new("work", "Host work"));
+    let (client, host) = connection(NonZeroUsize::new(64).unwrap());
+    let session = LocalSession::new(kit.clone(), channel, view);
+    let task = tokio::spawn(session.run_with_commands(host, Executor));
+    assert!(matches!(next(&client).await, Event::Snapshot(_)));
+    let work = |id, run: String| {
+        let command = Command::Invoke {
+            name: "work".into(),
+            arguments: run,
+        };
+        Request::new(RequestId::new(id), format!("work-{id}"), "room", command)
+    };
+    client
+        .try_send(work(1, "r".repeat(MAX_LABEL_BYTES + 1)))
+        .unwrap();
+    let Event::Reply {
+        error: Some(rejection),
+        ..
+    } = next(&client).await
+    else {
+        panic!("Work under an oversized run id was started");
+    };
+    assert_eq!(rejection.code, ErrorCode::Invalid);
+    client
+        .try_send(work(2, "r".repeat(MAX_LABEL_BYTES)))
+        .unwrap();
+    assert!(matches!(
+        next(&client).await,
+        Event::Reply { error: None, .. }
+    ));
+    assert!(matches!(
+        next(&client).await,
+        Event::OperationStarted { .. }
+    ));
+    assert!(matches!(next(&client).await, Event::RunStarted { .. }));
     drop(client);
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();

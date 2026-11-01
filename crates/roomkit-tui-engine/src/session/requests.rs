@@ -11,6 +11,7 @@ use roomkit_tui_protocol::{Command, ErrorCode, Event, Rejection, Request, Snapsh
 
 use super::serve::{CatchUnwind, Pending, View, send};
 use super::{AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig};
+use crate::CommandExecution;
 use crate::activity::Active;
 
 /// What application code returned for a request.
@@ -212,19 +213,33 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 request.command = Command::Submit { agent, text };
                 self.submit(request)
             }
-            CommandResult::Execute(execution) => {
-                let room = self.session.config.conversation();
-                let Some(reserved) = self.session.channel.reserve(room) else {
-                    let error = Rejection::busy("Cannot start another execution while busy");
-                    return self.reply(&request, Some(error)).map(|()| None);
-                };
-                self.reply(&request, None)?;
-                let (channel, operation) = (self.session.channel.clone(), request.operation);
-                self.work = Some(execution.start(channel, room.into(), operation, reserved));
-                Ok(None)
-            }
+            CommandResult::Execute(execution) => self.execute(request, execution),
             CommandResult::Switch(config) => self.switch(request, *config),
         }
+    }
+
+    /// Start host work in a room this view reserves. A run identity longer
+    /// than terminals track would leave the view unable to show or stop it.
+    fn execute(
+        &mut self,
+        request: Request,
+        execution: CommandExecution,
+    ) -> Result<Option<Pending<'h>>, AdapterError> {
+        if execution.run().as_str().len() > MAX_LABEL_BYTES {
+            let error = Rejection::invalid(format!(
+                "The execution's run identity exceeds {MAX_LABEL_BYTES} bytes; nothing was started"
+            ));
+            return self.reply(&request, Some(error)).map(|()| None);
+        }
+        let room = self.session.config.conversation();
+        let Some(reserved) = self.session.channel.reserve(room) else {
+            let error = Rejection::busy("Cannot start another execution while busy");
+            return self.reply(&request, Some(error)).map(|()| None);
+        };
+        self.reply(&request, None)?;
+        let (channel, operation) = (self.session.channel.clone(), request.operation);
+        self.work = Some(execution.start(channel, room.into(), operation, reserved));
+        Ok(None)
     }
 
     fn switch(
