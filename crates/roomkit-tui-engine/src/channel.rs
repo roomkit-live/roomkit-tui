@@ -70,9 +70,10 @@ impl ConversationChannel {
     /// agent. The host awaits this before executing the concrete action.
     /// Streaming delivery must be enabled. Missing views, oversized details,
     /// cancellation, timeout and disconnect all refuse the action. A request
-    /// too large to show in full, or beyond the pending limit, is refused with
-    /// a notice to the views. This does not grant filesystem, shell or engine
-    /// permissions by itself.
+    /// too large to show in full, beyond the pending limit, or made while
+    /// approval history cannot be stored, is refused with a notice to the
+    /// views, once per run and reason. This does not grant filesystem, shell
+    /// or engine permissions by itself.
     pub async fn ask_permission(
         &self,
         room: &RoomId,

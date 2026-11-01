@@ -44,6 +44,8 @@ impl Channel for ConversationChannel {
             conversation,
             run: run.clone(),
         };
+        // Announce the run before the broker records it: a refusal is told
+        // once the run exists, and a terminal clears its notice on RunStarted.
         self.publish(&room, started);
         let requester = trigger.and_then(|row| self.requester(row));
         let agent = stream.responder().as_str().to_owned();
