@@ -128,7 +128,8 @@ impl ModeState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InputAction {
-    /// One punctuation character, distinct from the terminal command prefix.
+    /// One character that is neither alphanumeric, whitespace, a control nor
+    /// the `\` escape, distinct from the terminal command prefix.
     pub prefix: char,
     /// Advertised command receiving the remaining text verbatim.
     pub command: String,

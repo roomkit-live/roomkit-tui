@@ -55,6 +55,10 @@ fn long(bytes: usize) -> String {
 #[test]
 fn a_snapshot_using_every_checked_part_is_accepted() {
     assert_eq!(snapshot().validate(), Ok(()));
+}
+
+#[test]
+fn a_refusal_reads_as_the_notice_a_terminal_shows() {
     assert_eq!(
         Commands.to_string(),
         "Host snapshot has invalid or duplicate commands"
@@ -70,9 +74,8 @@ fn a_snapshot_beyond_the_view_bounds_or_without_its_agent_is_refused() {
         ),
         (
             |s| {
-                s.actors = (0..=MAX_SNAPSHOT_ENTRIES)
-                    .map(|n| Actor::new(format!("a{n}"), "Actor"))
-                    .collect();
+                let more = (0..MAX_SNAPSHOT_ENTRIES).map(|n| Actor::new(format!("a{n}"), "A"));
+                s.actors.extend(more);
             },
             Bounds,
         ),
@@ -85,9 +88,10 @@ fn a_snapshot_beyond_the_view_bounds_or_without_its_agent_is_refused() {
 
 #[test]
 fn an_invalid_command_or_mode_is_refused() {
-    let invalid: [fn(&mut CommandSpec); 6] = [
+    let invalid: [fn(&mut CommandSpec); 7] = [
         |c| c.name = "bad name".into(),
         |c| c.name = String::new(),
+        |c| c.name = long(MAX_LABEL_BYTES + 1),
         |c| c.description = long(MAX_COMMAND_DESCRIPTION_BYTES + 1),
         |c| c.arguments = long(MAX_LABEL_BYTES + 1),
         |c| c.choices = vec![String::new(); MAX_CHOICES + 1],
@@ -129,7 +133,10 @@ fn a_composer_action_must_be_a_distinct_symbol_for_an_advertised_command() {
         ),
         (
             |s| {
-                let more = "#$%&*+-=?".chars().take(MAX_INPUT_ACTIONS);
+                // Arrows: distinct symbols, none of them already advertised.
+                let more = (0x2190..)
+                    .filter_map(char::from_u32)
+                    .take(MAX_INPUT_ACTIONS);
                 let more = more.map(|prefix| InputAction::new(prefix, "shell", "More"));
                 s.input_actions.extend(more);
             },
