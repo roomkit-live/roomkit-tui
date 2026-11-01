@@ -204,14 +204,7 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         match result {
             CommandResult::Events(events) => {
                 self.reply(&request, None)?;
-                for event in &events {
-                    if let Event::ModeChanged { conversation, mode } = event
-                        && conversation.as_str() == self.session.config.conversation()
-                    {
-                        self.session.config.mode = Some(mode.clone());
-                    }
-                }
-                self.send_all(events)?;
+                self.publish(events)?;
                 Ok(None)
             }
             CommandResult::Submit(text) => {

@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use roomkit::model::{ChannelId, EventContent, RoomId};
 use roomkit::{ConversationStore, RoomKit};
+use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 use roomkit_tui_protocol::{
     ActorId, CommandSpec, Event, InputAction, ModeState, ModelInfo, Rejection, Request, Snapshot,
 };
@@ -79,6 +80,26 @@ impl SessionConfig {
     fn advertises(&self, command: &str) -> bool {
         self.commands.iter().any(|spec| spec.name == command)
     }
+
+    /// Keep the mode or title a host event confirms for this view, so that
+    /// later snapshots and handlers see it. A title the terminal would ignore
+    /// is not kept either.
+    fn record(&mut self, event: &Event) {
+        match event {
+            Event::ModeChanged { conversation, mode }
+                if conversation.as_str() == self.conversation() =>
+            {
+                self.mode = Some(mode.clone());
+            }
+            Event::TitleChanged {
+                conversation,
+                title,
+            } if conversation.as_str() == self.conversation() && title.len() <= MAX_LABEL_BYTES => {
+                self.title.clone_from(title);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Result of an application command handled while the engine is idle.
@@ -86,6 +107,7 @@ impl SessionConfig {
 #[non_exhaustive]
 pub enum CommandResult {
     /// Publish application-owned selectors or notices after acknowledging the request.
+    /// A mode or title change for this view also updates its configuration.
     Events(Vec<Event>),
     /// Submit host-prepared text to the current agent through the normal engine
     /// path, preserving validation, operation identity and cancellation.
@@ -122,6 +144,8 @@ pub trait CommandHandler: Send + Sync {
     /// Subscribe to coalesced application state for this attachment. The host
     /// owns scoping and must stop observation when the receiver is dropped.
     /// Values describe current state, not durable/transient model events.
+    /// A mode or title change for this view also updates its configuration,
+    /// so later snapshots and handlers see it.
     fn subscribe(
         &self,
         _session: SessionConfig,
@@ -130,7 +154,8 @@ pub trait CommandHandler: Send + Sync {
     }
 
     /// Allow this particular advertised control command during execution.
-    /// Session switching is still refused while busy. Defaults to false.
+    /// Session switching is still refused while busy; rename the view with
+    /// [`Event::TitleChanged`] instead. Defaults to false.
     fn allow_while_busy(&self, _name: &str) -> bool {
         false
     }

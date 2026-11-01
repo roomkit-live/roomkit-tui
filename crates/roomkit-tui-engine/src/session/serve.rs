@@ -80,7 +80,7 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
                 }
             }
             update = application_update(&mut view.updates) => match update {
-                Some(events) => view.send_all(events)?,
+                Some(events) => view.publish(events)?,
                 None => view.updates = None,
             },
             step = poll_pending(&mut pending) => {
@@ -118,7 +118,7 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         self.updates = self.handler.subscribe(self.session.config.clone());
         if let Some(receiver) = &mut self.updates {
             let events = receiver.borrow_and_update().clone();
-            self.send_all(events)?;
+            self.publish(events)?;
         }
         if let Some(text) = self.session.config.submission_error.clone() {
             let conversation = self.session.config.conversation().into();
@@ -164,6 +164,15 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
 
     pub fn send_all(&self, events: Vec<Event>) -> Result<(), AdapterError> {
         events.into_iter().try_for_each(|event| self.send(event))
+    }
+
+    /// Send events the host published, keeping this view's configuration in
+    /// step with the mode and title they confirm.
+    pub fn publish(&mut self, events: Vec<Event>) -> Result<(), AdapterError> {
+        for event in &events {
+            self.session.config.record(event);
+        }
+        self.send_all(events)
     }
 
     pub fn reply(&self, request: &Request, error: Option<Rejection>) -> Result<(), AdapterError> {
