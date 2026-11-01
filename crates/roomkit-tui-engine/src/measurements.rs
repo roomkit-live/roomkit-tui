@@ -1,5 +1,5 @@
 use roomkit::model::RoomEvent;
-use roomkit_tui_protocol::{ContextUsage, Event, RunId, TokenUsage};
+use roomkit_tui_protocol::{ContextUsage, Event, TokenUsage};
 use serde_json::Value;
 
 use crate::SessionConfig;
@@ -47,11 +47,7 @@ pub(crate) fn event(row: &RoomEvent) -> Option<Event> {
         });
     Some(Event::UsageUpdated {
         conversation: row.room_id.as_str().into(),
-        run: RunId::new(format!(
-            "{}:{}",
-            row.source.channel_id,
-            row.responds_to.as_ref()?
-        )),
+        run: crate::projection::run_id(&row.source.channel_id, row.responds_to.as_ref()?),
         provider,
         model,
         context,

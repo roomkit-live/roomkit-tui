@@ -2,10 +2,6 @@
 
 use std::time::Duration;
 
-use roomkit_tui_protocol::limits::{
-    MAX_PERMISSION_DETAIL_BYTES, MAX_PERMISSION_SUMMARY_BYTES, MAX_PERMISSION_TITLE_BYTES,
-};
-
 /// A human decision the host needs before an action. The person sees every
 /// field in full: oversized requests are refused, never shown truncated.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,15 +42,4 @@ pub(crate) struct Details {
     pub detail: String,
     pub summary: Option<String>,
     pub tool_call_id: Option<String>,
-}
-
-impl Details {
-    pub(super) fn fits(&self) -> bool {
-        self.title.len() <= MAX_PERMISSION_TITLE_BYTES
-            && self.detail.len() <= MAX_PERMISSION_DETAIL_BYTES
-            && self
-                .summary
-                .as_ref()
-                .is_none_or(|s| s.len() <= MAX_PERMISSION_SUMMARY_BYTES)
-    }
 }

@@ -28,6 +28,9 @@ The application:
 checks read access, hides blocked/internal rows and preserves durable identities.
 Tool items carry the identity of their run (`agent:trigger`, as announced by
 `RunStarted`), which also keeps provider call IDs of different turns apart.
+A run identity too long for a terminal, with the permissions derived from it,
+keeps a readable prefix and a stable digest of the whole, so restored history
+still matches it.
 Tool data is forwarded only from authoritative structured content.
 Optional public tool intentions are copied from the engine into `ToolCall.intent`,
 including live updates and restored history. The host enables their generation

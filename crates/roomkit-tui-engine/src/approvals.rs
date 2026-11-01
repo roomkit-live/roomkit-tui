@@ -110,7 +110,7 @@ impl Approvals {
         details: Details,
         timeout: Duration,
     ) -> Decision {
-        if !details.fits() || timeout.is_zero() {
+        if timeout.is_zero() {
             return Decision::Deny;
         }
         let scope = (room.to_owned(), agent.to_owned());
@@ -157,7 +157,7 @@ impl Approvals {
             return Registration::Refused;
         };
         state.sequence = sequence;
-        let id = PermissionId::new(format!("{}:approval:{sequence}", run.id));
+        let id = crate::projection::permission_id(&run.id, sequence);
         let mut permission = Permission::new(
             id.clone(),
             agent.as_str(),
@@ -166,6 +166,9 @@ impl Approvals {
             details.detail.clone(),
         );
         permission.summary.clone_from(&details.summary);
+        if !permission.fits() {
+            return Registration::Refused;
+        }
         let (answer, receiver) = oneshot::channel();
         let pending = Pending {
             scope: scope.clone(),

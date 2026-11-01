@@ -28,6 +28,7 @@ use std::{
 mod approval_tests;
 mod command_tests;
 mod delivery_tests;
+mod identity_tests;
 mod lifecycle_tests;
 mod progress_tests;
 mod request_tests;
@@ -48,6 +49,17 @@ async fn prepare<S: ConversationStore>(
     calls: Arc<AtomicUsize>,
     buffered: bool,
 ) -> ConversationChannel {
+    prepare_as(kit, &config().agent, provider, calls, buffered).await
+}
+
+/// `prepare`, with `agent` as the agent's channel identity.
+async fn prepare_as<S: ConversationStore>(
+    kit: &RoomKit<S>,
+    agent: &ChannelId,
+    provider: impl roomkit_ai::AiProvider,
+    calls: Arc<AtomicUsize>,
+    buffered: bool,
+) -> ConversationChannel {
     let tools = Tools::new().tool(
         ToolDefinition::new(
             "lookup_record",
@@ -64,7 +76,7 @@ async fn prepare<S: ConversationStore>(
         },
     );
     kit.register_channel(
-        AiAgent::new(ChannelId::new("agent").unwrap(), provider)
+        AiAgent::new(agent.clone(), provider)
             .with_tool_call_intents(true)
             .with_tools(tools)
             .unwrap(),
@@ -83,7 +95,7 @@ async fn prepare<S: ConversationStore>(
     })
     .await
     .unwrap();
-    for id in [channel.id(), &config().agent] {
+    for id in [channel.id(), agent] {
         kit.attach_channel(&room, id, Default::default())
             .await
             .unwrap();

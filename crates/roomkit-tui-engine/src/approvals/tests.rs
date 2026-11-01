@@ -193,3 +193,24 @@ async fn only_the_requester_answers_a_run_they_started() {
         .unwrap();
     assert_eq!(answer.await.unwrap(), Decision::Allow);
 }
+
+/// RMK-1079: the broker kept its own copy of the terminal's rule, without
+/// the identity bound, so a request a terminal hides waited for its timeout.
+#[tokio::test]
+async fn a_request_a_terminal_cannot_show_in_full_is_denied_at_once() {
+    let (events, mut receive) = broadcast::channel(32);
+    let broker = Approvals::new(events);
+    let _view = broker.attach("room", "agent");
+    let oversized = Details {
+        detail: "x".repeat(roomkit_tui_protocol::limits::MAX_PERMISSION_DETAIL_BYTES + 1),
+        ..details()
+    };
+    let long_run = RunId::new("r".repeat(roomkit_tui_protocol::limits::MAX_LABEL_BYTES));
+    for (run, details) in [("run".into(), oversized), (long_run, details())] {
+        let _run = broker.start("room", "agent", run, None);
+        let decision = broker.ask("room", "agent", details, Duration::from_secs(60));
+        let decision = tokio::time::timeout(Duration::from_secs(1), decision).await;
+        assert_eq!(decision.ok(), Some(Decision::Deny));
+    }
+    assert!(receive.try_recv().is_err(), "Nothing was shown to the view");
+}

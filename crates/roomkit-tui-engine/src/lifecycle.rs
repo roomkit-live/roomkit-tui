@@ -80,8 +80,8 @@ pub(crate) async fn prepare(
     channel: &crate::ConversationChannel,
     controls: &mut crate::cancellation::Receiver,
 ) -> Option<roomkit_tui_protocol::RunOutcome> {
-    use roomkit_tui_protocol::{Event, RunId, RunOutcome};
-    let run = RunId::new(format!("prepare:{operation}"));
+    use roomkit_tui_protocol::{Event, RunOutcome};
+    let run = crate::projection::bounded_run_id(format!("prepare:{operation}"));
     let mut announced = false;
     let result = {
         let future = async {
