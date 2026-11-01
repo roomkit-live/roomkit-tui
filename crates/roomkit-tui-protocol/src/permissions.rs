@@ -65,9 +65,10 @@ impl Permission {
         self
     }
 
-    /// Whether a terminal can show this request in full. A person must be
-    /// able to read everything they approve, so a terminal refuses a larger
-    /// request instead of showing it truncated.
+    /// Whether a terminal can show this request in full, its identity within
+    /// [`MAX_LABEL_BYTES`] included. A person must be able to read everything
+    /// they approve, so a terminal refuses a larger request instead of showing
+    /// it truncated.
     pub fn fits(&self) -> bool {
         self.id.as_str().len() <= MAX_LABEL_BYTES
             && self.title.len() <= MAX_PERMISSION_TITLE_BYTES

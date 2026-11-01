@@ -153,10 +153,10 @@ granting permission. The draft and attachments are preserved; approval keys
 never submit them. Shift+Tab changes the host's mode only from the composer,
 never while a decision is on screen.
 
-Hosts must keep a request's title within 256 bytes, its details within 64 KiB
-and its summary within 512 bytes: the view refuses to show what it cannot show
-in full, and the request then expires. Bidirectional text controls are removed,
-so the text approved is the text read.
+Hosts must keep a request's identity and title within 256 bytes, its details
+within 64 KiB and its summary within 512 bytes (`Permission::fits`): the view
+refuses to show what it cannot show in full, and the request then expires.
+Bidirectional text controls are removed, so the text approved is the text read.
 
 Hosts may provide a concise `Permission.summary` alongside the exact details.
 Only a host-confirmed `Item::Approval` produces a history receipt. A reply,

@@ -128,6 +128,17 @@ fn an_invalid_command_or_mode_is_refused_at_its_position() {
                 index: MAX_SNAPSHOT_ENTRIES,
             },
         ),
+        (
+            |s| {
+                // The cap is checked before any entry: no other is reported.
+                s.commands[1].name = "bad name".into();
+                let more = (0..MAX_SNAPSHOT_ENTRIES).map(|n| CommandSpec::new(format!("c{n}"), ""));
+                s.commands.extend(more);
+            },
+            Refused::Command {
+                index: MAX_SNAPSHOT_ENTRIES,
+            },
+        ),
         (|s| s.commands.retain(|c| c.name != "mode"), Refused::Modes),
     ]);
 }
