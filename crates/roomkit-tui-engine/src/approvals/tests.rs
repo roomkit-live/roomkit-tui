@@ -194,8 +194,17 @@ async fn only_the_requester_answers_a_run_they_started() {
     assert_eq!(answer.await.unwrap(), Decision::Allow);
 }
 
+/// The next event, which must be a notice published within a second.
+async fn notice(events: &mut broadcast::Receiver<(String, Event)>) -> String {
+    match tokio::time::timeout(Duration::from_secs(1), events.recv()).await {
+        Ok(Ok((_, Event::Notice { text, .. }))) => text,
+        other => unreachable!("Expected a notice, got {other:?}"),
+    }
+}
+
 /// RMK-1079: the broker kept its own copy of the terminal's rule, without
 /// the identity bound, so a request a terminal hides waited for its timeout.
+/// RMK-1104: the person was not told, and saw a denial they did not make.
 #[tokio::test]
 async fn a_request_a_terminal_cannot_show_in_full_is_denied_at_once() {
     let (events, mut receive) = broadcast::channel(32);
@@ -211,6 +220,32 @@ async fn a_request_a_terminal_cannot_show_in_full_is_denied_at_once() {
         let decision = broker.ask("room", "agent", details, Duration::from_secs(60));
         let decision = tokio::time::timeout(Duration::from_secs(1), decision).await;
         assert_eq!(decision.ok(), Some(Decision::Deny));
+        assert_eq!(
+            notice(&mut receive).await,
+            "An approval was too large to show in full; it was refused."
+        );
     }
-    assert!(receive.try_recv().is_err(), "Nothing was shown to the view");
+    assert!(receive.try_recv().is_err(), "No request was shown");
+}
+
+/// RMK-1104: a request beyond the pending cap was refused without a word.
+#[tokio::test]
+async fn a_request_beyond_the_pending_cap_is_refused_and_the_person_told() {
+    let (events, mut receive) = broadcast::channel(MAX_PENDING_PERMISSIONS + 8);
+    let broker = Approvals::new(events);
+    let _view = broker.attach("room", "agent");
+    let _run = broker.start("room", "agent", "run".into(), None);
+    let _waiting: Vec<_> = (0..MAX_PENDING_PERMISSIONS)
+        .map(|_| asking(&broker, Duration::from_secs(60)))
+        .collect();
+    for _ in 0..MAX_PENDING_PERMISSIONS {
+        requested(&mut receive).await;
+    }
+    let decision = broker.ask("room", "agent", details(), Duration::from_secs(60));
+    let decision = tokio::time::timeout(Duration::from_secs(1), decision).await;
+    assert_eq!(decision.ok(), Some(Decision::Deny));
+    assert_eq!(
+        notice(&mut receive).await,
+        "Too many approvals are waiting; a new one was refused."
+    );
 }

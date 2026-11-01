@@ -137,18 +137,8 @@ impl Approvals {
     fn register(&self, scope: &Scope, details: &Details) -> Registration {
         let mut state = self.lock();
         let (room, agent) = scope;
-        if !state.views.contains_key(scope) || state.pending.len() >= MAX_PENDING_PERMISSIONS {
-            return Registration::Refused;
-        }
-        if state
-            .receipts
-            .get(room)
-            .is_some_and(|r| r.len() >= MAX_UNSTORED_RECEIPTS)
-        {
-            drop(state);
-            let text = "Approval history cannot be stored; new approvals are refused until it is.";
-            self.publish(room, notice(room, text));
-            return Registration::Refused;
+        if let Some(refused) = self.refusal(&state, scope) {
+            return refused;
         }
         let Some(run) = state.runs.get(scope).cloned() else {
             return Registration::NoRun;
@@ -158,7 +148,8 @@ impl Approvals {
         };
         state.sequence = sequence;
         let Some(permission) = details.permission(&run.id, agent, sequence) else {
-            return Registration::Refused;
+            let text = "An approval was too large to show in full; it was refused.";
+            return self.refuse(room, text);
         };
         let id = permission.id.clone();
         let (answer, receiver) = oneshot::channel();
@@ -183,6 +174,34 @@ impl Approvals {
             id,
         };
         Registration::Waiting(guard, receiver)
+    }
+
+    /// Why no request can wait in `scope` now. Without a view nobody can
+    /// answer; otherwise the person is told.
+    fn refusal(&self, state: &State, scope: &Scope) -> Option<Registration> {
+        if !state.views.contains_key(scope) {
+            return Some(Registration::Refused);
+        }
+        let room = &scope.0;
+        let text = if state.pending.len() >= MAX_PENDING_PERMISSIONS {
+            "Too many approvals are waiting; a new one was refused."
+        } else if state
+            .receipts
+            .get(room)
+            .is_some_and(|r| r.len() >= MAX_UNSTORED_RECEIPTS)
+        {
+            "Approval history cannot be stored; new approvals are refused until it is."
+        } else {
+            return None;
+        };
+        Some(self.refuse(room, text))
+    }
+
+    /// Refuse a request the person will never see, and tell them why: the
+    /// action reports a denial they did not make.
+    fn refuse(&self, room: &str, text: &str) -> Registration {
+        self.publish(room, notice(room, text));
+        Registration::Refused
     }
 
     /// Answer one pending request. The decision is recorded only once the
