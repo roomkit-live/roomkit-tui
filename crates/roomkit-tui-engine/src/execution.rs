@@ -37,8 +37,9 @@ impl CommandExecution {
     /// Errors must be safe to display, without credentials or raw service bodies.
     /// `run` is at most 226 bytes, so the approvals derived from it fit a
     /// terminal's identity bound: the adapter rejects a longer one and starts
-    /// nothing. A `run` that repeats the last run of the room is rejected
-    /// too, as a terminal ignores it: give each execution a new one.
+    /// nothing. A `run` that repeats the last run of the room, while a view
+    /// watches it, is rejected too, as a terminal ignores it: give each
+    /// execution a new one.
     pub fn new<F, Fut>(run: RunId, task: F) -> Self
     where
         F: FnOnce(ExecutionContext) -> Fut + Send + 'static,
@@ -248,8 +249,9 @@ impl ExecutionContext {
     /// a concrete action. The request belongs to this run whatever else runs
     /// in the room meanwhile, and only that person may answer. It is refused
     /// without an attached view, once the work has ended or been interrupted,
-    /// and at its timeout; a request too large to show in full, or beyond the
-    /// pending limit, is refused with a notice to the views.
+    /// and at its timeout. A request too large to show in full, beyond the
+    /// pending limit, or made while approval history cannot be stored, is
+    /// refused with a notice to the views.
     pub async fn ask_permission(&self, request: PermissionRequest) -> Decision {
         let (room, token) = (self.conversation.as_str(), Some(self.token));
         self.channel

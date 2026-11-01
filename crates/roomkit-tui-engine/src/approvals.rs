@@ -32,8 +32,9 @@ struct State {
     started: u64,
     pending: BTreeMap<PermissionId, Pending>,
     sequence: u64,
-    /// The last run announced in each room a view watches: a terminal
-    /// ignores a run that repeats it. A view attaching later starts afresh.
+    /// The last run announced in each room a view watches, and in the room
+    /// announced last: a terminal ignores a run that repeats it. A view
+    /// attaching to a room nobody watched starts afresh.
     last_runs: BTreeMap<String, RunId>,
     receipts: BTreeMap<String, Vec<Receipt>>,
 }
@@ -228,15 +229,19 @@ impl Approvals {
         );
     }
 
-    /// Note the run just announced in `room`, while a view watches it.
+    /// Note the run just announced in `room`. A view about to attach may
+    /// already receive it, so it is kept even before one does; other rooms
+    /// no view watches are forgotten, which keeps one entry per watched room.
     pub(crate) fn announced(&self, room: &str, run: &RunId) {
         let mut state = self.lock();
-        if state.views.keys().any(|(watched, _)| watched == room) {
-            state.last_runs.insert(room.to_owned(), run.clone());
-        }
+        let watched: BTreeSet<String> = state.views.keys().map(|(r, _)| r.clone()).collect();
+        state
+            .last_runs
+            .retain(|kept, _| kept == room || watched.contains(kept));
+        state.last_runs.insert(room.to_owned(), run.clone());
     }
 
-    /// The last run announced in `room` while a view watched it.
+    /// The last run announced in `room`, while a view watches it.
     pub(crate) fn last_run(&self, room: &str) -> Option<RunId> {
         self.lock().last_runs.get(room).cloned()
     }

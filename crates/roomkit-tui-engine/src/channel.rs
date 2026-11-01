@@ -146,7 +146,7 @@ impl ConversationChannel {
         let _ = self.events.send((room.into(), event));
     }
 
-    /// The last run announced in `room` while a view watched it.
+    /// The last run announced in `room`, while a view watches it.
     pub(crate) fn last_run(&self, room: &str) -> Option<RunId> {
         self.approvals.last_run(room)
     }

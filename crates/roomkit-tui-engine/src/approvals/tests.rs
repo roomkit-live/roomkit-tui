@@ -431,16 +431,31 @@ async fn a_request_naming_an_ended_run_is_refused_even_if_its_identity_returns()
 }
 
 /// RMK-1110 review: the last run of every room was kept for the life of the
-/// channel. It is kept only while a view watches the room.
+/// channel. It is kept while a view of the room exists, for any agent, and
+/// for the room announced last, as a view may be about to attach there.
 #[test]
 fn the_last_run_of_a_room_is_kept_while_a_view_watches_it() {
     let (events, _receive) = broadcast::channel(4);
     let broker = Approvals::new(events);
-    broker.announced("room", &"unwatched".into());
-    assert_eq!(broker.last_run("room"), None, "Nobody watches the room");
-    let view = broker.attach("room", "agent");
+    broker.announced("room", &"early".into());
+    assert_eq!(
+        broker.last_run("room"),
+        Some("early".into()),
+        "A view may attach"
+    );
+    broker.announced("other", &"elsewhere".into());
+    assert_eq!(broker.last_run("room"), None, "Nobody watched the room");
+
+    let first = broker.attach("room", "agent");
+    let second = broker.attach("room", "helper");
     broker.announced("room", &"build".into());
-    assert_eq!(broker.last_run("room"), Some("build".into()));
-    drop(view);
+    broker.announced("other", &"elsewhere-2".into());
+    drop(first);
+    assert_eq!(
+        broker.last_run("room"),
+        Some("build".into()),
+        "Another agent's view"
+    );
+    drop(second);
     assert_eq!(broker.last_run("room"), None, "The last view detached");
 }

@@ -21,8 +21,8 @@ Initial public release.
   the room, is denied once the work is interrupted, and its decision is stored
   when the work settles.
 - A `CommandExecution` is rejected, and nothing starts, when its run identity
-  is longer than 226 bytes or repeats the last run of the room: a terminal
-  could not follow it.
+  is longer than 226 bytes or repeats the last run of a room a view watches: a
+  terminal could not follow it.
 - `Snapshot::validate` (with `SnapshotError`, which names the refused
   command, composer action or permission by position), `ModeState::fits`,
   `Permission::fits` and their limits in `limits` let hosts check what they

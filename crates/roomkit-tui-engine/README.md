@@ -80,8 +80,8 @@ long-running work. The callback starts only after acceptance and receives an
 `ExecutionContext` for item updates and cooperative cancellation. Its run
 identity is at most 226 bytes, so the approvals derived from it fit a
 terminal's identity bound: a longer one is rejected and nothing starts. A run
-identity that repeats the last run of the room is rejected too: a terminal
-ignores it.
+identity that repeats the last run of the room, while a view watches it, is
+rejected too: a terminal ignores it.
 Return the outcome after cleanup and durable writes. The adapter publishes run
 activity and completion, rejects concurrent submissions, and keeps opted-in
 controls available.
