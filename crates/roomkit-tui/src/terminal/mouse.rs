@@ -12,7 +12,7 @@ use roomkit_tui_protocol::Command;
 
 use super::{View, send};
 use crate::Session;
-use crate::render::{self, Frame};
+use crate::render::{self, Frame, PermissionTarget, ToolTarget};
 use crate::selection::{Edge, TextSelection, clipboard_sequence};
 use crate::session::Focus;
 
@@ -141,22 +141,7 @@ impl View {
     fn release(&mut self, selected: &TextSelection) -> io::Result<()> {
         let now = self.now();
         if let Some(target) = selected.permission_click() {
-            let current = self
-                .session
-                .permissions()
-                .first()
-                .is_some_and(|p| p.id == target.permission);
-            if self.session.is_current(&target.conversation)
-                && current
-                && !self.session.deciding(&target.permission)
-                && self.session.approval_armed(now)
-            {
-                let command = Command::Decide {
-                    permission: target.permission.clone(),
-                    decision: target.decision,
-                };
-                send(&mut self.session, &self.client, command, false);
-            }
+            self.answer(target, now);
             return Ok(());
         }
         if let Some(target) = selected.action_click() {
@@ -172,17 +157,43 @@ impl View {
             return Ok(());
         }
         if let Some(target) = selected.tool_click() {
-            if self.session.is_current(&target.conversation) {
-                if self.terminal.options.tool_activity {
-                    self.session.toggle_activity_target(target);
-                } else {
-                    self.session
-                        .toggle_tool_details(&target.actor, &target.run, &target.call);
-                }
-            }
+            self.toggle_tool(target);
             return Ok(());
         }
         self.copy(selected, now)
+    }
+
+    /// Send a clicked answer, only to the current card once it is armed.
+    fn answer(&mut self, target: &PermissionTarget, now: Duration) {
+        let current = self
+            .session
+            .permissions()
+            .first()
+            .is_some_and(|p| p.id == target.permission);
+        if self.session.is_current(&target.conversation)
+            && current
+            && !self.session.deciding(&target.permission)
+            && self.session.approval_armed(now)
+        {
+            let command = Command::Decide {
+                permission: target.permission.clone(),
+                decision: target.decision,
+            };
+            send(&mut self.session, &self.client, command, false);
+        }
+    }
+
+    /// Expand or collapse the clicked tool of the current conversation.
+    fn toggle_tool(&mut self, target: &ToolTarget) {
+        if !self.session.is_current(&target.conversation) {
+            return;
+        }
+        if self.terminal.options.tool_activity {
+            self.session.toggle_activity_target(target);
+        } else {
+            self.session
+                .toggle_tool_details(&target.actor, &target.run, &target.call);
+        }
     }
 
     /// Ask the terminal to put the selected text on the clipboard. Lines

@@ -6,8 +6,8 @@ use super::chrome;
 use super::text::{fit, input_gutter, pad, sanitize, wrap};
 use super::timeline::{Timeline, timeline};
 use super::{
-    Frame, Line, TimelineRows, Tone, ToolTarget, View, approval, footer, form, frame, line, menus,
-    panel, span, welcome,
+    ActionTarget, BackToBottomTarget, Frame, Line, TimelineRows, Tone, ToolTarget, View, approval,
+    footer, form, frame, line, menus, panel, span, welcome,
 };
 use crate::session::Focus;
 
@@ -131,17 +131,8 @@ fn assemble(
     };
     let (start, end) = visible_range(view, &history, space);
     let bottom_start = rows.saturating_sub(parts.bottom.len());
-    let mut result_targets = (None, Vec::new());
-    if let Some(row) = parts.activity_row {
-        let more_below = end < history.lines.len();
-        result_targets = chrome::controls(
-            view,
-            &mut parts.bottom[row],
-            cols,
-            bottom_start + row,
-            more_below,
-        );
-    }
+    let more_below = end < history.lines.len();
+    let result_targets = activity_controls(view, &mut parts, (cols, bottom_start), more_below);
     let offset = parts.header.len();
     let conversation = conversation_rows(view, &history, (start, end), (offset, space), cols);
     let targets = shown_targets(history.targets, (start, end), offset);
@@ -165,6 +156,26 @@ fn assemble(
     result.scroll = (!session.has_tool_focus()).then_some(unseen_below);
     result.timeline = parts.activity_row.and(conversation);
     result
+}
+
+/// Place the activity row's controls, whose row in `parts.bottom` starts at
+/// screen row `bottom_start`; `more_below` offers the way back to the latest.
+fn activity_controls(
+    view: &View<'_>,
+    parts: &mut Parts,
+    (cols, bottom_start): (usize, usize),
+    more_below: bool,
+) -> (Option<BackToBottomTarget>, Vec<ActionTarget>) {
+    let Some(row) = parts.activity_row else {
+        return (None, Vec::new());
+    };
+    chrome::controls(
+        view,
+        &mut parts.bottom[row],
+        cols,
+        bottom_start + row,
+        more_below,
+    )
 }
 
 /// The tool targets on the history lines from `start` to `end`, moved to
