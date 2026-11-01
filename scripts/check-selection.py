@@ -19,6 +19,7 @@ LAST = f"Line {LINES} of a long pasted message."
 HISTORY_START = "This example uses a scripted host"
 # The demo streams this reply as a draft, then stores it under another id.
 REPLY = "Order 42 is ready"
+REPLY_END = "slash command."
 COPY = re.compile(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07")
 PRESS, DRAG, WHEEL_UP, WHEEL_DOWN = 0, 32, 64, 65
 
@@ -71,8 +72,8 @@ with terminal:
     column = terminal.screen.lines()[row - 1].index(REPLY) + 1
     terminal.mouse(PRESS, column, row)
     terminal.mouse(DRAG, COLS - 1, row)
+    require(not terminal.screen.ever(REPLY_END), "The reply was stored before the selection began")
     terminal.wait_for("Execution Completed")
-    require(terminal.screen.ever(REPLY) and terminal.process.poll() is None, "The reply never streamed")
     offset = len(terminal.output)
     terminal.mouse(PRESS, COLS - 1, row, release=True)
     text = wait_for_copy(offset)

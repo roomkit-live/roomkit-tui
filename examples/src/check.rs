@@ -58,7 +58,15 @@ fn verify_settled(session: &Session) -> Result<(), Box<dyn Error>> {
     }
     let success = snapshot.items.iter().any(|item| matches!(item, Item::Tool { call, .. } if call.state == ToolState::Succeeded && call.data.is_some()));
     let answer = snapshot.items.iter().any(|item| matches!(item, Item::Message(message) if message.id.as_str() == "assistant-1" && !message.text.is_empty()));
-    if !success || !answer || session.context().and_then(ContextUsage::percent) != Some(12.5) {
+    // The streamed draft is replaced by the stored answer, not kept beside it.
+    let draft = snapshot.items.iter().any(
+        |item| matches!(item, Item::Message(message) if message.id.as_str().starts_with("draft:")),
+    );
+    if !success
+        || !answer
+        || draft
+        || session.context().and_then(ContextUsage::percent) != Some(12.5)
+    {
         return Err("Scripted scenario did not produce the expected observed state".into());
     }
     Ok(())

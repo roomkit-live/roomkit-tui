@@ -16,6 +16,8 @@ pub struct Demo {
     counter: u64,
     pending_permission: Option<Permission>,
     scheduled: VecDeque<Event>,
+    /// The reply drafted so far; an interruption stores it, as an engine does.
+    streamed: Option<(MessageId, String)>,
     profile: Profile,
     command_prefix: char,
 }
@@ -29,6 +31,7 @@ impl Demo {
             counter: 0,
             pending_permission: None,
             scheduled: VecDeque::new(),
+            streamed: None,
             snapshot: script::snapshot(profile),
         }
     }
@@ -81,7 +84,22 @@ impl Demo {
         if matches!(event, Event::RunFinished { .. }) {
             self.snapshot.active_run = None;
         }
+        self.track_draft(&event);
         Some(event)
+    }
+
+    /// Keep the text of the reply being drafted until it is stored.
+    fn track_draft(&mut self, event: &Event) {
+        match event {
+            Event::TextDelta { message, text, .. } => {
+                let draft = self
+                    .streamed
+                    .get_or_insert_with(|| (message.clone(), String::new()));
+                draft.1.push_str(text);
+            }
+            Event::MessageFinalized { .. } => self.streamed = None,
+            _ => {}
+        }
     }
 
     fn invoke(&mut self, id: RequestId, name: &str, arguments: &str) -> Vec<Event> {
@@ -127,6 +145,14 @@ impl Demo {
         let mut events = vec![reply(id, None)];
         if let Some(permission) = self.pending_permission.take() {
             events.push(self.resolved(permission.id));
+        }
+        if let Some((draft, text)) = self.streamed.take() {
+            let message = Message::new(format!("assistant-{}", self.counter), "assistant", text);
+            events.push(Event::MessageFinalized {
+                conversation: self.snapshot.conversation.clone(),
+                draft,
+                message,
+            });
         }
         events.push(self.tool_event(run.clone(), ToolState::Cancelled));
         events.push(self.finished(run, RunOutcome::Interrupted));
