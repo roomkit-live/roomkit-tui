@@ -188,7 +188,49 @@ fn the_next_run_takes_over_when_the_earliest_finishes() {
     assert_eq!(session.observation().unwrap().run.unwrap().id, sms);
     session.apply_at(finish("agent:sms-42", RunOutcome::Completed), seconds(30));
     assert_eq!(session.snapshot().unwrap().active_run, None);
-    assert_eq!(session.run_outcome(), Some(RunOutcome::Failed));
+    assert_eq!(
+        session.run_outcome(),
+        Some(RunOutcome::Completed),
+        "Its own"
+    );
+    let observed = session.observation().unwrap().run.unwrap();
+    assert_eq!(
+        (observed.id, observed.outcome),
+        (sms, Some(RunOutcome::Completed))
+    );
+    assert_eq!(session.execution_outcome(), Some(RunOutcome::Failed));
+}
+
+/// The room's outcome counts every run that overlapped, whichever finished
+/// first, and a snapshot or a new start in an idle view begins afresh.
+#[test]
+fn the_room_s_outcome_counts_the_runs_since_it_was_idle() {
+    let mut session = session();
+    session.apply(start("deploy-1"));
+    session.apply(start("agent:sms-42"));
+    session.apply(finish("agent:sms-42", RunOutcome::Failed));
+    session.apply(finish("deploy-1", RunOutcome::Completed));
+    assert_eq!(session.execution_outcome(), Some(RunOutcome::Failed));
+    session.apply(start("deploy-2"));
+    session.apply(finish("deploy-2", RunOutcome::Completed));
+    assert_eq!(
+        session.execution_outcome(),
+        Some(RunOutcome::Completed),
+        "Idle in between"
+    );
+
+    session.apply(start("deploy-3"));
+    session.apply(start("agent:sms-43"));
+    session.apply(finish("deploy-3", RunOutcome::Failed));
+    let mut state = snapshot();
+    state.active_run = Some("agent:sms-43".into());
+    session.apply(Event::Snapshot(state));
+    session.apply(finish("agent:sms-43", RunOutcome::Completed));
+    assert_eq!(
+        session.execution_outcome(),
+        Some(RunOutcome::Completed),
+        "A snapshot is afresh"
+    );
 }
 
 /// Beyond the bound, the oldest run after the earliest is forgotten with

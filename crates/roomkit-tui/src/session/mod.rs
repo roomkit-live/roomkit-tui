@@ -119,7 +119,8 @@ pub struct Session {
     last_run: Option<RunId>,
     /// Runs started and not finished, earliest first.
     live_runs: Vec<runs::LiveRun>,
-    /// The outcome of the earliest run that finished while others ran on.
+    /// The most severe outcome of the runs that finished while another ran
+    /// on, since the room was last idle.
     held_outcome: Option<RunOutcome>,
     interrupting: Option<RunId>,
     deciding: BTreeSet<PermissionId>,

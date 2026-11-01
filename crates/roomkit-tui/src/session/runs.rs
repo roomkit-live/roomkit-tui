@@ -23,8 +23,7 @@ pub(super) struct LiveRun {
     started_at: Option<Duration>,
 }
 
-/// The more severe of two outcomes: a failure is never hidden by a run
-/// that completed after it.
+/// The more severe of two outcomes.
 fn worse(a: Option<RunOutcome>, b: RunOutcome) -> RunOutcome {
     let rank = |outcome: RunOutcome| match outcome {
         RunOutcome::Failed => 3,
@@ -123,12 +122,18 @@ impl Session {
         };
         self.live_runs.remove(index);
         self.forget(run);
-        if index > 0 {
+        if !self.live_runs.is_empty() {
+            // Each run keeps its own outcome; `execution_outcome` reports the
+            // most severe of the runs since the room was idle.
+            self.held_outcome = Some(worse(self.held_outcome, outcome));
+            if index == 0 {
+                self.follow_earliest();
+            }
+            self.sync_active_run();
             return;
         }
-        if self.live_runs.is_empty() {
+        if index == 0 {
             // The outcome and duration stay shown until the next run.
-            let outcome = worse(self.held_outcome.take(), outcome);
             if let Some(observed) = &mut self.observed_run {
                 observed.outcome = Some(outcome);
                 observed.duration = observed
@@ -136,11 +141,14 @@ impl Session {
                     .zip(at)
                     .and_then(|(start, finish)| finish.checked_sub(start));
             }
-        } else {
-            self.held_outcome = Some(worse(self.held_outcome, outcome));
-            self.follow_earliest();
         }
         self.sync_active_run();
+    }
+
+    /// The most severe outcome of the runs that finished while another ran
+    /// on, since the room was last idle.
+    pub(super) fn held_outcome(&self) -> Option<RunOutcome> {
+        self.held_outcome
     }
 
     /// Stop showing what belonged to `run`, which ended or was forgotten.

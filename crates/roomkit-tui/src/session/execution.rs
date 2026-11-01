@@ -39,19 +39,21 @@ impl Session {
     }
 
     /// Settled execution outcome, including failures before any run existed.
-    /// Processing success never erases an individual run's failure.
+    /// Processing success never erases an individual run's failure, nor does
+    /// a run that finished last erase an earlier one's while they overlapped.
     pub fn execution_outcome(&self) -> Option<RunOutcome> {
         if self.is_executing() {
             return None;
         }
         let operation = self.operation.as_ref().and_then(|op| op.outcome);
         let run = self.run_outcome();
+        let held = self.held_outcome();
         for severe in [
             RunOutcome::Failed,
             RunOutcome::Interrupted,
             RunOutcome::Unknown,
         ] {
-            if [operation, run].contains(&Some(severe)) {
+            if [operation, run, held].contains(&Some(severe)) {
                 return Some(severe);
             }
         }

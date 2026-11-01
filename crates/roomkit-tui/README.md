@@ -93,10 +93,11 @@ and an agent turn for another channel's message. The view follows each until
 its `RunFinished`, up to 16 at once: it shows the approval requests and
 streamed text of every live run, while the timer, Esc and `active_run` follow
 the earliest. A view starts work only in an idle room, so while its own work
-runs it is the earliest; Esc on an approval card interrupts the run that
-asked. When the last run finishes, the outcome shown is the more severe of
-its own and of the earliest run's. A replayed `RunStarted` of a live run, or
-of the last run started, is ignored.
+runs it is the earliest. Esc on an approval card asks to interrupt the run
+that asked; a host may refuse a run this view did not start, as the bundled
+engine does. Each run keeps its own outcome, and `execution_outcome` reports
+the most severe of the runs since the room was idle. A replayed `RunStarted`
+of a live run, or of the last run started, is ignored.
 
 When a host publishes the optional operation lifecycle, `Session::is_executing`
 also covers admission before `RunStarted` and cleanup after `RunFinished`.
