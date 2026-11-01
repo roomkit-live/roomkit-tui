@@ -171,7 +171,8 @@ class Screen:
 
     def _erase_line(self, mode):
         line = self.grid[self.row]
-        span = {0: range(self.col, self.cols), 1: range(0, self.col + 1)}.get(mode, range(self.cols))
+        # A cursor past the last column (after writing it) erases up to that column.
+        span = {0: range(self.col, self.cols), 1: range(0, min(self.col + 1, self.cols))}.get(mode, range(self.cols))
         for column in span:
             line[column] = " "
             self.inverse[self.row][column] = False
@@ -245,12 +246,24 @@ def _self_check():
         screen.feed(sequence)
         if screen.reversed_text(1) != expected:
             raise SystemExit(f"Check failed: {sequence!r} shows {screen.reversed_text(1)!r} reversed")
-    # Cursor controls still place text where a terminal would.
-    screen = Screen(3, 10)
-    screen.feed(b"\x1b[2;3Hab\x1b[1;1Hc\x1b[2Bd\x1b[3Ge\x1b[2Df")
-    if screen.lines() != ["c", "  ab", " fe"]:
-        raise SystemExit(f"Check failed: cursor controls placed {screen.lines()!r}")
-    print("Screen model checks passed: reverse video, extended colors and cursor controls.")
+    # Cursor and erase controls place and clear text where a terminal would.
+    layouts = [
+        ((3, 10), b"\x1b[2;3fab\x1b[Ax\x1b[1;1Hc\x1b[2Bd\x1b[5Ge\x1b[2Cg\x1b[3Df",
+         ["c   x", "  ab", " d  ef g"]),
+        ((2, 6), b"abcdef\x1b[1;3H\x1b[K", ["ab", ""]),
+        ((2, 6), b"abcdef\x1b[1;3H\x1b[1K", ["   def", ""]),
+        ((2, 6), b"abcdef\x1b[2K", ["", ""]),
+        ((1, 3), b"abc\x1b[1K", [""]),
+        ((2, 4), b"abcd\x1b[2;1Hefgh\x1b[1;2H\x1b[J", ["a", ""]),
+        ((2, 4), b"abcd\x1b[2;1Hefgh\x1b[2;2H\x1b[1J", ["", "  gh"]),
+        ((2, 4), b"abcd\x1b[2J", ["", ""]),
+    ]
+    for (rows, cols), sequence, expected in layouts:
+        screen = Screen(rows, cols)
+        screen.feed(sequence)
+        if screen.lines() != expected:
+            raise SystemExit(f"Check failed: {sequence!r} shows {screen.lines()!r}")
+    print("Screen model checks passed: reverse video, extended colors, cursor and erase controls.")
 
 
 if __name__ == "__main__":
