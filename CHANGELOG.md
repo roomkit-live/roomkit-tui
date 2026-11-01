@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-01
+
 Initial public release.
 
 ### Added
@@ -80,3 +82,6 @@ Initial public release.
 - Host snapshots, approvals and command arguments are bounded.
 - A panic on the terminal thread restores the terminal before it is reported.
 - `roomkit-chat` refuses to send an API key over plain HTTP to another host.
+
+[Unreleased]: https://github.com/roomkit-live/roomkit-tui/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/roomkit-live/roomkit-tui/releases/tag/v0.1.0
