@@ -62,19 +62,9 @@ impl Session {
                 sidebar,
             } => self.on_sidebar(&conversation, sidebar),
             Event::ApplicationInfo { conversation, text } => {
-                if self.is_current(&conversation)
-                    && text.as_ref().is_none_or(|s| s.len() <= MAX_LABEL_BYTES)
-                {
-                    self.application_info = text;
-                }
+                self.on_application_info(&conversation, text);
             }
-            Event::ExitWarning { conversation, text } => {
-                if self.is_current(&conversation)
-                    && text.as_ref().is_none_or(|s| s.len() <= MAX_LABEL_BYTES)
-                {
-                    self.exit_warning = text;
-                }
-            }
+            Event::ExitWarning { conversation, text } => self.on_exit_warning(&conversation, text),
             Event::BackgroundChanged {
                 conversation,
                 status,

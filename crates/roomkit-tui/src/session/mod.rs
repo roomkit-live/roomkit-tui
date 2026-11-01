@@ -7,6 +7,7 @@ mod events;
 mod execution;
 mod history;
 mod input;
+mod labels;
 mod measures;
 mod tools;
 
