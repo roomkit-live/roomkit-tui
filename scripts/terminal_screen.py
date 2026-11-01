@@ -105,30 +105,29 @@ class Screen:
                 self._alternate(final == b"h")
             return
         params = [int(p) if p.isdigit() else 0 for p in raw.split(";")] if raw else []
-        first = params[0] if params else 0
-        if final in b"Hf":
-            row = params[0] if params else 1
-            col = params[1] if len(params) > 1 else 1
-            self.row = min(max(row, 1), self.rows) - 1
-            self.col = min(max(col, 1), self.cols) - 1
-        elif final == b"J":
-            self._erase_screen(first)
-        elif final == b"K":
-            self._erase_line(first)
-        elif final in b"ABCD":
-            step = max(first, 1)
-            if final == b"A":
-                self.row = max(self.row - step, 0)
-            elif final == b"B":
-                self.row = min(self.row + step, self.rows - 1)
-            elif final == b"C":
-                self.col = min(self.col + step, self.cols - 1)
-            else:
-                self.col = max(self.col - step, 0)
-        elif final == b"G":
-            self.col = min(max(first, 1), self.cols) - 1
-        elif final == b"m":
-            self._attributes(raw.split(";"))
+        handler = _CONTROLS.get(final)
+        if handler is not None:
+            handler(self, params, raw)
+
+    def _position(self, params):
+        row = params[0] if params else 1
+        col = params[1] if len(params) > 1 else 1
+        self.row = min(max(row, 1), self.rows) - 1
+        self.col = min(max(col, 1), self.cols) - 1
+
+    def _move(self, final, params):
+        step = max(params[0] if params else 0, 1)
+        if final == b"A":
+            self.row = max(self.row - step, 0)
+        elif final == b"B":
+            self.row = min(self.row + step, self.rows - 1)
+        elif final == b"C":
+            self.col = min(self.col + step, self.cols - 1)
+        else:
+            self.col = max(self.col - step, 0)
+
+    def _column(self, params):
+        self.col = min(max(params[0] if params else 0, 1), self.cols) - 1
 
     def _attributes(self, params):
         """Apply SGR parameters. An extended color (38, 48 or 58) carries its
@@ -207,3 +206,52 @@ class Screen:
 
 def _text(marker):
     return marker.decode() if isinstance(marker, bytes) else marker
+
+
+def _first(params):
+    return params[0] if params else 0
+
+
+# The CSI controls the renderers write, by final byte: (screen, params, raw).
+_CONTROLS = {
+    b"H": lambda screen, params, raw: screen._position(params),
+    b"f": lambda screen, params, raw: screen._position(params),
+    b"J": lambda screen, params, raw: screen._erase_screen(_first(params)),
+    b"K": lambda screen, params, raw: screen._erase_line(_first(params)),
+    b"G": lambda screen, params, raw: screen._column(params),
+    b"m": lambda screen, params, raw: screen._attributes(raw.split(";")),
+    **{final: (lambda final: lambda screen, params, raw: screen._move(final, params))(final)
+       for final in (b"A", b"B", b"C", b"D")},
+}
+
+
+def _self_check():
+    """Check the attribute parsing the selection checks rely on."""
+    cases = [
+        (b"\x1b[7mA", "A"),
+        (b"\x1b[1;7mA\x1b[27mB", "A"),
+        (b"\x1b[7m\x1b[mA", ""),
+        (b"\x1b[7m\x1b[0mA", ""),
+        # Extended colors carry operands, never attributes.
+        (b"\x1b[38;5;7mA", ""),
+        (b"\x1b[38;2;7;7;7mA", ""),
+        (b"\x1b[7m\x1b[48;2;0;10;20mA", "A"),
+        (b"\x1b[7m\x1b[38:5:1mA", "A"),
+        (b"\x1b[38;5;7;7mA", "A"),
+        (b"\x1b[38;2;0;0;0;7mA", "A"),
+    ]
+    for sequence, expected in cases:
+        screen = Screen(1, 10)
+        screen.feed(sequence)
+        if screen.reversed_text(1) != expected:
+            raise SystemExit(f"Check failed: {sequence!r} shows {screen.reversed_text(1)!r} reversed")
+    # Cursor controls still place text where a terminal would.
+    screen = Screen(3, 10)
+    screen.feed(b"\x1b[2;3Hab\x1b[1;1Hc\x1b[2Bd\x1b[3Ge\x1b[2Df")
+    if screen.lines() != ["c", "  ab", " fe"]:
+        raise SystemExit(f"Check failed: cursor controls placed {screen.lines()!r}")
+    print("Screen model checks passed: reverse video, extended colors and cursor controls.")
+
+
+if __name__ == "__main__":
+    _self_check()

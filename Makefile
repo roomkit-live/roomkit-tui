@@ -24,6 +24,7 @@ examples:
 
 terminal-check:
 	cargo build --locked -p roomkit-tui-examples --bins
+	python3 scripts/terminal_screen.py
 	python3 scripts/check-terminal.py
 	python3 scripts/check-terminal-status.py
 	python3 scripts/check-sidebar.py
