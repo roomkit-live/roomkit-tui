@@ -62,7 +62,10 @@ idle-only. A handler may opt individual control commands into `allow_while_busy`
 conversation switches remain idle-only, and `Event::TitleChanged` renames the view
 while it executes. A handler can publish generic choice selectors
 or request a different `SessionConfig`; the adapter validates the replacement
-before changing the view. Failed switches preserve the current conversation.
+before changing the view. Failed switches preserve the current conversation. A
+view whose snapshot a terminal would refuse, such as a command with a space in
+its name, is never sent: a switch to it is rejected as invalid, and attaching it
+makes `run` fail with `AdapterError::InvalidSnapshot`.
 The application owns command authorization, persistence and retry deduplication.
 
 `SessionConfig::input_actions` optionally maps composer prefixes to advertised

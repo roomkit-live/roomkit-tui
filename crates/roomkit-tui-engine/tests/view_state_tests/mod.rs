@@ -1,6 +1,7 @@
 //! View state a host publishes without reloading the view: the title and the
 //! mode it sends, by a command allowed while busy or by its subscription,
 //! survive a later snapshot built from the configuration the host receives.
+//! A view a terminal would refuse is never sent, when attaching or switching.
 
 use super::*;
 use roomkit::model::HookResult;
@@ -8,7 +9,8 @@ use roomkit_tui_engine::{CommandHandler, CommandResult};
 use tokio::sync::watch;
 
 /// Renames on `rename`, even while busy; publishes `published` on `publish`;
-/// reloads the view it was given on `reload`.
+/// reloads the view it was given on `reload`; on `break mode` or
+/// `break commands`, switches to a view a terminal would refuse.
 #[derive(Default)]
 struct Renamer {
     updates: Option<watch::Receiver<Vec<Event>>>,
@@ -34,11 +36,7 @@ impl CommandHandler for Renamer {
         };
         match name.as_str() {
             "reload" => return Ok(CommandResult::Switch(Box::new(view))),
-            "break" => {
-                let mut broken = view;
-                broken.mode = Some(ModeState::new("unadvertised", "ask", vec![]));
-                return Ok(CommandResult::Switch(Box::new(broken)));
-            }
+            "break" => return Ok(CommandResult::Switch(Box::new(broken(view, &arguments)))),
             "publish" => return Ok(CommandResult::Events(self.published.clone())),
             _ => {}
         }
@@ -47,6 +45,16 @@ impl CommandHandler for Renamer {
             mode("renamed"),
         ]))
     }
+}
+
+/// `view` with modes that fit no command, or with a command named with a space.
+fn broken(mut view: SessionConfig, part: &str) -> SessionConfig {
+    match part {
+        "mode" => view.mode = Some(ModeState::new("unadvertised", "ask", vec![])),
+        "commands" => view.commands.push(CommandSpec::new("bad name", "Unusable")),
+        _ => panic!("unknown part {part}"),
+    }
+    view
 }
 
 fn title(title: &str) -> Event {
@@ -70,7 +78,7 @@ fn view() -> SessionConfig {
         CommandSpec::new("rename", "Rename this conversation").with_arguments("<title>"),
         CommandSpec::new("reload", "Reload this conversation"),
         CommandSpec::new("publish", "Publish the host's view state"),
-        CommandSpec::new("break", "Switch to a view whose mode does not fit"),
+        CommandSpec::new("break", "Switch to a view a terminal would refuse"),
         CommandSpec::new("mode", "Change the mode"),
     ];
     view
@@ -255,25 +263,60 @@ async fn a_mode_the_terminal_would_refuse_is_not_kept_on_any_path() {
 }
 
 #[tokio::test]
-async fn a_replacement_view_whose_mode_does_not_fit_is_refused() {
+async fn a_replacement_view_a_terminal_would_refuse_is_refused_and_the_view_kept() {
     let kit = RoomKit::new(Default::default());
     let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session = LocalSession::new(kit.clone(), channel, view());
     let task = tokio::spawn(session.run_with_commands(host, Renamer::default()));
     assert!(matches!(next(&client).await, Event::Snapshot(_)));
-    client.try_send(invoke(1, "break", "")).unwrap();
-    assert!(matches!(
-        next(&client).await,
-        Event::Reply { error: Some(rejection), .. } if rejection.code == ErrorCode::Invalid
-    ));
-    let restored = reload(&client, 2).await;
+    for (id, part, reason) in [
+        (1, "mode", SnapshotError::Modes),
+        (2, "commands", SnapshotError::Commands),
+    ] {
+        client.try_send(invoke(id, "break", part)).unwrap();
+        let Event::Reply {
+            error: Some(rejection),
+            ..
+        } = next(&client).await
+        else {
+            panic!("a view with invalid {part} was adopted");
+        };
+        assert_eq!(rejection.code, ErrorCode::Invalid);
+        assert_eq!(
+            rejection.message,
+            format!("{reason}; the current session is unchanged")
+        );
+    }
+    let restored = reload(&client, 3).await;
     assert_eq!(
         shown(&restored),
         ("room", ""),
         "The current view is unchanged"
     );
+    assert!(restored.commands.iter().all(|c| c.name != "bad name"));
     drop(client);
     task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_view_a_terminal_would_refuse_is_not_attached() {
+    let kit = RoomKit::new(Default::default());
+    let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session = LocalSession::new(kit.clone(), channel, broken(view(), "commands"));
+    let serving = session.run_with_commands(host, Renamer::default());
+    let result = tokio::time::timeout(Duration::from_secs(5), serving)
+        .await
+        .expect("the invalid view was attached and served");
+    assert!(
+        matches!(
+            result,
+            Err(AdapterError::InvalidSnapshot(SnapshotError::Commands))
+        ),
+        "{result:?}"
+    );
+    assert!(client.try_recv().is_err(), "Nothing was sent to the view");
     kit.close().await.unwrap();
 }

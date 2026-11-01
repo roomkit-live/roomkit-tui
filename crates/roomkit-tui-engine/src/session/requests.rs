@@ -240,17 +240,6 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
             let error = Rejection::busy("Cannot switch an executing conversation");
             return self.reply(&request, Some(error)).map(|()| None);
         }
-        // The terminal would refuse the whole snapshot while this view moved on.
-        if config
-            .mode
-            .as_ref()
-            .is_some_and(|mode| !mode.fits(&config.commands))
-        {
-            let error = Rejection::invalid(
-                "The replacement view's modes do not fit its commands; the current session is unchanged",
-            );
-            return self.reply(&request, Some(error)).map(|()| None);
-        }
         let (kit, channel) = (self.session.kit.clone(), self.session.channel.clone());
         self.switching = true;
         Ok(Some(Box::pin(async move {
@@ -270,17 +259,28 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         replacement: Result<(SessionConfig, Snapshot), AdapterError>,
     ) -> Result<(), AdapterError> {
         self.switching = false;
-        let Ok((config, snapshot)) = replacement else {
-            let error = Rejection::unavailable(
-                "The requested conversation is unavailable; the current session is unchanged",
-            );
-            return self.reply(request, Some(error));
+        let (config, snapshot) = match replacement {
+            Ok(replacement) => replacement,
+            Err(error) => return self.reply(request, Some(refused_switch(&error))),
         };
         let approvals = &self.session.channel.approvals;
         self.approvals = approvals.attach(config.conversation(), config.agent.as_str());
         self.session.config = config;
         self.reply(request, None)?;
         self.attached(snapshot)
+    }
+}
+
+/// Why a replacement view was not adopted. A view the terminal would refuse
+/// is the application's mistake; anything else is the conversation's state.
+fn refused_switch(error: &AdapterError) -> Rejection {
+    match error {
+        AdapterError::InvalidSnapshot(reason) => {
+            Rejection::invalid(format!("{reason}; the current session is unchanged"))
+        }
+        _ => Rejection::unavailable(
+            "The requested conversation is unavailable; the current session is unchanged",
+        ),
     }
 }
 

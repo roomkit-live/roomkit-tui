@@ -14,6 +14,7 @@ use roomkit::{ConversationStore, RoomKit};
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 use roomkit_tui_protocol::{
     ActorId, CommandSpec, Event, InputAction, ModeState, ModelInfo, Rejection, Request, Snapshot,
+    SnapshotError,
 };
 
 use crate::ConversationChannel;
@@ -117,6 +118,8 @@ pub enum CommandResult {
     /// Run application-owned work while keeping controls and interruption live.
     Execute(crate::CommandExecution),
     /// Validate a replacement attachment, then atomically replace the view.
+    /// A replacement whose snapshot a terminal would refuse is rejected as
+    /// invalid and the current view is kept.
     Switch(Box<SessionConfig>),
 }
 
@@ -193,6 +196,10 @@ pub enum AdapterError {
     /// The host selected an invalid or inaccessible binding.
     #[error("The configured conversation or agent is not available to this view")]
     InvalidBinding,
+    /// The configured view builds a snapshot a terminal would refuse, such as
+    /// a command with a space in its name. Nothing was sent to the view.
+    #[error("The configured view would be refused: {0}")]
+    InvalidSnapshot(#[from] SnapshotError),
     /// The initial adapter only restores quiescent conversations.
     #[error("Wait for the active response to finish before attaching this view")]
     Busy,
@@ -244,11 +251,15 @@ impl<S: ConversationStore> LocalSession<S> {
 
     /// Reload a bounded projection from the engine, respecting visibility and
     /// read access. The engine remains the only durable conversation store.
+    /// Fails with [`AdapterError::InvalidSnapshot`] when a terminal would
+    /// refuse the result, so attaching and switching never send one.
     pub async fn snapshot(&self) -> Result<Snapshot, AdapterError> {
         if self.channel.busy(self.config.conversation()) {
             return Err(AdapterError::Busy);
         }
-        restore::snapshot(&self.kit, &self.channel, &self.config).await
+        let snapshot = restore::snapshot(&self.kit, &self.channel, &self.config).await?;
+        snapshot.validate()?;
+        Ok(snapshot)
     }
 
     /// Serve one bounded connection until it detaches or needs resynchronizing.
