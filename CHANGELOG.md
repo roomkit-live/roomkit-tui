@@ -16,7 +16,8 @@ Initial public release.
   keeps each mode or title change a host publishes, from a command result or
   its subscription, so later snapshots show it; a change the terminal would
   ignore is not kept.
-- `Snapshot::validate` (with `SnapshotError`), `ModeState::fits`,
+- `Snapshot::validate` (with `SnapshotError`, which names the refused
+  command, composer action or permission by position), `ModeState::fits`,
   `Permission::fits` and their limits in `limits` let hosts check what they
   send against the rules terminals apply. The engine validates every snapshot
   it sends: a `CommandResult::Switch` to a view a terminal would refuse is

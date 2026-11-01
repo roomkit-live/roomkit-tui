@@ -272,7 +272,7 @@ async fn a_replacement_view_a_terminal_would_refuse_is_refused_and_the_view_kept
     assert!(matches!(next(&client).await, Event::Snapshot(_)));
     for (id, part, reason) in [
         (1, "mode", SnapshotError::Modes),
-        (2, "commands", SnapshotError::Commands),
+        (2, "commands", SnapshotError::Command { index: 5 }),
     ] {
         client.try_send(invoke(id, "break", part)).unwrap();
         let Event::Reply {
@@ -313,7 +313,9 @@ async fn a_view_a_terminal_would_refuse_is_not_attached() {
     assert!(
         matches!(
             result,
-            Err(AdapterError::InvalidSnapshot(SnapshotError::Commands))
+            Err(AdapterError::InvalidSnapshot(SnapshotError::Command {
+                index: 5
+            }))
         ),
         "{result:?}"
     );

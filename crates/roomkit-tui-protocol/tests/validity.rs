@@ -1,9 +1,7 @@
 //! What a terminal accepts as a whole snapshot, checked by hosts before they
 //! send one.
 
-use roomkit_tui_protocol::SnapshotError::{
-    Bounds, Commands, InputActions, Modes, Permissions, UnknownSelectedAgent,
-};
+use roomkit_tui_protocol::SnapshotError as Refused;
 use roomkit_tui_protocol::limits::{
     MAX_CHOICES, MAX_COMMAND_DESCRIPTION_BYTES, MAX_INPUT_ACTION_DESCRIPTION_BYTES,
     MAX_INPUT_ACTIONS, MAX_LABEL_BYTES, MAX_PENDING_PERMISSIONS, MAX_PERMISSION_DETAIL_BYTES,
@@ -58,10 +56,14 @@ fn a_snapshot_using_every_checked_part_is_accepted() {
 }
 
 #[test]
-fn a_refusal_reads_as_the_notice_a_terminal_shows() {
+fn a_refusal_names_the_entry_in_the_notice_a_terminal_shows() {
     assert_eq!(
-        Commands.to_string(),
-        "Host snapshot has invalid or duplicate commands"
+        Refused::Command { index: 2 }.to_string(),
+        "Host snapshot has an invalid, repeated or extra command at index 2"
+    );
+    assert_eq!(
+        Refused::Actors.to_string(),
+        format!("Host snapshot has more than {MAX_SNAPSHOT_ENTRIES} actors")
     );
 }
 
@@ -70,24 +72,24 @@ fn a_snapshot_beyond_the_view_bounds_or_without_its_agent_is_refused() {
     assert_refused(&[
         (
             |s| s.conversation = long(MAX_LABEL_BYTES + 1).into(),
-            Bounds,
+            Refused::Conversation,
         ),
         (
             |s| {
                 let more = (0..MAX_SNAPSHOT_ENTRIES).map(|n| Actor::new(format!("a{n}"), "A"));
                 s.actors.extend(more);
             },
-            Bounds,
+            Refused::Actors,
         ),
         (
             |s| s.selected_agent = ActorId::new("ghost"),
-            UnknownSelectedAgent,
+            Refused::UnknownSelectedAgent,
         ),
     ]);
 }
 
 #[test]
-fn an_invalid_command_or_mode_is_refused() {
+fn an_invalid_command_or_mode_is_refused_at_its_position() {
     let invalid: [fn(&mut CommandSpec); 7] = [
         |c| c.name = "bad name".into(),
         |c| c.name = String::new(),
@@ -99,21 +101,34 @@ fn an_invalid_command_or_mode_is_refused() {
     ];
     for (n, change) in invalid.into_iter().enumerate() {
         let result = refused(|s| change(&mut s.commands[1]));
-        assert_eq!(result, Err(Commands), "command case {n}");
+        assert_eq!(
+            result,
+            Err(Refused::Command { index: 1 }),
+            "command case {n}"
+        );
     }
     assert_refused(&[
         (
             |s| s.commands.push(CommandSpec::new("shell", "Again")),
-            Commands,
+            Refused::Command { index: 2 },
+        ),
+        (
+            |s| {
+                s.commands[0].name = "bad one".into();
+                s.commands[1].name = "bad two".into();
+            },
+            Refused::Command { index: 0 },
         ),
         (
             |s| {
                 let more = (0..MAX_SNAPSHOT_ENTRIES).map(|n| CommandSpec::new(format!("c{n}"), ""));
                 s.commands.extend(more);
             },
-            Commands,
+            Refused::Command {
+                index: MAX_SNAPSHOT_ENTRIES,
+            },
         ),
-        (|s| s.commands.retain(|c| c.name != "mode"), Modes),
+        (|s| s.commands.retain(|c| c.name != "mode"), Refused::Modes),
     ]);
 }
 
@@ -121,7 +136,11 @@ fn an_invalid_command_or_mode_is_refused() {
 fn a_composer_action_must_be_a_distinct_symbol_for_an_advertised_command() {
     for prefix in ['a', '7', ' ', '\t', '\u{7}', '\\'] {
         let result = refused(|s| s.input_actions[0].prefix = prefix);
-        assert_eq!(result, Err(InputActions), "prefix {prefix:?}");
+        assert_eq!(
+            result,
+            Err(Refused::InputAction { index: 0 }),
+            "prefix {prefix:?}"
+        );
     }
     assert_refused(&[
         (
@@ -129,7 +148,7 @@ fn a_composer_action_must_be_a_distinct_symbol_for_an_advertised_command() {
                 s.input_actions
                     .push(InputAction::new('!', "shell", "Again"))
             },
-            InputActions,
+            Refused::InputAction { index: 1 },
         ),
         (
             |s| {
@@ -140,15 +159,17 @@ fn a_composer_action_must_be_a_distinct_symbol_for_an_advertised_command() {
                 let more = more.map(|prefix| InputAction::new(prefix, "shell", "More"));
                 s.input_actions.extend(more);
             },
-            InputActions,
+            Refused::InputAction {
+                index: MAX_INPUT_ACTIONS,
+            },
         ),
         (
             |s| s.input_actions[0].description = long(MAX_INPUT_ACTION_DESCRIPTION_BYTES + 1),
-            InputActions,
+            Refused::InputAction { index: 0 },
         ),
         (
             |s| s.input_actions[0].command = "missing".into(),
-            InputActions,
+            Refused::InputAction { index: 0 },
         ),
     ]);
 }
@@ -158,12 +179,12 @@ fn a_pending_permission_must_belong_to_the_active_run_once() {
     assert_refused(&[
         (
             |s| s.permissions.push(permission("p2", "run-2")),
-            Permissions,
+            Refused::Permission { index: 1 },
         ),
-        (|s| s.active_run = None, Permissions),
+        (|s| s.active_run = None, Refused::Permission { index: 0 }),
         (
             |s| s.permissions.push(permission("p1", "run-1")),
-            Permissions,
+            Refused::Permission { index: 1 },
         ),
         (
             |s| {
@@ -171,11 +192,13 @@ fn a_pending_permission_must_belong_to_the_active_run_once() {
                     .map(|n| permission(&format!("p{n}"), "run-1"))
                     .collect();
             },
-            Permissions,
+            Refused::Permission {
+                index: MAX_PENDING_PERMISSIONS,
+            },
         ),
         (
             |s| s.permissions[0].detail = long(MAX_PERMISSION_DETAIL_BYTES + 1),
-            Permissions,
+            Refused::Permission { index: 0 },
         ),
     ]);
 }
@@ -186,37 +209,46 @@ fn a_snapshot_breaking_several_rules_reports_the_first_in_order() {
         (
             |s| {
                 s.conversation = long(MAX_LABEL_BYTES + 1).into();
-                s.selected_agent = ActorId::new("ghost");
+                let more = (0..MAX_SNAPSHOT_ENTRIES).map(|n| Actor::new(format!("a{n}"), "A"));
+                s.actors.extend(more);
             },
-            Bounds,
+            Refused::Conversation,
+        ),
+        (
+            |s| {
+                // One actor too many, none of them the selected agent.
+                let more = (0..=MAX_SNAPSHOT_ENTRIES).map(|n| Actor::new(format!("a{n}"), "A"));
+                s.actors = more.collect();
+            },
+            Refused::Actors,
         ),
         (
             |s| {
                 s.selected_agent = ActorId::new("ghost");
                 s.commands[1].name = "bad name".into();
             },
-            UnknownSelectedAgent,
+            Refused::UnknownSelectedAgent,
         ),
         (
             |s| {
                 s.commands.push(CommandSpec::new("bad name", "Space"));
                 s.mode = Some(ModeState::new("mode", "missing", vec![]));
             },
-            Commands,
+            Refused::Command { index: 2 },
         ),
         (
             |s| {
                 s.commands.retain(|c| c.name != "mode");
                 s.input_actions[0].prefix = 'a';
             },
-            Modes,
+            Refused::Modes,
         ),
         (
             |s| {
                 s.input_actions[0].prefix = 'a';
                 s.active_run = None;
             },
-            InputActions,
+            Refused::InputAction { index: 0 },
         ),
     ]);
 }
