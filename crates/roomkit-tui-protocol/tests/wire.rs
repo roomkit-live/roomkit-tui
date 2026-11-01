@@ -129,6 +129,10 @@ fn every_event_round_trips() {
             conversation: room.clone(),
             text: Some("v1".into()),
         },
+        Event::TitleChanged {
+            conversation: room.clone(),
+            title: "Renamed".into(),
+        },
         Event::ExitWarning {
             conversation: room.clone(),
             text: Some("1 running process will be stopped".into()),
@@ -231,6 +235,18 @@ fn an_unknown_decision_is_never_read_as_an_answer() {
         "command": {"kind": "decide", "permission": "p", "decision": "allow_always"}
     });
     assert!(serde_json::from_value::<Request>(encoded).is_err());
+}
+
+#[test]
+fn a_title_change_keeps_its_wire_shape() {
+    let encoded = round_trip(&Event::TitleChanged {
+        conversation: "room".into(),
+        title: "Release notes".into(),
+    });
+    assert_eq!(
+        encoded,
+        json!({"kind": "title_changed", "conversation": "room", "title": "Release notes"})
+    );
 }
 
 #[test]

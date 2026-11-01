@@ -68,6 +68,15 @@ pub enum Event {
         /// Plain text, at most 256 bytes; None clears the caption.
         text: Option<String>,
     },
+    /// Rename the displayed conversation in place, even while it executes.
+    /// The history, the draft and any open control are kept; snapshots the
+    /// host sends afterwards carry this title.
+    TitleChanged {
+        /// Conversation being renamed; other views ignore the event.
+        conversation: ConversationId,
+        /// Plain text, at most 256 bytes; a longer title is ignored.
+        title: String,
+    },
     /// Replace the host's statement of what exiting stops, such as running
     /// processes. While it is set, detaching also asks for confirmation.
     ///
