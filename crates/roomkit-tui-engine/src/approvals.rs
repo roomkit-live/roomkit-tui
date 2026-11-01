@@ -193,6 +193,12 @@ impl Approvals {
         );
     }
 
+    /// Deny and withdraw the pending requests of `run` in `(room, agent)`.
+    pub(crate) fn withdraw_run(&self, scope: &(String, String), run: &RunId) {
+        let mut state = self.lock();
+        self.withdraw(&mut state, scope, Some(run));
+    }
+
     fn withdraw(&self, state: &mut State, scope: &Scope, run: Option<&RunId>) {
         let ids: Vec<_> = state
             .pending

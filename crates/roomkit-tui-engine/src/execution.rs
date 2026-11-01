@@ -5,10 +5,12 @@ use roomkit_tui_protocol::{ConversationId, Event, Item, OperationId, RunId, RunO
 use tokio::sync::watch;
 
 use crate::activity::Active;
-use crate::approvals::Running;
+use crate::approvals::{Approvals, Running};
 use crate::{ConversationChannel, SessionConfig, cancellation};
 
 type Completion = Result<RunOutcome, String>;
+/// Stores the decisions taken during a run; `false` when that failed.
+pub(crate) type Persist = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send>;
 type Task =
     Box<dyn FnOnce(ExecutionContext) -> Pin<Box<dyn Future<Output = Completion> + Send>> + Send>;
 
@@ -59,6 +61,7 @@ impl CommandExecution {
         config: &SessionConfig,
         operation: OperationId,
         reserved: Active,
+        persist: Persist,
     ) -> Interrupter {
         let conversation: ConversationId = config.conversation().into();
         let operation =
@@ -80,19 +83,30 @@ impl CommandExecution {
         let interrupter = Interrupter::Command {
             run: self.run.clone(),
             stop: std::sync::Arc::new(stop),
+            approvals: (
+                channel.approvals.clone(),
+                (conversation.to_string(), config.agent.to_string()),
+            ),
         };
         let context = ExecutionContext {
             channel,
             conversation,
             stopped,
         };
-        tokio::spawn(self.run_to_end(context, approvals, operation));
+        tokio::spawn(self.run_to_end(context, approvals, operation, persist));
         interrupter
     }
 
-    /// Run the work, withdraw its unanswered approvals, then report how it
-    /// ended. A host panic must not leave the client permanently busy.
-    async fn run_to_end(self, context: ExecutionContext, approvals: Running, operation: Operation) {
+    /// Run the work, withdraw its unanswered approvals, report how it ended,
+    /// then store its decisions before the operation settles, as a turn does.
+    /// A host panic must not leave the client permanently busy.
+    async fn run_to_end(
+        self,
+        context: ExecutionContext,
+        approvals: Running,
+        operation: Operation,
+        persist: Persist,
+    ) {
         let (channel, conversation) = (context.channel.clone(), context.conversation.clone());
         let Self { run, task } = self;
         let result = tokio::spawn(async move { task(context).await }).await;
@@ -121,6 +135,14 @@ impl CommandExecution {
                 outcome,
             },
         );
+        if !persist().await {
+            let text = "Decision accepted, but its history could not be saved. This does not change the work.";
+            let notice = Event::Notice {
+                conversation: conversation.clone(),
+                text: text.into(),
+            };
+            channel.publish(conversation.as_str(), notice);
+        }
         operation.finish(outcome);
     }
 }
@@ -216,6 +238,9 @@ pub(crate) enum Interrupter {
     Command {
         run: RunId,
         stop: std::sync::Arc<watch::Sender<bool>>,
+        /// The broker and `(room, agent)` whose pending requests of this run
+        /// an interruption withdraws.
+        approvals: (Approvals, (String, String)),
     },
 }
 
@@ -223,9 +248,17 @@ impl Interrupter {
     pub async fn interrupt(&self, run: RunId) -> Result<(), &'static str> {
         match self {
             Self::Engine(control) => control.interrupt(run).await,
-            Self::Command { run: active, stop } if active == &run => stop
-                .send(true)
-                .map_err(|_| "This execution has already ended"),
+            Self::Command {
+                run: active,
+                stop,
+                approvals: (broker, scope),
+            } if active == &run => {
+                stop.send(true)
+                    .map_err(|_| "This execution has already ended")?;
+                // As for a turn: an approval of interrupted work cannot be given.
+                broker.withdraw_run(scope, &run);
+                Ok(())
+            }
             Self::Command { .. } => Err("This execution is no longer active in this attachment"),
         }
     }

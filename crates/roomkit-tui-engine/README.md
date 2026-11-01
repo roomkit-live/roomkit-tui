@@ -99,8 +99,12 @@ let decision = channel.ask_tool_permission(&event, request).await;
 
 This retains the call identity so its confirmed decision appears beside the
 tool when restoring history. `ask_permission(room, agent, request)` serves
-actions without an engine tool call, such as work a `CommandExecution` runs:
-only the person who invoked the command may answer.
+actions without an engine tool call, such as work a `CommandExecution` runs.
+That work asks with the view's room and `SessionConfig::agent`, and only the
+person who invoked the command may answer. Interrupting the work withdraws
+its pending requests, and its decisions are stored once it settles. A turn the
+engine delivers in the same room meanwhile, for a message from another
+channel, takes over the requests asked until it ends.
 The broker scopes answers to the current room, agent, run and one decision.
 When a person started the run from a view, only that person may answer; a
 decision is recorded only once the waiting action has received it.

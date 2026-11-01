@@ -264,6 +264,20 @@ impl<S: ConversationStore> LocalSession<S> {
         Ok(snapshot)
     }
 
+    /// Stores the decisions this view's room collected, for work that runs
+    /// outside a turn; `false` when they could not be stored.
+    pub(crate) fn history_writer(&self) -> crate::execution::Persist {
+        let (kit, channel) = (self.kit.clone(), self.channel.clone());
+        let config = self.config.clone();
+        Box::new(move || {
+            Box::pin(async move {
+                crate::approval_history::persist(&kit, &channel, &config)
+                    .await
+                    .is_ok()
+            })
+        })
+    }
+
     /// Serve one bounded connection until it detaches or needs resynchronizing.
     /// Input acceptance is not proof of commit or execution success. Work already
     /// accepted runs independently of this future and of the client's lifetime.

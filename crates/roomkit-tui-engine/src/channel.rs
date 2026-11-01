@@ -67,7 +67,8 @@ impl ConversationChannel {
     }
 
     /// Wait for a one-time decision from an attached view of this room and
-    /// agent. The host awaits this before executing the concrete action.
+    /// agent. The host awaits this before executing the concrete action, in a
+    /// tool hook or in work a `CommandExecution` runs.
     /// Streaming delivery must be enabled. Missing views, oversized details,
     /// cancellation, timeout and disconnect all refuse the action. A request
     /// too large to show in full, beyond the pending limit, or made while
