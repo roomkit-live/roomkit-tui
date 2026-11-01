@@ -1,6 +1,6 @@
 //! Ephemeral decisions tied to a live, authorized view and an exact run.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -36,6 +36,8 @@ struct Run {
     id: RunId,
     /// The person who started the run through a view; only they may answer.
     requester: Option<String>,
+    /// Refusals already announced during this run, said once each.
+    announced: BTreeSet<&'static str>,
 }
 
 #[derive(Clone, Debug)]
@@ -91,6 +93,7 @@ impl Approvals {
         let record = Run {
             id: run.clone(),
             requester,
+            announced: BTreeSet::new(),
         };
         self.lock().runs.insert(scope.clone(), record);
         self.ready.notify_waiters();
@@ -137,20 +140,36 @@ impl Approvals {
     fn register(&self, scope: &Scope, details: &Details) -> Registration {
         let mut state = self.lock();
         let (room, agent) = scope;
-        if let Some(refused) = self.refusal(&state, scope) {
-            return refused;
+        if !state.views.contains_key(scope) {
+            return Registration::Refused;
         }
+        // A refusal is told once the run has started: a terminal clears its
+        // notice when the run starts.
         let Some(run) = state.runs.get(scope).cloned() else {
             return Registration::NoRun;
         };
+        if let Some(reason) = refusal(&state, room) {
+            return self.refuse(&mut state, scope, reason);
+        }
         let Some(sequence) = state.sequence.checked_add(1) else {
             return Registration::Refused;
         };
         state.sequence = sequence;
         let Some(permission) = details.permission(&run.id, agent, sequence) else {
-            let text = "An approval was too large to show in full; it was refused.";
-            return self.refuse(room, text);
+            let reason = "An approval was too large to show in full; it was refused.";
+            return self.refuse(&mut state, scope, reason);
         };
+        let pending = (run, permission, details.tool_call_id.clone());
+        self.enqueue(&mut state, scope, pending)
+    }
+
+    /// Hold `permission` until it is answered, and show it to the views.
+    fn enqueue(
+        &self,
+        state: &mut State,
+        scope: &Scope,
+        (run, permission, tool_call_id): (Run, Permission, Option<String>),
+    ) -> Registration {
         let id = permission.id.clone();
         let (answer, receiver) = oneshot::channel();
         let pending = Pending {
@@ -158,9 +177,10 @@ impl Approvals {
             run,
             answer,
             permission: permission.clone(),
-            tool_call_id: details.tool_call_id.clone(),
+            tool_call_id,
         };
         state.pending.insert(id.clone(), pending);
+        let room = &scope.0;
         let conversation = room.as_str().into();
         self.publish(
             room,
@@ -176,31 +196,17 @@ impl Approvals {
         Registration::Waiting(guard, receiver)
     }
 
-    /// Why no request can wait in `scope` now. Without a view nobody can
-    /// answer; otherwise the person is told.
-    fn refusal(&self, state: &State, scope: &Scope) -> Option<Registration> {
-        if !state.views.contains_key(scope) {
-            return Some(Registration::Refused);
+    /// Refuse a request the person will never see, and tell them why, once
+    /// per run and reason: the action reports a denial they did not make, and
+    /// a host asking again must not flood the view.
+    fn refuse(&self, state: &mut State, scope: &Scope, reason: &'static str) -> Registration {
+        let first = state
+            .runs
+            .get_mut(scope)
+            .is_some_and(|run| run.announced.insert(reason));
+        if first {
+            self.publish(&scope.0, notice(&scope.0, reason));
         }
-        let room = &scope.0;
-        let text = if state.pending.len() >= MAX_PENDING_PERMISSIONS {
-            "Too many approvals are waiting; a new one was refused."
-        } else if state
-            .receipts
-            .get(room)
-            .is_some_and(|r| r.len() >= MAX_UNSTORED_RECEIPTS)
-        {
-            "Approval history cannot be stored; new approvals are refused until it is."
-        } else {
-            return None;
-        };
-        Some(self.refuse(room, text))
-    }
-
-    /// Refuse a request the person will never see, and tell them why: the
-    /// action reports a denial they did not make.
-    fn refuse(&self, room: &str, text: &str) -> Registration {
-        self.publish(room, notice(room, text));
         Registration::Refused
     }
 
@@ -272,8 +278,8 @@ impl Approvals {
         }
     }
 
-    /// Remove a request and hand its answer to the waiting action.
-    /// Callers publish its resolution once the lock is released.
+    /// Remove a request and hand its answer to the waiting action. Callers
+    /// publish its resolution; a broadcast send never waits on a subscriber.
     fn settle(&self, state: &mut State, id: &PermissionId, decision: Decision) -> Option<Settled> {
         let pending = state.pending.remove(id)?;
         Some(Settled {
@@ -306,6 +312,22 @@ impl Approvals {
             self.resolved(&scope.0, &id);
         }
         self.ready.notify_waiters();
+    }
+}
+
+/// Why no request of `room` can wait now, although a view and a run are
+/// there. The pending limit is shared by every room of the channel.
+fn refusal(state: &State, room: &str) -> Option<&'static str> {
+    if state.pending.len() >= MAX_PENDING_PERMISSIONS {
+        Some("Too many approvals are waiting; a new one was refused.")
+    } else if state
+        .receipts
+        .get(room)
+        .is_some_and(|r| r.len() >= MAX_UNSTORED_RECEIPTS)
+    {
+        Some("Approval history cannot be stored; new approvals are refused until it is.")
+    } else {
+        None
     }
 }
 

@@ -69,8 +69,10 @@ impl ConversationChannel {
     /// Wait for a one-time decision from an attached view of this room and
     /// agent. The host awaits this before executing the concrete action.
     /// Streaming delivery must be enabled. Missing views, oversized details,
-    /// cancellation, timeout and disconnect all refuse the action. This does
-    /// not grant filesystem, shell or engine permissions by itself.
+    /// cancellation, timeout and disconnect all refuse the action. A request
+    /// too large to show in full, or beyond the pending limit, is refused with
+    /// a notice to the views. This does not grant filesystem, shell or engine
+    /// permissions by itself.
     pub async fn ask_permission(
         &self,
         room: &RoomId,

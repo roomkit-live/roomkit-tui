@@ -79,8 +79,9 @@ A handler can return `CommandResult::Execute(CommandExecution::new(...))` for
 long-running work. The callback starts only after acceptance and receives an
 `ExecutionContext` for item updates and cooperative cancellation. Its run
 identity is at most 256 bytes: a terminal could neither show nor interrupt a
-longer one, so the command is rejected and nothing starts. Return the
-outcome after cleanup and durable writes. The adapter publishes run activity and
+longer one, so the command is rejected and nothing starts. Use a new run
+identity for each execution: a terminal ignores a run that repeats its last.
+Return the outcome after cleanup and durable writes. The adapter publishes run activity and
 completion, rejects concurrent submissions, and keeps opted-in controls available.
 The host owns resource shutdown, authorization and operation deduplication; neither
 view detachment nor dropping the adapter cancels this application-owned work.
@@ -102,10 +103,10 @@ The broker scopes answers to the current room, agent, run and one decision.
 When a person started the run from a view, only that person may answer; a
 decision is recorded only once the waiting action has received it.
 No live view, timeout, cancellation, oversized detail or the last view's
-disconnection refuses the waiting action. A request the person would never see,
-too large to show in full or beyond the pending limit, is refused at once with
-a notice saying why, so the denial is not mistaken for theirs. An action already allowed continues
-independently of the view. A hook must keep its timeout above the requested
+disconnection refuses the waiting action. A request too large to show in full,
+or beyond the pending limit the channel's rooms share, is refused with a notice
+saying why, once per run and reason, so the denial is not mistaken for the
+person's. An action already allowed continues independently of the view. A hook must keep its timeout above the requested
 approval timeout. Buffered channels refuse requests for interactive approval.
 The broker does not implement tool policy; the host chooses which calls need it.
 Explicit decisions are saved after execution settles, outside model context.

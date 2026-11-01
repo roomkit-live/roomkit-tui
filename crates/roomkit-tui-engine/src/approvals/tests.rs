@@ -195,7 +195,7 @@ async fn only_the_requester_answers_a_run_they_started() {
 }
 
 /// The next event, which must be a notice published within a second.
-async fn notice(events: &mut broadcast::Receiver<(String, Event)>) -> String {
+async fn next_notice(events: &mut broadcast::Receiver<(String, Event)>) -> String {
     match tokio::time::timeout(Duration::from_secs(1), events.recv()).await {
         Ok(Ok((_, Event::Notice { text, .. }))) => text,
         other => unreachable!("Expected a notice, got {other:?}"),
@@ -221,7 +221,7 @@ async fn a_request_a_terminal_cannot_show_in_full_is_denied_at_once() {
         let decision = tokio::time::timeout(Duration::from_secs(1), decision).await;
         assert_eq!(decision.ok(), Some(Decision::Deny));
         assert_eq!(
-            notice(&mut receive).await,
+            next_notice(&mut receive).await,
             "An approval was too large to show in full; it was refused."
         );
     }
@@ -245,7 +245,75 @@ async fn a_request_beyond_the_pending_cap_is_refused_and_the_person_told() {
     let decision = tokio::time::timeout(Duration::from_secs(1), decision).await;
     assert_eq!(decision.ok(), Some(Decision::Deny));
     assert_eq!(
-        notice(&mut receive).await,
+        next_notice(&mut receive).await,
         "Too many approvals are waiting; a new one was refused."
     );
+}
+
+const TOO_LARGE: &str = "An approval was too large to show in full; it was refused.";
+
+fn oversized() -> Details {
+    Details {
+        detail: "x".repeat(roomkit_tui_protocol::limits::MAX_PERMISSION_DETAIL_BYTES + 1),
+        ..details()
+    }
+}
+
+/// RMK-1104 review: a host asking again flooded the view with one notice per
+/// refusal, until it lagged and detached.
+#[tokio::test]
+async fn a_refusal_is_told_once_per_run() {
+    let (events, mut receive) = broadcast::channel(8);
+    let broker = Approvals::new(events);
+    let _view = broker.attach("room", "agent");
+    for run in ["run-1", "run-2"] {
+        let _run = broker.start("room", "agent", run.into(), None);
+        for _ in 0..3 {
+            let decision = broker.ask("room", "agent", oversized(), Duration::from_secs(5));
+            assert_eq!(decision.await, Decision::Deny);
+        }
+        assert_eq!(next_notice(&mut receive).await, TOO_LARGE);
+        assert!(receive.try_recv().is_err(), "Told once during {run}");
+    }
+}
+
+/// RMK-1104 review: a refusal decided before its run was told at once, and
+/// the terminal erased the notice when the run started.
+#[tokio::test]
+async fn a_refusal_before_its_run_is_told_once_the_run_has_started() {
+    let (events, mut receive) = broadcast::channel(MAX_PENDING_PERMISSIONS + 8);
+    let broker = Approvals::new(events);
+    let _busy_view = broker.attach("busy", "agent");
+    let _busy_run = broker.start("busy", "agent", "busy-run".into(), None);
+    let _waiting: Vec<_> = (0..MAX_PENDING_PERMISSIONS)
+        .map(|_| {
+            let broker = broker.clone();
+            tokio::spawn(async move {
+                let wait = Duration::from_secs(60);
+                broker.ask("busy", "agent", details(), wait).await
+            })
+        })
+        .collect();
+    for _ in 0..MAX_PENDING_PERMISSIONS {
+        requested(&mut receive).await;
+    }
+    let _view = broker.attach("room", "agent");
+    let asking = {
+        let broker = broker.clone();
+        tokio::spawn(async move {
+            let wait = Duration::from_secs(5);
+            broker.ask("room", "agent", details(), wait).await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        receive.try_recv().is_err(),
+        "Nothing is said before the run"
+    );
+    let _run = broker.start("room", "agent", "run".into(), None);
+    assert_eq!(
+        next_notice(&mut receive).await,
+        "Too many approvals are waiting; a new one was refused."
+    );
+    assert_eq!(asking.await.unwrap(), Decision::Deny);
 }

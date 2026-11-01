@@ -29,8 +29,10 @@ impl fmt::Debug for CommandExecution {
 impl CommandExecution {
     /// Prepare work without starting it. Return an outcome only after cleanup.
     /// Errors must be safe to display, without credentials or raw service bodies.
-    /// `run` is at most `MAX_LABEL_BYTES`: terminals ignore a longer run, so the
-    /// adapter rejects the command and starts nothing.
+    /// `run` is at most [`MAX_LABEL_BYTES`](roomkit_tui_protocol::limits::MAX_LABEL_BYTES):
+    /// terminals ignore a longer run, so the adapter rejects the command and
+    /// starts nothing. Give each execution a new `run`: a terminal ignores a
+    /// run that repeats the last one it saw.
     pub fn new<F, Fut>(run: RunId, task: F) -> Self
     where
         F: FnOnce(ExecutionContext) -> Fut + Send + 'static,
