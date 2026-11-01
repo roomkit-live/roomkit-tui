@@ -43,6 +43,8 @@ Initial public release.
   - host commands with argument menus, choice pickers, interaction modes,
     forms with masked secrets, live panels and background-work status;
   - elapsed run time, interruption, and context and token usage display;
+  - several live runs per room, such as host work and an agent turn for
+    another channel's message, each with its approval requests on screen;
   - branding, themes, `NO_COLOR` support, a configurable composer, an optional
     sidebar and welcome screen;
   - sidebar meters: a stacked bar and legend for any proportion, and a context

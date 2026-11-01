@@ -1,11 +1,7 @@
-//! History and runs: the snapshot, streamed text, items and run boundaries.
+//! History: the snapshot, streamed text and items. Run boundaries are in
+//! `runs`.
 
-use std::time::Duration;
-
-use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
-use roomkit_tui_protocol::{
-    ActorId, ConversationId, Item, Message, MessageId, RunId, RunOutcome, Snapshot,
-};
+use roomkit_tui_protocol::{ActorId, ConversationId, Item, Message, MessageId, RunId, Snapshot};
 
 use super::bounds::{bound_in_place, bound_item, bound_labels, bounded, trim_items};
 use super::{ObservedRun, Session};
@@ -43,6 +39,7 @@ impl Session {
             });
         }
         self.last_run = snapshot.active_run.clone();
+        self.restore_runs(snapshot.active_run.as_ref());
         self.snapshot = Some(snapshot);
         self.reset_view_state();
         self.refresh_menu();
@@ -81,7 +78,9 @@ impl Session {
         run: &RunId,
         text: &str,
     ) {
-        if !self.is_current(conversation) || self.last_run.as_ref() != Some(run) {
+        if !self.is_current(conversation)
+            || (self.last_run.as_ref() != Some(run) && !self.is_live(run))
+        {
             return;
         }
         let limit = self.limits.text_bytes.get();
@@ -147,67 +146,6 @@ impl Session {
         snapshot.items.push(item);
         if trim_items(&mut snapshot.items, self.limits.items.get()) {
             self.forget_missing_tools();
-        }
-    }
-
-    pub(super) fn on_run_started(
-        &mut self,
-        conversation: &ConversationId,
-        run: RunId,
-        at: Option<Duration>,
-    ) {
-        if !self.is_current(conversation)
-            || self.last_run.as_ref() == Some(&run)
-            || run.as_str().len() > MAX_LABEL_BYTES
-        {
-            return;
-        }
-        if self
-            .operation
-            .as_ref()
-            .is_some_and(|op| op.outcome.is_some())
-        {
-            self.operation = None;
-        }
-        self.observed_run = Some(ObservedRun {
-            id: run.clone(),
-            started_at: at,
-            outcome: None,
-            duration: None,
-        });
-        self.last_run = Some(run.clone());
-        if let Some(snapshot) = &mut self.snapshot {
-            if let Some(previous) = snapshot.context.take() {
-                self.previous_context = Some(previous);
-            }
-            snapshot.usage = None;
-            snapshot.active_run = Some(run);
-        }
-        self.interrupting = None;
-        self.notice.clear();
-    }
-
-    pub(super) fn on_run_finished(
-        &mut self,
-        conversation: &ConversationId,
-        run: &RunId,
-        outcome: RunOutcome,
-        at: Option<Duration>,
-    ) {
-        if !self.is_current(conversation) || self.active_run() != Some(run) {
-            return;
-        }
-        self.interrupting = None;
-        if let Some(observed) = &mut self.observed_run {
-            observed.outcome = Some(outcome);
-            observed.duration = observed
-                .started_at
-                .zip(at)
-                .and_then(|(start, finish)| finish.checked_sub(start));
-        }
-        self.retain_permissions(|permission| permission.run != *run);
-        if let Some(snapshot) = &mut self.snapshot {
-            snapshot.active_run = None;
         }
     }
 }

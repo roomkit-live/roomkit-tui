@@ -177,7 +177,9 @@ pub enum Event {
         /// Authoritative content.
         item: Item,
     },
-    /// An execution has started.
+    /// An execution has started. Several can be live at once in one
+    /// conversation, such as host work and an agent turn for another
+    /// channel's message; each lasts until its own `RunFinished`.
     RunStarted {
         /// Target conversation.
         conversation: ConversationId,

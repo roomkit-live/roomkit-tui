@@ -106,10 +106,8 @@ room and agent. Work a `CommandExecution` runs asks through
 whatever else runs in the room, such as a turn for another channel's message,
 and only the person who invoked the command may answer. Interrupting the work
 denies its pending requests and every request it asks afterwards, and its
-decisions are stored once it settles. The bundled terminal shows the requests
-of the run it last saw start: while a turn for another channel's message runs
-in the room, and after it, the work's requests are not shown and are denied at
-their timeout.
+decisions are stored once it settles. The bundled terminal follows every live
+run of the room, so the work's requests stay on screen while such a turn runs.
 The broker scopes answers to the current room, agent, run and one decision.
 When a person started the run from a view, only that person may answer; a
 decision is recorded only once the waiting action has received it.

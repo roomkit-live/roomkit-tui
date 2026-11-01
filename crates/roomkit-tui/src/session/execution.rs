@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use roomkit_tui_protocol::{ContextUsage, RunId, RunOutcome};
+use roomkit_tui_protocol::{ContextUsage, RunOutcome};
 
 use super::Session;
 use crate::{RunObservation, SessionObservation};
@@ -80,10 +80,5 @@ impl Session {
         self.context()
             .map(|usage| (usage, false))
             .or_else(|| self.previous_context.as_ref().map(|usage| (usage, true)))
-    }
-
-    /// Active execution, if any.
-    pub fn active_run(&self) -> Option<&RunId> {
-        self.snapshot.as_ref().and_then(|s| s.active_run.as_ref())
     }
 }

@@ -9,6 +9,7 @@ mod layout;
 mod messages;
 mod meters;
 mod permissions;
+mod runs;
 mod screens;
 mod sidebar;
 mod streaming;

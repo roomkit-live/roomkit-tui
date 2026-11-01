@@ -1,0 +1,146 @@
+//! Several runs live at once in a room: host work a person started, and an
+//! agent turn that another channel's message started meanwhile.
+
+#![allow(
+    clippy::unwrap_used,
+    reason = "Fixtures and assertions fail the test on invalid state"
+)]
+
+use std::time::Duration;
+
+use roomkit_tui_protocol::*;
+
+use super::*;
+
+fn start(run: &str) -> Event {
+    Event::RunStarted {
+        conversation: "room-a".into(),
+        run: run.into(),
+    }
+}
+
+fn finish(run: &str, outcome: RunOutcome) -> Event {
+    Event::RunFinished {
+        conversation: "room-a".into(),
+        run: run.into(),
+        outcome,
+    }
+}
+
+fn ask(id: &str, run: &str) -> Event {
+    Event::PermissionRequested {
+        conversation: "room-a".into(),
+        permission: Permission::new(id, "agent", run, "Deploy?", "Deploy to production"),
+    }
+}
+
+fn shown(session: &crate::Session) -> Vec<&str> {
+    session
+        .permissions()
+        .iter()
+        .map(|permission| permission.id.as_str())
+        .collect()
+}
+
+fn seconds(n: u64) -> Duration {
+    Duration::from_secs(n)
+}
+
+/// RMK-1135: the terminal followed one run, the last started. An agent turn
+/// for another channel's message replaced the person's `/deploy`: its
+/// requests were no longer shown and expired, and Esc aimed at the turn.
+#[test]
+fn a_run_started_meanwhile_leaves_the_earlier_one_visible_and_answerable() {
+    let mut session = session();
+    session.apply_at(start("deploy-1"), seconds(0));
+    session.apply(ask("p1", "deploy-1"));
+    assert_eq!(shown(&session), ["p1"]);
+
+    session.apply_at(start("agent:sms-42"), seconds(10));
+    let deploy = RunId::from("deploy-1");
+    assert_eq!(session.active_run(), Some(&deploy), "Esc follows the work");
+    assert_eq!(session.run_elapsed(seconds(25)), Some(seconds(25)));
+    session.apply(ask("p2", "deploy-1"));
+    assert_eq!(shown(&session), ["p1", "p2"], "Shown during the turn");
+    session.apply(Event::TextDelta {
+        conversation: "room-a".into(),
+        message: "draft-sms".into(),
+        actor: "agent".into(),
+        run: "agent:sms-42".into(),
+        text: "Hello Carol".into(),
+    });
+    let items = &session.snapshot().unwrap().items;
+    assert!(
+        items
+            .iter()
+            .any(|item| matches!(item, Item::Message(m) if m.text == "Hello Carol"))
+    );
+
+    session.apply_at(finish("agent:sms-42", RunOutcome::Completed), seconds(30));
+    assert_eq!(session.active_run(), Some(&deploy));
+    assert!(session.run_outcome().is_none(), "The work still runs");
+    session.apply(ask("p3", "deploy-1"));
+    assert_eq!(shown(&session), ["p1", "p2", "p3"], "Shown after the turn");
+    assert!(
+        session
+            .request(Command::Interrupt {
+                run: deploy.clone()
+            })
+            .is_ok()
+    );
+
+    session.apply_at(finish("deploy-1", RunOutcome::Interrupted), seconds(40));
+    assert!(session.active_run().is_none());
+    assert!(session.permissions().is_empty());
+    assert_eq!(session.run_outcome(), Some(RunOutcome::Interrupted));
+    assert_eq!(session.run_elapsed(seconds(50)), Some(seconds(40)));
+}
+
+/// A request of the later run is shown beside the earlier run's.
+#[test]
+fn every_live_run_can_ask() {
+    let mut session = session();
+    session.apply(start("deploy-1"));
+    session.apply(start("agent:sms-42"));
+    session.apply(ask("from-turn", "agent:sms-42"));
+    session.apply(ask("from-work", "deploy-1"));
+    assert_eq!(shown(&session), ["from-turn", "from-work"]);
+    session.apply(finish("agent:sms-42", RunOutcome::Completed));
+    assert_eq!(
+        shown(&session),
+        ["from-work"],
+        "A finished run's requests go"
+    );
+}
+
+/// A run starting meanwhile neither restarts the work's timer nor forgets an
+/// interruption already on its way.
+#[test]
+fn a_run_started_meanwhile_keeps_the_work_s_timer_and_interruption() {
+    let mut session = session();
+    session.apply_at(start("deploy-1"), seconds(0));
+    let interrupt = session
+        .request(Command::Interrupt {
+            run: "deploy-1".into(),
+        })
+        .unwrap();
+    session.sent(&interrupt);
+    assert!(session.interrupting());
+    session.apply_at(start("agent:sms-42"), seconds(5));
+    assert!(session.interrupting(), "Still interrupting the work");
+    assert_eq!(session.run_elapsed(seconds(8)), Some(seconds(8)));
+}
+
+/// A replayed start of a live run, or of the last run started, is ignored.
+#[test]
+fn a_replayed_start_does_not_duplicate_or_reopen_a_run() {
+    let mut session = session();
+    session.apply(start("deploy-1"));
+    session.apply(start("agent:sms-42"));
+    session.apply(start("deploy-1"));
+    session.apply(finish("deploy-1", RunOutcome::Completed));
+    assert_eq!(session.active_run(), Some(&RunId::from("agent:sms-42")));
+    session.apply(finish("agent:sms-42", RunOutcome::Completed));
+    session.apply(start("agent:sms-42"));
+    assert!(session.active_run().is_none(), "Replay cannot reopen it");
+}

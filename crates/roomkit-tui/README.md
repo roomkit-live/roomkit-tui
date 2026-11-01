@@ -88,6 +88,13 @@ without an observed start stay unknown. Timings are not persisted.
 Active runs and tools use a small spinner; disabling animation does not delay
 streaming output.
 
+Several runs can be live at once in a room, such as host work a person started
+and an agent turn for another channel's message. The view follows each until
+its `RunFinished`: it shows the approval requests and streamed text of every
+live run, while the timer, Esc and `active_run` follow the earliest. A view
+starts work only in an idle room, so the earliest is its own work. A replayed
+`RunStarted` of a live run, or of the last run started, is ignored.
+
 When a host publishes the optional operation lifecycle, `Session::is_executing`
 also covers admission before `RunStarted` and cleanup after `RunFinished`.
 `execution_outcome` retains failure or interruption even if operation processing

@@ -9,6 +9,7 @@ mod history;
 mod input;
 mod labels;
 mod measures;
+mod runs;
 mod tools;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,6 +34,13 @@ type ToolKey = (ActorId, RunId, CallId);
 /// How long a new approval card ignores decisions, so that keys typed for the
 /// composer, or a click aimed elsewhere, never answer a request unseen.
 pub const APPROVAL_ARMING_DELAY: Duration = Duration::from_millis(500);
+
+/// A run started and not finished yet, and when this view saw it start.
+#[derive(Debug)]
+struct LiveRun {
+    id: RunId,
+    started_at: Option<Duration>,
+}
 
 #[derive(Debug)]
 struct ObservedRun {
@@ -116,6 +124,8 @@ pub struct Session {
     next_request: u64,
     pending: BTreeMap<RequestId, Command>,
     last_run: Option<RunId>,
+    /// Runs started and not finished, earliest first.
+    live_runs: Vec<LiveRun>,
     interrupting: Option<RunId>,
     deciding: BTreeSet<PermissionId>,
     expanded_tools: BTreeSet<ToolKey>,
@@ -162,6 +172,7 @@ impl Session {
             next_request: 0,
             pending: BTreeMap::new(),
             last_run: None,
+            live_runs: Vec::new(),
             interrupting: None,
             deciding: BTreeSet::new(),
             expanded_tools: BTreeSet::new(),

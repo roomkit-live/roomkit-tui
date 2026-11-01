@@ -224,7 +224,7 @@ impl Session {
                 return Err(SessionError::FormPending);
             }
             Command::Interrupt { run } => {
-                if !snapshot.can_interrupt || snapshot.active_run.as_ref() != Some(run) {
+                if !snapshot.can_interrupt || !self.is_live(run) {
                     return Err(SessionError::NotInterruptible);
                 }
                 if self.interrupting.is_some() {
