@@ -234,3 +234,50 @@ async fn preparation_can_be_interrupted_and_stale_run_ids_cannot_cancel_it() {
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }
+
+/// RMK-1079: `prepare:{operation}` reached 264 bytes for a 256-byte operation,
+/// so the terminal ignored the run and Esc had nothing to interrupt.
+#[tokio::test]
+async fn a_long_operation_id_still_gives_its_preparation_a_run_to_interrupt() {
+    let kit = RoomKit::new(Default::default());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let channel = prepare(&kit, ScriptedProvider::new([]), calls, false).await;
+    let lifecycle = Arc::new(Lifecycle {
+        hold: true,
+        ..Default::default()
+    });
+    let (client, host) = connection(NonZeroUsize::new(128).unwrap());
+    let session = LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle);
+    let task = tokio::spawn(session.run(host));
+    next(&client).await;
+    let operation = "o".repeat(roomkit_tui_protocol::limits::MAX_OPERATION_ID_BYTES);
+    client.try_send(request(&operation)).unwrap();
+    let run = loop {
+        if let Event::RunStarted { run, .. } = next(&client).await {
+            break run;
+        }
+    };
+    let bytes = run.as_str().len();
+    assert!(
+        bytes <= roomkit_tui_protocol::limits::MAX_LABEL_BYTES,
+        "A run id of {bytes} bytes is ignored"
+    );
+    let interrupt = Request::new(
+        RequestId::new(2),
+        "interrupt",
+        "room",
+        Command::Interrupt { run },
+    );
+    client.try_send(interrupt).unwrap();
+    let events = collect_operation(&client).await;
+    assert!(matches!(
+        events.last(),
+        Some(Event::OperationFinished {
+            outcome: RunOutcome::Interrupted,
+            ..
+        })
+    ));
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}

@@ -157,18 +157,10 @@ impl Approvals {
             return Registration::Refused;
         };
         state.sequence = sequence;
-        let id = crate::projection::permission_id(&run.id, sequence);
-        let mut permission = Permission::new(
-            id.clone(),
-            agent.as_str(),
-            run.id.clone(),
-            details.title.clone(),
-            details.detail.clone(),
-        );
-        permission.summary.clone_from(&details.summary);
-        if !permission.fits() {
+        let Some(permission) = details.permission(&run.id, agent, sequence) else {
             return Registration::Refused;
-        }
+        };
+        let id = permission.id.clone();
         let (answer, receiver) = oneshot::channel();
         let pending = Pending {
             scope: scope.clone(),

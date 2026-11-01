@@ -96,3 +96,36 @@ pub(crate) fn restore(
     }
     (None, None)
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, reason = "Test fixture failures are assertions")]
+    use super::*;
+    use roomkit::model::{ChannelId, ChannelType, EventId, EventSource, RoomId, TextContent};
+    use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
+    use serde_json::json;
+
+    /// RMK-1079: usage built its run id by hand, so with a long agent id it
+    /// named a run the terminal never knew and was dropped.
+    #[test]
+    fn usage_names_the_same_bounded_run_as_the_turn() {
+        let agent = ChannelId::new("a".repeat(250)).unwrap();
+        let mut row = RoomEvent::new(
+            RoomId::new("room").unwrap(),
+            EventSource::new(agent.clone(), ChannelType::AI),
+            TextContent::new("Done"),
+        );
+        row.responds_to = Some(EventId::new("evt_1").unwrap());
+        row.metadata.insert("ai_provider".into(), json!("openai"));
+        row.metadata.insert("ai_model".into(), json!("model"));
+        row.metadata.insert(
+            "ai_usage".into(),
+            json!({"input_tokens": 3, "output_tokens": 2}),
+        );
+        let Some(Event::UsageUpdated { run, .. }) = event(&row) else {
+            unreachable!("The row reports usage");
+        };
+        assert_eq!(run, crate::projection::run_id(&agent, "evt_1"));
+        assert!(run.as_str().len() <= MAX_LABEL_BYTES);
+    }
+}

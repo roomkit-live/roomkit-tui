@@ -4,10 +4,22 @@
 use super::*;
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 
-/// 250 bytes: RoomKit accepts it, and `{agent}:{trigger}` alone exceeded the
-/// bound, so a terminal ignored the run and hid its permissions.
+/// 250 bytes. RoomKit bounds no identity, and `{agent}:{trigger}` alone
+/// exceeded the terminal's bound: it ignored the run and hid its permissions.
 fn long_agent() -> ChannelId {
     ChannelId::new(format!("agent-{}", "x".repeat(244))).unwrap()
+}
+
+/// The run that finished before the operation did, if one did.
+async fn finished(client: &Client) -> Option<(RunId, RunOutcome)> {
+    let mut finished = None;
+    loop {
+        match next(client).await {
+            Event::RunFinished { run, outcome, .. } => finished = Some((run, outcome)),
+            Event::OperationFinished { .. } => return finished,
+            _ => {}
+        }
+    }
 }
 
 /// Ask the person before every tool call.
@@ -89,19 +101,10 @@ async fn a_long_agent_id_still_gives_runs_and_permissions_a_terminal_accepts() {
     client
         .try_send(Request::new(RequestId::new(2), "decide", "room", decide))
         .unwrap();
-    loop {
-        match next(&client).await {
-            Event::RunFinished {
-                run: finished,
-                outcome,
-                ..
-            } => {
-                assert_eq!((finished, outcome), (run.clone(), RunOutcome::Completed));
-            }
-            Event::OperationFinished { .. } => break,
-            _ => {}
-        }
-    }
+    assert_eq!(
+        finished(&client).await,
+        Some((run.clone(), RunOutcome::Completed))
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 1, "The approved tool ran");
 
     let restored = LocalSession::new(kit.clone(), channel, view)

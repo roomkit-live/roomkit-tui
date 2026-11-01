@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use roomkit_tui_protocol::{Permission, RunId};
+
 /// A human decision the host needs before an action. The person sees every
 /// field in full: oversized requests are refused, never shown truncated.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,4 +44,21 @@ pub(crate) struct Details {
     pub detail: String,
     pub summary: Option<String>,
     pub tool_call_id: Option<String>,
+}
+
+impl Details {
+    /// The `sequence`-th request of `run`, or `None` when a terminal could
+    /// not show it in full and would hide it until it expires.
+    pub(super) fn permission(&self, run: &RunId, agent: &str, sequence: u64) -> Option<Permission> {
+        let id = crate::projection::permission_id(run, sequence);
+        let mut permission = Permission::new(
+            id,
+            agent,
+            run.clone(),
+            self.title.clone(),
+            self.detail.clone(),
+        );
+        permission.summary.clone_from(&self.summary);
+        permission.fits().then_some(permission)
+    }
 }
