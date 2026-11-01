@@ -88,8 +88,13 @@ fn invoke(id: u64, name: &str, arguments: &str) -> Request {
 async fn reload(client: &Client, id: u64) -> Snapshot {
     client.try_send(invoke(id, "reload", "")).unwrap();
     loop {
-        if let Event::Snapshot(snapshot) = next(client).await {
-            return snapshot;
+        match next(client).await {
+            Event::Snapshot(snapshot) => return snapshot,
+            Event::Reply {
+                request,
+                error: Some(rejection),
+            } if request == RequestId::new(id) => panic!("reload refused: {}", rejection.message),
+            _ => {}
         }
     }
 }
@@ -195,12 +200,32 @@ fn refused_modes() -> Vec<Event> {
     std::iter::once(mode("plan")).chain(refused).collect()
 }
 
+/// The three ways host events reach the view.
+#[derive(Clone, Copy, Debug)]
+enum Path {
+    CommandResult,
+    SubscriptionOnAttach,
+    SubscriptionUpdate,
+}
+
 #[tokio::test]
 async fn a_mode_the_terminal_would_refuse_is_not_kept_on_any_path() {
-    for subscribed in [false, true] {
+    let attached = Event::Notice {
+        conversation: "room".into(),
+        text: "attached".into(),
+    };
+    for path in [
+        Path::CommandResult,
+        Path::SubscriptionOnAttach,
+        Path::SubscriptionUpdate,
+    ] {
         let kit = RoomKit::new(Default::default());
         let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
-        let (publish, updates) = watch::channel(Vec::new());
+        let initial = match path {
+            Path::SubscriptionOnAttach => refused_modes(),
+            _ => vec![attached.clone()],
+        };
+        let (publish, updates) = watch::channel(initial);
         let handler = Renamer {
             updates: Some(updates),
             published: refused_modes(),
@@ -209,20 +234,20 @@ async fn a_mode_the_terminal_would_refuse_is_not_kept_on_any_path() {
         let session = LocalSession::new(kit.clone(), channel, view());
         let task = tokio::spawn(session.run_with_commands(host, handler));
         assert!(matches!(next(&client).await, Event::Snapshot(_)));
-        if subscribed {
-            publish.send_replace(refused_modes());
-        } else {
-            client.try_send(invoke(1, "publish", "")).unwrap();
+        match path {
+            Path::CommandResult => client.try_send(invoke(1, "publish", "")).unwrap(),
+            Path::SubscriptionOnAttach => {}
+            Path::SubscriptionUpdate => {
+                // Past the attach value, so this one arrives as an update.
+                assert_eq!(next(&client).await, attached);
+                publish.send_replace(refused_modes());
+            }
         }
         let last = refused_modes().pop().unwrap();
         while next(&client).await != last {}
 
         let restored = reload(&client, 2).await;
-        assert_eq!(
-            shown(&restored),
-            ("room", "plan"),
-            "subscribed: {subscribed}"
-        );
+        assert_eq!(shown(&restored), ("room", "plan"), "{path:?}");
         drop(client);
         task.await.unwrap().unwrap();
         kit.close().await.unwrap();
