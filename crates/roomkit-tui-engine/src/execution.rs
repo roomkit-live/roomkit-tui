@@ -34,8 +34,8 @@ impl CommandExecution {
     /// Errors must be safe to display, without credentials or raw service bodies.
     /// `run` is at most [`MAX_LABEL_BYTES`](roomkit_tui_protocol::limits::MAX_LABEL_BYTES):
     /// terminals ignore a longer run, so the adapter rejects the command and
-    /// starts nothing. Give each execution a new `run`: a terminal ignores a
-    /// run that repeats the last one it saw.
+    /// starts nothing. A `run` that repeats the last run of the room is
+    /// rejected too, as a terminal ignores it: give each execution a new one.
     pub fn new<F, Fut>(run: RunId, task: F) -> Self
     where
         F: FnOnce(ExecutionContext) -> Fut + Send + 'static,

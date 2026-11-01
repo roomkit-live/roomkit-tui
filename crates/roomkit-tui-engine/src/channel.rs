@@ -1,5 +1,8 @@
 //! The RoomKit transport channel shared by local views of a room.
 
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
 use roomkit::model::{
     ChannelCategory, ChannelDirection, ChannelId, ChannelType, RoomEvent, RoomId,
 };
@@ -28,6 +31,9 @@ pub struct ConversationChannel {
     pub(crate) activity: Activity,
     pub(crate) stopping: Stopping,
     pub(crate) approvals: Approvals,
+    /// The last run announced in each room: a terminal ignores a run that
+    /// repeats it.
+    last_runs: Arc<Mutex<BTreeMap<String, RunId>>>,
 }
 
 impl ConversationChannel {
@@ -58,6 +64,7 @@ impl ConversationChannel {
             events,
             activity: Activity::default(),
             stopping: Stopping::default(),
+            last_runs: Arc::default(),
         }
     }
 
@@ -138,8 +145,22 @@ impl ConversationChannel {
     }
 
     pub(crate) fn publish(&self, room: &str, event: Event) {
+        if let Event::RunStarted { run, .. } = &event {
+            self.runs().insert(room.to_owned(), run.clone());
+        }
         // No subscribers is normal: the engine keeps executing and persisting.
         let _ = self.events.send((room.into(), event));
+    }
+
+    /// The last run announced in `room`.
+    pub(crate) fn last_run(&self, room: &str) -> Option<RunId> {
+        self.runs().get(room).cloned()
+    }
+
+    fn runs(&self) -> MutexGuard<'_, BTreeMap<String, RunId>> {
+        self.last_runs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     pub(crate) fn busy(&self, room: &str) -> bool {

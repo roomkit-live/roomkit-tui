@@ -143,25 +143,35 @@ impl roomkit_tui_engine::CommandHandler for Executor {
     }
 }
 
-/// RMK-1104: a host run identity over the bound started work the terminal
-/// could neither show nor interrupt.
-#[tokio::test]
-async fn host_work_under_a_run_id_a_terminal_ignores_is_rejected() {
-    let kit = RoomKit::new(Default::default());
-    let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
+/// Invoke `work`, whose execution runs under the identity `run`.
+fn work(id: u64, run: String) -> Request {
+    let command = Command::Invoke {
+        name: "work".into(),
+        arguments: run,
+    };
+    Request::new(RequestId::new(id), format!("work-{id}"), "room", command)
+}
+
+/// A view that offers `work`, its client and its serving task.
+async fn executor_view<S: ConversationStore>(
+    kit: &RoomKit<S>,
+) -> (Client, tokio::task::JoinHandle<Result<(), AdapterError>>) {
+    let channel = prepare(kit, ScriptedProvider::new([]), Arc::default(), false).await;
     let mut view = config();
     view.commands.push(CommandSpec::new("work", "Host work"));
     let (client, host) = connection(NonZeroUsize::new(64).unwrap());
     let session = LocalSession::new(kit.clone(), channel, view);
     let task = tokio::spawn(session.run_with_commands(host, Executor));
     assert!(matches!(next(&client).await, Event::Snapshot(_)));
-    let work = |id, run: String| {
-        let command = Command::Invoke {
-            name: "work".into(),
-            arguments: run,
-        };
-        Request::new(RequestId::new(id), format!("work-{id}"), "room", command)
-    };
+    (client, task)
+}
+
+/// RMK-1104: a host run identity over the bound started work the terminal
+/// could neither show nor interrupt.
+#[tokio::test]
+async fn host_work_under_a_run_id_a_terminal_ignores_is_rejected() {
+    let kit = RoomKit::new(Default::default());
+    let (client, task) = executor_view(&kit).await;
     client
         .try_send(work(1, "r".repeat(MAX_LABEL_BYTES + 1)))
         .unwrap();
@@ -185,6 +195,38 @@ async fn host_work_under_a_run_id_a_terminal_ignores_is_rejected() {
         Event::OperationStarted { .. }
     ));
     assert!(matches!(next(&client).await, Event::RunStarted { .. }));
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
+
+/// RMK-1110: a terminal ignores a `RunStarted` that repeats its last run, so
+/// a second `/build` under the same identity ran unseen and could not be
+/// interrupted.
+#[tokio::test]
+async fn host_work_repeating_the_last_run_id_is_rejected() {
+    let kit = RoomKit::new(Default::default());
+    let (client, task) = executor_view(&kit).await;
+    client.try_send(work(1, "build".into())).unwrap();
+    assert_operation(
+        &collect_operation(&client).await,
+        "work-1",
+        RunOutcome::Completed,
+    );
+    client.try_send(work(2, "build".into())).unwrap();
+    let Event::Reply {
+        error: Some(rejection),
+        ..
+    } = next(&client).await
+    else {
+        panic!("Work repeating the last run was started");
+    };
+    assert_eq!(rejection.code, ErrorCode::Invalid);
+    client.try_send(work(3, "build-2".into())).unwrap();
+    assert!(matches!(
+        next(&client).await,
+        Event::Reply { error: None, .. }
+    ));
     drop(client);
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();

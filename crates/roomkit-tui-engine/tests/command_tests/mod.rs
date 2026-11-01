@@ -241,8 +241,13 @@ async fn host_execution_is_scoped_interruptible_and_does_not_call_the_model() {
             let Command::Invoke { arguments, .. } = request.command else {
                 unreachable!()
             };
+            // Each execution needs a new run: a terminal ignores a repeat.
+            let run = match arguments.as_str() {
+                "" => "host-run".to_owned(),
+                other => format!("host-run-{other}"),
+            };
             Ok(CommandResult::Execute(CommandExecution::new(
-                "host-run".into(),
+                run.into(),
                 move |mut context| async move {
                     if arguments == "panic" {
                         panic!("fixture panic");

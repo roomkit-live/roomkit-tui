@@ -79,8 +79,8 @@ A handler can return `CommandResult::Execute(CommandExecution::new(...))` for
 long-running work. The callback starts only after acceptance and receives an
 `ExecutionContext` for item updates and cooperative cancellation. Its run
 identity is at most 256 bytes: a terminal could neither show nor interrupt a
-longer one, so the command is rejected and nothing starts. Use a new run
-identity for each execution: a terminal ignores a run that repeats its last.
+longer one, so the command is rejected and nothing starts. A run identity
+that repeats the last run of the room is rejected too: a terminal ignores it.
 Return the outcome after cleanup and durable writes. The adapter publishes run
 activity and completion, rejects concurrent submissions, and keeps opted-in
 controls available.
