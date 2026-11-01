@@ -173,6 +173,37 @@ fn the_highlight_follows_its_text_when_scrolled_and_a_message_arrives() {
 }
 
 #[test]
+fn a_title_change_keeps_the_selection_and_its_highlight() {
+    let mut session = conversation(30);
+    let frame = draw(&mut session);
+    let row = row_of(&frame, "Paragraph 29");
+    let mut selection = TextSelection::new(frame.clone(), 0, row, &session);
+    selection.hold(WIDTH - 1, row, &frame, &session);
+
+    let renamed = Event::TitleChanged {
+        conversation: "room-a".into(),
+        title: "Renamed".into(),
+    };
+    selection.observe(&renamed);
+    session.apply(renamed);
+    let mut shown = draw(&mut session);
+    let header = shown.timeline.as_ref().unwrap().top;
+    assert!(
+        shown.lines[..header]
+            .iter()
+            .any(|line| line.contains("Renamed"))
+    );
+    selection.follow(&shown, &session);
+    selection.release();
+    selection.paint(&mut shown, &session);
+    assert_eq!(selected_text(&shown).trim(), "Paragraph 29 of the reply.");
+    assert_eq!(
+        copy(&selection, &session).unwrap().unwrap(),
+        "   Paragraph 29 of the reply."
+    );
+}
+
+#[test]
 fn a_selection_spans_grouped_tool_activity_as_shown() {
     let options = UiOptions {
         tool_activity: true,

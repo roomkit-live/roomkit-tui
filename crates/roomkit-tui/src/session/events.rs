@@ -31,6 +31,7 @@ impl Session {
             && matches!(
                 &event,
                 Event::Snapshot(_)
+                    | Event::TitleChanged { .. }
                     | Event::ModeChanged { .. }
                     | Event::OperationStarted { .. }
                     | Event::OperationFinished { .. }
@@ -65,6 +66,10 @@ impl Session {
                 self.on_application_info(&conversation, text);
             }
             Event::ExitWarning { conversation, text } => self.on_exit_warning(&conversation, text),
+            Event::TitleChanged {
+                conversation,
+                title,
+            } => self.on_title_changed(&conversation, title),
             Event::BackgroundChanged {
                 conversation,
                 status,

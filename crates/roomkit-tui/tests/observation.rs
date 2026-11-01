@@ -262,3 +262,29 @@ fn optional_observation_keeps_only_latest_facts_and_never_changes_the_session() 
         "Consumer lifetime is application-owned"
     );
 }
+
+#[test]
+fn a_title_change_is_observed_in_its_own_view_only() {
+    let observer = SessionObserver::default();
+    let mut session = Session::default().with_observer(observer.clone());
+    session.apply(Event::Snapshot(snapshot("orders")));
+    session.apply(operation_started());
+    let before = observer.latest().unwrap();
+    session.apply(Event::TitleChanged {
+        conversation: "other".into(),
+        title: "Elsewhere".into(),
+    });
+    assert_eq!(observer.latest().unwrap(), before);
+
+    session.apply(Event::TitleChanged {
+        conversation: "orders".into(),
+        title: "Refund for order 42".into(),
+    });
+    let renamed = observer.latest().unwrap();
+    assert_eq!(renamed.title, "Refund for order 42");
+    assert_eq!(
+        renamed.operation, before.operation,
+        "The operation is untouched"
+    );
+    assert_eq!(Some(renamed), session.observation());
+}

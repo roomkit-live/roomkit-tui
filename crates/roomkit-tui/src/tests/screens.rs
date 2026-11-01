@@ -249,3 +249,49 @@ fn application_caption_is_scoped_bounded_and_preserves_the_welcome_composer() {
     s.apply(Event::Snapshot(snapshot()));
     assert!(s.application_info.is_none());
 }
+
+fn title_changed(conversation: &str, title: impl Into<String>) -> Event {
+    Event::TitleChanged {
+        conversation: conversation.into(),
+        title: title.into(),
+    }
+}
+
+fn header(s: &mut Session) -> String {
+    let frame = render::screen(s, 80, 24, &Renderers::default());
+    s.sync(&frame, std::time::Duration::ZERO);
+    frame.lines[..frame.timeline.as_ref().unwrap().top].join("\n")
+}
+
+#[test]
+fn a_title_change_renames_the_header_in_place_during_a_run() {
+    let mut s = session();
+    s.apply(Event::Item {
+        conversation: "room-a".into(),
+        item: Item::Message(Message::new("long", "agent", "history line\n\n".repeat(60))),
+    });
+    started(&mut s, "run-1");
+    s.editor.insert("unfinished draft");
+    s.scroll_back(7);
+    assert!(header(&mut s).contains("Research"));
+    let scroll = s.scroll();
+
+    s.apply(title_changed("room-a", "Quarterly review"));
+    let shown = header(&mut s);
+    assert!(shown.contains("Quarterly review") && !shown.contains("Research"));
+    assert!(s.is_executing(), "Renaming never settles the run");
+    assert_eq!(s.editor.text(), "unfinished draft");
+    assert_eq!(s.scroll(), scroll);
+    assert_eq!(s.snapshot().unwrap().items.len(), 1);
+
+    s.apply(title_changed("room-b", "Another view"));
+    s.apply(title_changed("room-a", "x".repeat(257)));
+    assert_eq!(s.snapshot().unwrap().title, "Quarterly review");
+    s.apply(title_changed("room-a", "x".repeat(256)));
+    assert_eq!(s.snapshot().unwrap().title.len(), 256);
+
+    s.apply(title_changed("room-a", "Plain\u{1b}[2J\u{7}\u{202E}title"));
+    let shown = header(&mut s);
+    assert!(shown.contains("Plain[2Jtitle"), "{shown}");
+    assert!(!shown.contains(['\u{1b}', '\u{7}', '\u{202E}']));
+}
