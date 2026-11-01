@@ -10,6 +10,11 @@ Initial public release.
 
 ### Added
 
+- `Event::TitleChanged` renames the displayed conversation in place, even
+  while it executes: the header and `SessionObservation::title` follow, and
+  the history, draft, scroll position and selection are kept. The engine
+  keeps each mode or title change a host publishes, from a command result or
+  its subscription, so later snapshots show it.
 - `roomkit-tui-protocol`: runtime-independent, serializable requests, events
   and structured results, with scoped identities, stable operation IDs for
   retries, an optional operation lifecycle, host forms, panels and sidebars.
