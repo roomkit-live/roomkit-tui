@@ -271,8 +271,8 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
     }
 }
 
-/// Why a replacement view was not adopted. A view the terminal would refuse
-/// is the application's mistake; anything else is the conversation's state.
+/// Why a replacement view was not adopted: invalid when the terminal would
+/// refuse its snapshot, unavailable for any other failure.
 fn refused_switch(error: &AdapterError) -> Rejection {
     match error {
         AdapterError::InvalidSnapshot(reason) => {

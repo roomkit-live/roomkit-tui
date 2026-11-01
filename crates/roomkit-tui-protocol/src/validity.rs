@@ -45,9 +45,9 @@ impl fmt::Display for SnapshotError {
 impl std::error::Error for SnapshotError {}
 
 impl Snapshot {
-    /// Whether a terminal accepts this snapshot. A refused snapshot changes
-    /// nothing on screen. Labels and history are not checked: a terminal
-    /// shortens them instead.
+    /// Whether a terminal accepts this snapshot. A terminal refuses the whole
+    /// snapshot, shows why and keeps the view it shows. Labels and history are
+    /// not checked: a terminal shortens them instead.
     pub fn validate(&self) -> Result<(), SnapshotError> {
         if self.conversation.as_str().len() > MAX_LABEL_BYTES
             || self.actors.len() > MAX_SNAPSHOT_ENTRIES
@@ -106,8 +106,8 @@ fn advertised(commands: &[CommandSpec]) -> Option<BTreeSet<&str>> {
     Some(names)
 }
 
-/// Each prefix is one distinct punctuation character, other than the escape,
-/// sending to an advertised command.
+/// Each prefix is a distinct character that is neither alphanumeric,
+/// whitespace, a control nor the `\` escape, and sends to an advertised command.
 fn input_actions_fit(actions: &[InputAction], names: &BTreeSet<&str>) -> bool {
     let mut prefixes = BTreeSet::new();
     actions.len() <= MAX_INPUT_ACTIONS

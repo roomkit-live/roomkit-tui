@@ -196,9 +196,11 @@ pub enum AdapterError {
     /// The host selected an invalid or inaccessible binding.
     #[error("The configured conversation or agent is not available to this view")]
     InvalidBinding,
-    /// The configured view builds a snapshot a terminal would refuse, such as
-    /// a command with a space in its name. Nothing was sent to the view.
-    #[error("The configured view would be refused: {0}")]
+    /// The view's snapshot would be refused by a terminal. The cause is
+    /// usually the configuration, such as a command with a space in its name,
+    /// but can be the room, such as more actors than a view shows. Nothing was
+    /// sent to the view.
+    #[error("This view would be refused by the terminal: {0}")]
     InvalidSnapshot(#[from] SnapshotError),
     /// The initial adapter only restores quiescent conversations.
     #[error("Wait for the active response to finish before attaching this view")]

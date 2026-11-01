@@ -19,7 +19,7 @@ Initial public release.
 - `Snapshot::validate` (with `SnapshotError`), `ModeState::fits`,
   `Permission::fits` and their limits in `limits` let hosts check what they
   send against the rules terminals apply. The engine validates every snapshot
-  it builds: a `CommandResult::Switch` to a view a terminal would refuse is
+  it sends: a `CommandResult::Switch` to a view a terminal would refuse is
   rejected as invalid and the current view kept, and attaching such a view
   fails with `AdapterError::InvalidSnapshot` before anything is sent.
 - `roomkit-tui-protocol`: runtime-independent, serializable requests, events
