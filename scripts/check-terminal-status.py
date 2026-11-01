@@ -1,32 +1,15 @@
 """Check exact OSC 7501 bytes and lifecycle using real terminal entry points."""
 
-import fcntl
 import json
-import os
-from pathlib import Path
-import pty
 import re
-import select
-import signal
-import struct
 import subprocess
-import termios
 import time
 
-from terminal_screen import Screen
-
-def require(condition, message):
-    """Fail the check explicitly; unlike assert, this survives python -O."""
-    if not condition:
-        raise SystemExit(f"Check failed: {message}")
-
+from terminal_pty import Terminal, binary, require
 
 APPROVAL_ARMING = 0.6  # seconds; the terminal arms decisions after 500 ms
 
-metadata = json.loads(subprocess.check_output(
-    ["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], text=True
-))
-example = Path(metadata["target_directory"]) / "debug" / "order-support"
+example = binary("order-support")
 artifacts = subprocess.check_output([
     "cargo", "test", "--locked", "-p", "roomkit-tui-examples", "--test", "terminal_status",
     "--no-run", "--message-format=json",
@@ -37,76 +20,45 @@ fixture_args = [fixture, "--ignored", "--exact", "status_fixture", "--nocapture"
 osc = re.compile(rb"\x1b\]7501;([^\x1b]*)\x1b\\")
 
 
-class Terminal:
+class StatusTerminal(Terminal):
+    """A terminal whose program reports its status through OSC 7501."""
+
     def __init__(self, args, term="xterm-256color"):
-        self.master, self.slave = pty.openpty()
-        self.screen = Screen(24, 100)
-        self.resize(24, 100)
-        self.original = termios.tcgetattr(self.slave)
-        self.output = bytearray()
-        self.process = subprocess.Popen(args, stdin=self.slave, stdout=self.slave, stderr=self.slave,
-                                        env={**os.environ, "TERM": term, "NO_COLOR": "1"})
+        super().__init__(args, env={"TERM": term, "NO_COLOR": "1"})
 
-    def resize(self, rows, cols):
-        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-        self.screen.resize(rows, cols)
-        if hasattr(self, "process"):
-            os.kill(self.process.pid, signal.SIGWINCH)
+    def context(self):
+        return f"reports={self.reports()}, {super().context()}"
 
-    def send(self, value):
-        os.write(self.master, value)
-
-    def wait(self, predicate):
-        deadline = time.monotonic() + 10
-        while not predicate():
-            remaining = deadline - time.monotonic()
-            if remaining <= 0 or not select.select([self.master], [], [], max(0, remaining))[0]:
-                raise AssertionError(f"Terminal deadline; reports={self.reports()}, screen:\n{self.screen.text()}\ntail={self.output[-1000:]!r}")
-            chunk = os.read(self.master, 65536)
-            self.output.extend(chunk)
-            self.screen.feed(chunk)
-
-    def text(self, text, after=0):
+    def text(self, text):
         """Wait until the screen shows `text`."""
-        self.wait(lambda: self.screen.shows(text))
+        self.wait_for(text)
 
     def reports(self):
         return [value.decode("ascii") for value in osc.findall(self.output)]
 
     def state(self, state, app="status-fixture", after=0):
         pairs = f"state={state}:app={app}"
-        self.wait(lambda: pairs in self.reports()[after:])
+        self.wait_until(lambda: pairs in self.reports()[after:], pairs)
 
     def exited(self):
-        require(self.process.wait(timeout=5) == 0, 'self.process.wait(timeout=5) == 0')
-        while select.select([self.master], [], [], 0)[0]:
-            self.output.extend(os.read(self.master, 65536))
-        require(termios.tcgetattr(self.slave) == self.original, 'termios.tcgetattr(self.slave) == self.original')
-        require(b"\x1b[?1049l" in self.output, 'b"\\x1b[?1049l" in self.output')
+        super().exited()
+        require(b"\x1b[?1049l" in self.output, "The alternate screen was not left")
         require(not re.search(rb"\x1b\[(?:38|48);", self.output), "NO_COLOR was ignored")
 
-    def close(self):
-        if self.process.poll() is None:
-            self.process.kill()
-            self.process.wait(timeout=5)
-        os.close(self.master)
-        os.close(self.slave)
 
-
-terminal = Terminal(fixture_args)
+terminal = StatusTerminal(fixture_args)
 try:
     terminal.state("idle")
     terminal.send(b"/stream-failure\r")
     terminal.state("error")
     terminal.text(b"Execution Failed")
     # A resize changes rendering, but must not dismiss or resend the result.
-    before = len(terminal.output)
     terminal.resize(20, 80)
-    terminal.text(b"Execution Failed", before)
+    terminal.text(b"Execution Failed")
     require(terminal.reports() == [f"state={state}:app=status-fixture" for state in ("idle", "working", "error")], 'terminal.reports() == [f"state={state}:app=status-fixture" for state in ("idle", "working", "error")]')
     terminal.send(b"/admission-failure\r")
     terminal.state("error", after=3)
-    terminal.text(b"Execution Failed", before)
+    terminal.text(b"Execution Failed")
     terminal.send(b"/switch\r")
     terminal.text(b"Status fixture restored")
     terminal.send(b"Inspect record\r")
@@ -132,7 +84,7 @@ finally:
     terminal.close()
 
 # A host disconnect in the same burst as admission still clears the active record.
-terminal = Terminal(fixture_args)
+terminal = StatusTerminal(fixture_args)
 try:
     terminal.state("idle")
     terminal.send(b"/disconnect-working\r")
@@ -142,7 +94,7 @@ finally:
     terminal.close()
 
 # An existing run-only host works with reporting and animation disabled.
-terminal = Terminal([str(example), "--terminal-status", "order-support", "--no-animation"])
+terminal = StatusTerminal([str(example), "--terminal-status", "order-support", "--no-animation"])
 try:
     terminal.state("idle", "order-support")
     terminal.send(b"Inspect record\r")
@@ -160,7 +112,7 @@ finally:
 for args, term in [([], "xterm-256color"),
                    (["--terminal-status", "example", "--no-terminal-status"], "xterm-256color"),
                    (["--terminal-status", "example"], "dumb")]:
-    terminal = Terminal([str(example), *args], term)
+    terminal = StatusTerminal([str(example), *args], term)
     try:
         terminal.text(b"scripted/balanced")
         terminal.send(b"\x04")
