@@ -1,5 +1,8 @@
 #![allow(clippy::unwrap_used, reason = "Test fixture failures are assertions")]
+use super::admission::Registration;
 use super::*;
+use roomkit_tui_protocol::limits::MAX_PENDING_PERMISSIONS;
+use std::time::Duration;
 
 async fn requested(events: &mut broadcast::Receiver<(String, Event)>) -> PermissionId {
     let (_, Event::PermissionRequested { permission, .. }) = events.recv().await.unwrap() else {
