@@ -207,7 +207,9 @@ impl Operation {
 
 impl Drop for Operation {
     fn drop(&mut self) {
-        drop(self.active.take());
+        // The room is released once OperationFinished is out, so no view's
+        // next operation reaches a terminal before this one settled.
+        let active = self.active.take();
         self.channel.publish(
             self.conversation.as_str(),
             Event::OperationFinished {
@@ -216,6 +218,7 @@ impl Drop for Operation {
                 outcome: self.outcome,
             },
         );
+        drop(active);
     }
 }
 
