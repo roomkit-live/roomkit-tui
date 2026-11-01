@@ -1,7 +1,7 @@
 //! Guards that withdraw pending decisions when a view, a run or a waiting
 //! action goes away. A withdrawal is never recorded as a human refusal.
 
-use roomkit_tui_protocol::{Decision, PermissionId, RunId};
+use roomkit_tui_protocol::{Decision, PermissionId};
 
 use super::{Approvals, Scope};
 
@@ -18,6 +18,10 @@ impl Drop for View {
             if *count == 0 {
                 state.views.remove(&self.scope);
                 self.broker.withdraw(&mut state, &self.scope, None);
+                let room = &self.scope.0;
+                if !state.views.keys().any(|(watched, _)| watched == room) {
+                    state.last_runs.remove(room);
+                }
             }
         }
     }
@@ -26,7 +30,14 @@ impl Drop for View {
 pub(crate) struct Running {
     pub(super) broker: Approvals,
     pub(super) scope: Scope,
-    pub(super) run: RunId,
+    pub(super) token: u64,
+}
+
+impl Running {
+    /// The token naming this start of the run in requests.
+    pub(crate) fn token(&self) -> u64 {
+        self.token
+    }
 }
 
 impl Drop for Running {
@@ -34,13 +45,13 @@ impl Drop for Running {
         let mut state = self.broker.lock();
         // The run before it, if still live, receives the scope's requests again.
         if let Some(runs) = state.runs.get_mut(&self.scope) {
-            runs.retain(|r| r.id != self.run);
+            runs.retain(|r| r.token != self.token);
             if runs.is_empty() {
                 state.runs.remove(&self.scope);
             }
         }
         self.broker
-            .withdraw(&mut state, &self.scope, Some(&self.run));
+            .withdraw(&mut state, &self.scope, Some(self.token));
     }
 }
 

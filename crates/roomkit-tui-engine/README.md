@@ -78,9 +78,10 @@ an action prefix. Hosts without this capability receive ordinary text.
 A handler can return `CommandResult::Execute(CommandExecution::new(...))` for
 long-running work. The callback starts only after acceptance and receives an
 `ExecutionContext` for item updates and cooperative cancellation. Its run
-identity is at most 256 bytes: a terminal could neither show nor interrupt a
-longer one, so the command is rejected and nothing starts. A run identity
-that repeats the last run of the room is rejected too: a terminal ignores it.
+identity is at most 226 bytes, so the approvals derived from it fit a
+terminal's identity bound: a longer one is rejected and nothing starts. A run
+identity that repeats the last run of the room is rejected too: a terminal
+ignores it.
 Return the outcome after cleanup and durable writes. The adapter publishes run
 activity and completion, rejects concurrent submissions, and keeps opted-in
 controls available.
@@ -105,7 +106,10 @@ room and agent. Work a `CommandExecution` runs asks through
 whatever else runs in the room, such as a turn for another channel's message,
 and only the person who invoked the command may answer. Interrupting the work
 denies its pending requests and every request it asks afterwards, and its
-decisions are stored once it settles.
+decisions are stored once it settles. The bundled terminal shows the requests
+of the run it last saw start: while a turn for another channel's message runs
+in the room, and after it, the work's requests are not shown and are denied at
+their timeout.
 The broker scopes answers to the current room, agent, run and one decision.
 When a person started the run from a view, only that person may answer; a
 decision is recorded only once the waiting action has received it.

@@ -27,31 +27,39 @@ struct State {
     /// Live runs of each scope, oldest first: a turn delivered for another
     /// channel's message can start while host work still runs.
     runs: BTreeMap<Scope, Vec<Run>>,
+    /// Runs started so far: each start gets its own token, as a host may
+    /// reuse a run identity once the run has ended.
+    started: u64,
     pending: BTreeMap<PermissionId, Pending>,
     sequence: u64,
+    /// The last run announced in each room a view watches: a terminal
+    /// ignores a run that repeats it. A view attaching later starts afresh.
+    last_runs: BTreeMap<String, RunId>,
     receipts: BTreeMap<String, Vec<Receipt>>,
 }
 
 impl State {
-    /// The run a request of `scope` belongs to: `run` when the request names
-    /// it, otherwise the most recent one.
-    fn run(&self, scope: &Scope, run: Option<&RunId>) -> Option<&Run> {
+    /// The run a request of `scope` belongs to: the one whose start returned
+    /// `token` when the request names it, otherwise the most recent one.
+    fn run(&self, scope: &Scope, token: Option<u64>) -> Option<&Run> {
         let runs = self.runs.get(scope)?;
-        match run {
-            Some(id) => runs.iter().find(|r| &r.id == id),
+        match token {
+            Some(token) => runs.iter().find(|r| r.token == token),
             None => runs.last(),
         }
     }
 
-    fn run_mut(&mut self, scope: &Scope, run: &RunId) -> Option<&mut Run> {
+    fn run_mut(&mut self, scope: &Scope, token: u64) -> Option<&mut Run> {
         let runs = self.runs.get_mut(scope)?;
-        runs.iter_mut().find(|r| &r.id == run)
+        runs.iter_mut().find(|r| r.token == token)
     }
 }
 
 #[derive(Clone, Debug)]
 struct Run {
     id: RunId,
+    /// This start of the run, unique for the broker's lifetime.
+    token: u64,
     /// The person who started the run through a view; only they may answer.
     requester: Option<String>,
     /// Refusals already announced during this run, said once each.
@@ -109,23 +117,24 @@ impl Approvals {
     }
 
     pub fn start(&self, room: &str, agent: &str, run: RunId, requester: Option<String>) -> Running {
-        let scope = (room.into(), agent.into());
+        let scope: Scope = (room.into(), agent.into());
+        let mut state = self.lock();
+        state.started += 1;
+        let token = state.started;
         let record = Run {
-            id: run.clone(),
+            id: run,
+            token,
             requester,
             announced: BTreeSet::new(),
             stopped: false,
         };
-        self.lock()
-            .runs
-            .entry(scope.clone())
-            .or_default()
-            .push(record);
+        state.runs.entry(scope.clone()).or_default().push(record);
+        drop(state);
         self.ready.notify_waiters();
         Running {
             broker: self.clone(),
             scope,
-            run,
+            token,
         }
     }
 
@@ -219,21 +228,36 @@ impl Approvals {
         );
     }
 
-    /// The person interrupted `run` in `(room, agent)`: deny its pending
-    /// requests, and every request it asks from now on.
-    pub(crate) fn stop_run(&self, scope: &(String, String), run: &RunId) {
+    /// Note the run just announced in `room`, while a view watches it.
+    pub(crate) fn announced(&self, room: &str, run: &RunId) {
         let mut state = self.lock();
-        if let Some(record) = state.run_mut(scope, run) {
-            record.stopped = true;
+        if state.views.keys().any(|(watched, _)| watched == room) {
+            state.last_runs.insert(room.to_owned(), run.clone());
         }
-        self.withdraw(&mut state, scope, Some(run));
     }
 
-    fn withdraw(&self, state: &mut State, scope: &Scope, run: Option<&RunId>) {
+    /// The last run announced in `room` while a view watched it.
+    pub(crate) fn last_run(&self, room: &str) -> Option<RunId> {
+        self.lock().last_runs.get(room).cloned()
+    }
+
+    /// The person interrupted the run started with `token` in
+    /// `(room, agent)`: deny its pending requests, and every request it asks
+    /// from now on.
+    pub(crate) fn stop_run(&self, scope: &(String, String), token: u64) {
+        let mut state = self.lock();
+        if let Some(record) = state.run_mut(scope, token) {
+            record.stopped = true;
+        }
+        self.withdraw(&mut state, scope, Some(token));
+    }
+
+    /// Deny the pending requests of `scope`, or of its run started with `token`.
+    fn withdraw(&self, state: &mut State, scope: &Scope, token: Option<u64>) {
         let ids: Vec<_> = state
             .pending
             .iter()
-            .filter(|(_, p)| &p.scope == scope && run.is_none_or(|run| run == &p.run.id))
+            .filter(|(_, p)| &p.scope == scope && token.is_none_or(|t| t == p.run.token))
             .map(|(id, _)| id.clone())
             .collect();
         for id in ids {

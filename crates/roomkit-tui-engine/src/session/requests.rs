@@ -225,10 +225,11 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         request: Request,
         execution: CommandExecution,
     ) -> Result<Option<Pending<'h>>, AdapterError> {
-        if let Some(error) = self.refused_run(&execution) {
+        let room = self.session.config.conversation();
+        let last = self.session.channel.last_run(room);
+        if let Some(error) = execution.refusal(last.as_ref()) {
             return self.reply(&request, Some(error)).map(|()| None);
         }
-        let room = self.session.config.conversation();
         let Some(reserved) = self.session.channel.reserve(room) else {
             let error = Rejection::busy("Cannot start another execution while busy");
             return self.reply(&request, Some(error)).map(|()| None);
@@ -239,28 +240,6 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         let work = execution.start(channel, &self.session.config, operation, reserved, persist);
         self.work = Some(work);
         Ok(None)
-    }
-
-    /// Why a terminal could not follow work under this run identity: too
-    /// long to track, or repeating the room's last run, which it ignores.
-    fn refused_run(&self, execution: &CommandExecution) -> Option<Rejection> {
-        let run = execution.run();
-        let message = if run.as_str().len() > MAX_LABEL_BYTES {
-            format!(
-                "The execution's run identity exceeds {MAX_LABEL_BYTES} bytes; nothing was started"
-            )
-        } else if self
-            .session
-            .channel
-            .last_run(self.session.config.conversation())
-            .as_ref()
-            == Some(run)
-        {
-            "The execution's run identity repeats the last run; nothing was started".to_owned()
-        } else {
-            return None;
-        };
-        Some(Rejection::invalid(message))
     }
 
     fn switch(

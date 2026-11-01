@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use roomkit_tui_protocol::limits::MAX_PENDING_PERMISSIONS;
-use roomkit_tui_protocol::{Decision, Event, Permission, RunId};
+use roomkit_tui_protocol::{Decision, Event, Permission};
 use tokio::sync::oneshot;
 
 use super::{
@@ -53,7 +53,7 @@ impl Approvals {
         }
         // A refusal is told once the run has started: a terminal clears its
         // notice when the run starts.
-        let Some(run) = state.run(scope, details.run.as_ref()).cloned() else {
+        let Some(run) = state.run(scope, details.run).cloned() else {
             // A named run is registered before its work starts: gone, it ended.
             return match details.run {
                 Some(_) => Registration::Refused,
@@ -64,7 +64,7 @@ impl Approvals {
             return Registration::Refused;
         }
         if let Some(reason) = refusal(&state, room) {
-            return self.refuse(&mut state, scope, &run.id, reason);
+            return self.refuse(&mut state, scope, run.token, reason);
         }
         let Some(sequence) = state.sequence.checked_add(1) else {
             return Registration::Refused;
@@ -72,7 +72,7 @@ impl Approvals {
         state.sequence = sequence;
         let Some(permission) = details.permission(&run.id, agent, sequence) else {
             let reason = "An approval was too large to show in full; it was refused.";
-            return self.refuse(&mut state, scope, &run.id, reason);
+            return self.refuse(&mut state, scope, run.token, reason);
         };
         let pending = (run, permission, details.tool_call_id.clone());
         self.enqueue(&mut state, scope, pending)
@@ -118,11 +118,11 @@ impl Approvals {
         &self,
         state: &mut State,
         scope: &Scope,
-        run: &RunId,
+        token: u64,
         reason: &'static str,
     ) -> Registration {
         let first = state
-            .run_mut(scope, run)
+            .run_mut(scope, token)
             .is_some_and(|run| run.announced.insert(reason));
         if first {
             self.publish(&scope.0, notice(&scope.0, reason));

@@ -9,7 +9,7 @@ use serde_json::Value;
 const PERMISSION_SUFFIX_BYTES: usize = ":approval:".len() + "18446744073709551615".len();
 /// Longest run identity, leaving room for the permissions derived from it:
 /// terminals refuse an identity over `MAX_LABEL_BYTES`.
-const MAX_RUN_ID_BYTES: usize = MAX_LABEL_BYTES - PERMISSION_SUFFIX_BYTES;
+pub(crate) const MAX_RUN_ID_BYTES: usize = MAX_LABEL_BYTES - PERMISSION_SUFFIX_BYTES;
 
 /// The run answering `trigger` by `agent`: the identity of `RunStarted`,
 /// tool items, usage and permissions alike.

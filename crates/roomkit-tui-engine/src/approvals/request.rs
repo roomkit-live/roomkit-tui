@@ -44,8 +44,9 @@ pub(crate) struct Details {
     pub detail: String,
     pub summary: Option<String>,
     pub tool_call_id: Option<String>,
-    /// The run the request belongs to; the scope's most recent run if none.
-    pub run: Option<RunId>,
+    /// The run the request belongs to, by the token its start returned; the
+    /// scope's most recent run if none.
+    pub run: Option<u64>,
 }
 
 impl Details {

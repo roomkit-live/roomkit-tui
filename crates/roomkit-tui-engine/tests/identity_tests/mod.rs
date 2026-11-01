@@ -5,6 +5,10 @@
 use super::*;
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 
+/// The longest host run identity: its approvals add `:approval:` and a `u64`
+/// within the terminal's identity bound.
+const MAX_RUN_ID_BYTES: usize = MAX_LABEL_BYTES - ":approval:".len() - 20;
+
 /// 250 bytes. RoomKit bounds no identity, and `{agent}:{trigger}` alone
 /// exceeded the terminal's bound: it ignored the run and hid its permissions.
 fn long_agent() -> ChannelId {
@@ -173,7 +177,7 @@ async fn host_work_under_a_run_id_a_terminal_ignores_is_rejected() {
     let kit = RoomKit::new(Default::default());
     let (client, task) = executor_view(&kit).await;
     client
-        .try_send(work(1, "r".repeat(MAX_LABEL_BYTES + 1)))
+        .try_send(work(1, "r".repeat(MAX_RUN_ID_BYTES + 1)))
         .unwrap();
     let Event::Reply {
         error: Some(rejection),
@@ -184,7 +188,7 @@ async fn host_work_under_a_run_id_a_terminal_ignores_is_rejected() {
     };
     assert_eq!(rejection.code, ErrorCode::Invalid);
     client
-        .try_send(work(2, "r".repeat(MAX_LABEL_BYTES)))
+        .try_send(work(2, "r".repeat(MAX_RUN_ID_BYTES)))
         .unwrap();
     assert!(matches!(
         next(&client).await,
@@ -223,10 +227,17 @@ async fn host_work_repeating_the_last_run_id_is_rejected() {
     };
     assert_eq!(rejection.code, ErrorCode::Invalid);
     client.try_send(work(3, "build-2".into())).unwrap();
-    assert!(matches!(
-        next(&client).await,
-        Event::Reply { error: None, .. }
-    ));
+    assert_operation(
+        &collect_operation(&client).await,
+        "work-3",
+        RunOutcome::Completed,
+    );
+    client.try_send(work(4, "build".into())).unwrap();
+    let accepted = next(&client).await;
+    assert!(
+        matches!(accepted, Event::Reply { error: None, .. }),
+        "Another run came between: {accepted:?}"
+    );
     drop(client);
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();

@@ -329,6 +329,20 @@ async fn requested_permission(events: &mut broadcast::Receiver<(String, Event)>)
     }
 }
 
+/// Ask in `room`/`agent`, in the run started with `token` when given.
+fn ask_in(broker: &Approvals, token: Option<u64>) -> tokio::task::JoinHandle<Decision> {
+    let broker = broker.clone();
+    let details = Details {
+        run: token,
+        ..details()
+    };
+    tokio::spawn(async move {
+        broker
+            .ask("room", "agent", details, Duration::from_secs(5))
+            .await
+    })
+}
+
 /// RMK-1111: the broker kept one run per scope, so a later run erased the
 /// earlier one. A request naming its run stays in it and keeps its
 /// requester; one naming none goes to the most recent run, and to the
@@ -338,22 +352,10 @@ async fn a_request_belongs_to_its_run_while_a_later_one_holds_the_scope() {
     let (events, mut receive) = broadcast::channel(16);
     let broker = Approvals::new(events);
     let _view = broker.attach("room", "agent");
-    let _host = broker.start("room", "agent", "deploy-1".into(), Some("alice".into()));
+    let host = broker.start("room", "agent", "deploy-1".into(), Some("alice".into()));
     let turn = broker.start("room", "agent", "agent:evt_9".into(), None);
-    let ask = |run: Option<&str>| {
-        let broker = broker.clone();
-        let details = Details {
-            run: run.map(RunId::new),
-            ..details()
-        };
-        tokio::spawn(async move {
-            broker
-                .ask("room", "agent", details, Duration::from_secs(5))
-                .await
-        })
-    };
 
-    let named = ask(Some("deploy-1"));
+    let named = ask_in(&broker, Some(host.token()));
     let permission = requested_permission(&mut receive).await;
     assert_eq!(permission.run.as_str(), "deploy-1");
     let bob = broker.decide(("room", "agent"), &permission.id, Decision::Allow, "bob");
@@ -367,7 +369,7 @@ async fn a_request_belongs_to_its_run_while_a_later_one_holds_the_scope() {
     assert_eq!(named.await.unwrap(), Decision::Allow);
     while receive.try_recv().is_ok() {}
 
-    let latest = ask(None);
+    let latest = ask_in(&broker, None);
     assert_eq!(
         requested_permission(&mut receive).await.run.as_str(),
         "agent:evt_9"
@@ -379,9 +381,66 @@ async fn a_request_belongs_to_its_run_while_a_later_one_holds_the_scope() {
         "Withdrawn with its run"
     );
     while receive.try_recv().is_ok() {}
-    let _back = ask(None);
+    let _back = ask_in(&broker, None);
     assert_eq!(
         requested_permission(&mut receive).await.run.as_str(),
         "deploy-1"
     );
+}
+
+/// RMK-1111 review: interrupting host work while a later run held the scope
+/// must stop the work, not that later run.
+#[tokio::test]
+async fn interrupting_a_run_leaves_a_later_one_answerable() {
+    let (events, mut receive) = broadcast::channel(16);
+    let broker = Approvals::new(events);
+    let _view = broker.attach("room", "agent");
+    let host = broker.start("room", "agent", "deploy-1".into(), Some("alice".into()));
+    let _turn = broker.start("room", "agent", "agent:evt_9".into(), None);
+    broker.stop_run(&("room".into(), "agent".into()), host.token());
+    let stopped = ask_in(&broker, Some(host.token()));
+    assert_eq!(stopped.await.unwrap(), Decision::Deny);
+    let _latest = ask_in(&broker, None);
+    let permission = requested_permission(&mut receive).await;
+    assert_eq!(
+        permission.run.as_str(),
+        "agent:evt_9",
+        "The turn still asks"
+    );
+}
+
+/// RMK-1111 review: a context outliving its work named its run by identity,
+/// so it reached a later run under the same identity and that run's person
+/// answered.
+#[tokio::test]
+async fn a_request_naming_an_ended_run_is_refused_even_if_its_identity_returns() {
+    let (events, mut receive) = broadcast::channel(16);
+    let broker = Approvals::new(events);
+    let _view = broker.attach("room", "agent");
+    let first = broker.start("room", "agent", "deploy-1".into(), Some("alice".into()));
+    let leaked = first.token();
+    drop(first);
+    let _again = broker.start("room", "agent", "deploy-1".into(), Some("bob".into()));
+    let decision =
+        tokio::time::timeout(Duration::from_secs(1), ask_in(&broker, Some(leaked))).await;
+    assert_eq!(decision.unwrap().unwrap(), Decision::Deny);
+    assert!(
+        receive.try_recv().is_err(),
+        "Nothing was shown in Bob's run"
+    );
+}
+
+/// RMK-1110 review: the last run of every room was kept for the life of the
+/// channel. It is kept only while a view watches the room.
+#[test]
+fn the_last_run_of_a_room_is_kept_while_a_view_watches_it() {
+    let (events, _receive) = broadcast::channel(4);
+    let broker = Approvals::new(events);
+    broker.announced("room", &"unwatched".into());
+    assert_eq!(broker.last_run("room"), None, "Nobody watches the room");
+    let view = broker.attach("room", "agent");
+    broker.announced("room", &"build".into());
+    assert_eq!(broker.last_run("room"), Some("build".into()));
+    drop(view);
+    assert_eq!(broker.last_run("room"), None, "The last view detached");
 }

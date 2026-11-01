@@ -1,8 +1,5 @@
 //! The RoomKit transport channel shared by local views of a room.
 
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-
 use roomkit::model::{
     ChannelCategory, ChannelDirection, ChannelId, ChannelType, RoomEvent, RoomId,
 };
@@ -31,9 +28,6 @@ pub struct ConversationChannel {
     pub(crate) activity: Activity,
     pub(crate) stopping: Stopping,
     pub(crate) approvals: Approvals,
-    /// The last run announced in each room: a terminal ignores a run that
-    /// repeats it.
-    last_runs: Arc<Mutex<BTreeMap<String, RunId>>>,
 }
 
 impl ConversationChannel {
@@ -64,7 +58,6 @@ impl ConversationChannel {
             events,
             activity: Activity::default(),
             stopping: Stopping::default(),
-            last_runs: Arc::default(),
         }
     }
 
@@ -75,7 +68,7 @@ impl ConversationChannel {
 
     /// Wait for a one-time decision from an attached view of this room and
     /// agent, in its most recent run. The host awaits this before executing
-    /// the concrete action, in a tool hook. Work a `CommandExecution` runs
+    /// the concrete action, for example in a tool hook. Work a `CommandExecution` runs
     /// asks through [`ExecutionContext::ask_permission`](crate::ExecutionContext::ask_permission),
     /// which keeps the request in that run.
     /// Streaming delivery must be enabled. Missing views, oversized details,
@@ -106,14 +99,15 @@ impl ConversationChannel {
         self.ask(room, agent, request, call, None).await
     }
 
-    /// Ask in `run` when given, otherwise in the scope's most recent run.
+    /// Ask in the run started with `token` when given, otherwise in the
+    /// scope's most recent run.
     pub(crate) async fn ask(
         &self,
         room: &str,
         agent: &str,
         request: PermissionRequest,
         tool_call_id: Option<String>,
-        run: Option<RunId>,
+        token: Option<u64>,
     ) -> Decision {
         if !self.streams() {
             return Decision::Deny;
@@ -123,7 +117,7 @@ impl ConversationChannel {
             detail: request.detail,
             summary: request.summary,
             tool_call_id,
-            run,
+            run: token,
         };
         self.approvals
             .ask(room, agent, details, request.timeout)
@@ -146,21 +140,15 @@ impl ConversationChannel {
 
     pub(crate) fn publish(&self, room: &str, event: Event) {
         if let Event::RunStarted { run, .. } = &event {
-            self.runs().insert(room.to_owned(), run.clone());
+            self.approvals.announced(room, run);
         }
         // No subscribers is normal: the engine keeps executing and persisting.
         let _ = self.events.send((room.into(), event));
     }
 
-    /// The last run announced in `room`.
+    /// The last run announced in `room` while a view watched it.
     pub(crate) fn last_run(&self, room: &str) -> Option<RunId> {
-        self.runs().get(room).cloned()
-    }
-
-    fn runs(&self) -> MutexGuard<'_, BTreeMap<String, RunId>> {
-        self.last_runs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.approvals.last_run(room)
     }
 
     pub(crate) fn busy(&self, room: &str) -> bool {

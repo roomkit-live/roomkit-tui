@@ -1,11 +1,14 @@
 //! Long-running host commands share the view's execution controls, not its model.
 use std::{fmt, future::Future, pin::Pin};
 
-use roomkit_tui_protocol::{ConversationId, Decision, Event, Item, OperationId, RunId, RunOutcome};
+use roomkit_tui_protocol::{
+    ConversationId, Decision, Event, Item, OperationId, Rejection, RunId, RunOutcome,
+};
 use tokio::sync::watch;
 
 use crate::activity::Active;
 use crate::approvals::{Approvals, Running};
+use crate::projection::MAX_RUN_ID_BYTES;
 use crate::{ConversationChannel, PermissionRequest, SessionConfig, cancellation};
 
 type Completion = Result<RunOutcome, String>;
@@ -32,10 +35,10 @@ impl fmt::Debug for CommandExecution {
 impl CommandExecution {
     /// Prepare work without starting it. Return an outcome only after cleanup.
     /// Errors must be safe to display, without credentials or raw service bodies.
-    /// `run` is at most [`MAX_LABEL_BYTES`](roomkit_tui_protocol::limits::MAX_LABEL_BYTES):
-    /// terminals ignore a longer run, so the adapter rejects the command and
-    /// starts nothing. A `run` that repeats the last run of the room is
-    /// rejected too, as a terminal ignores it: give each execution a new one.
+    /// `run` is at most 226 bytes, so the approvals derived from it fit a
+    /// terminal's identity bound: the adapter rejects a longer one and starts
+    /// nothing. A `run` that repeats the last run of the room is rejected
+    /// too, as a terminal ignores it: give each execution a new one.
     pub fn new<F, Fut>(run: RunId, task: F) -> Self
     where
         F: FnOnce(ExecutionContext) -> Fut + Send + 'static,
@@ -47,9 +50,20 @@ impl CommandExecution {
         }
     }
 
-    /// The identity announced by `RunStarted` and accepted by `Interrupt`.
-    pub(crate) fn run(&self) -> &RunId {
-        &self.run
+    /// Why a terminal could not follow this work: its run identity leaves no
+    /// room for the approvals derived from it, or repeats the room's `last`
+    /// run, which a terminal ignores.
+    pub(crate) fn refusal(&self, last: Option<&RunId>) -> Option<Rejection> {
+        let message = if self.run.as_str().len() > MAX_RUN_ID_BYTES {
+            format!(
+                "The execution's run identity exceeds {MAX_RUN_ID_BYTES} bytes; nothing was started"
+            )
+        } else if last == Some(&self.run) {
+            "The execution's run identity repeats the last run; nothing was started".to_owned()
+        } else {
+            return None;
+        };
+        Some(Rejection::invalid(message))
     }
 
     /// Start in a room this view reserved. The run is announced, then
@@ -86,13 +100,14 @@ impl CommandExecution {
             approvals: (
                 channel.approvals.clone(),
                 (conversation.to_string(), config.agent.to_string()),
+                approvals.token(),
             ),
         };
         let context = ExecutionContext {
             channel,
             conversation,
             agent: config.agent.to_string(),
-            run: self.run.clone(),
+            token: approvals.token(),
             stopped,
         };
         tokio::spawn(self.run_to_end(context, approvals, operation, persist));
@@ -210,7 +225,9 @@ pub struct ExecutionContext {
     channel: ConversationChannel,
     conversation: ConversationId,
     agent: String,
-    run: RunId,
+    /// This start of the run in the approval broker; a context that outlives
+    /// its work never reaches a later run under the same identity.
+    token: u64,
     stopped: watch::Receiver<bool>,
 }
 
@@ -230,12 +247,13 @@ impl ExecutionContext {
     /// Ask the person who invoked this command for a one-time decision before
     /// a concrete action. The request belongs to this run whatever else runs
     /// in the room meanwhile, and only that person may answer. It is refused
-    /// without an attached view, once the work is interrupted, and at its
-    /// timeout.
+    /// without an attached view, once the work has ended or been interrupted,
+    /// and at its timeout; a request too large to show in full, or beyond the
+    /// pending limit, is refused with a notice to the views.
     pub async fn ask_permission(&self, request: PermissionRequest) -> Decision {
-        let (room, run) = (self.conversation.as_str(), Some(self.run.clone()));
+        let (room, token) = (self.conversation.as_str(), Some(self.token));
         self.channel
-            .ask(room, &self.agent, request, None, run)
+            .ask(room, &self.agent, request, None, token)
             .await
     }
 
@@ -254,9 +272,9 @@ pub(crate) enum Interrupter {
     Command {
         run: RunId,
         stop: std::sync::Arc<watch::Sender<bool>>,
-        /// The broker and `(room, agent)` whose pending requests of this run
-        /// an interruption withdraws.
-        approvals: (Approvals, (String, String)),
+        /// The broker, `(room, agent)` and token of this run, whose requests
+        /// an interruption refuses.
+        approvals: (Approvals, (String, String), u64),
     },
 }
 
@@ -267,12 +285,12 @@ impl Interrupter {
             Self::Command {
                 run: active,
                 stop,
-                approvals: (broker, scope),
+                approvals: (broker, scope, token),
             } if active == &run => {
                 stop.send(true)
                     .map_err(|_| "This execution has already ended")?;
                 // As for a turn: interrupted work can no longer be approved.
-                broker.stop_run(scope, &run);
+                broker.stop_run(scope, *token);
                 Ok(())
             }
             Self::Command { .. } => Err("This execution is no longer active in this attachment"),
