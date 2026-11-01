@@ -61,8 +61,13 @@ impl Channel for ConversationChannel {
                 }
             }
         }
-        drop((approvals, active));
-        reader.finish()
+        // Unanswered requests go before RunFinished; the room stays busy until
+        // RunFinished is out, so no view starts work before its terminal saw
+        // this run end, and a view's own work stays its earliest run.
+        drop(approvals);
+        let finished = reader.finish();
+        drop(active);
+        finished
     }
 }
 
