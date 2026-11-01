@@ -122,6 +122,10 @@ and ordered choices. **Shift+Tab** requests the next value, preserving drafts;
 active executions. Labels and policy meanings belong entirely to the host.
 Mode changes do not settle approval requests.
 
+`Event::TitleChanged` renames the conversation in the header, even during a
+run, without reloading the view: history, draft, scroll position and an open
+selection are kept, and `SessionObservation::title` follows.
+
 ## Composer
 
 The composer is a filled rectangle with a small prompt marker and no title.

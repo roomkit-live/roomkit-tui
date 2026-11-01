@@ -14,7 +14,10 @@ Initial public release.
   while it executes: the header and `SessionObservation::title` follow, and
   the history, draft, scroll position and selection are kept. The engine
   keeps each mode or title change a host publishes, from a command result or
-  its subscription, so later snapshots show it.
+  its subscription, so later snapshots show it; a change the terminal would
+  ignore is not kept.
+- `ModeState::fits` and the mode limits in `limits` let hosts check modes
+  against the rule terminals apply.
 - `roomkit-tui-protocol`: runtime-independent, serializable requests, events
   and structured results, with scoped identities, stable operation IDs for
   retries, an optional operation lifecycle, host forms, panels and sidebars.

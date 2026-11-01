@@ -59,7 +59,8 @@ The conversation stays busy throughout admission and finalization; wait for
 Applications can set `SessionConfig::commands` and use `run_with_commands` with
 their own `CommandHandler`. Commands are never sent to the model and default to
 idle-only. A handler may opt individual control commands into `allow_while_busy`;
-conversation switches remain idle-only. A handler can publish generic choice selectors
+conversation switches remain idle-only, and `Event::TitleChanged` renames the view
+while it executes. A handler can publish generic choice selectors
 or request a different `SessionConfig`; the adapter validates the replacement
 before changing the view. Failed switches preserve the current conversation.
 The application owns command authorization, persistence and retry deduplication.
@@ -105,8 +106,14 @@ to a different action by matching its label.
 
 `SessionConfig::mode` optionally advertises a generic `ModeState`. Its command
 accepts an explicit choice value; publish `Event::ModeChanged` after applying
-policy. The adapter retains it for its next snapshot. Mode assignments and retry
-handling belong to the application, as does the meaning of each choice.
+policy, from a command result or from `CommandHandler::subscribe`. The adapter
+retains the mode, and the title of an `Event::TitleChanged`, for its next snapshot
+and the configuration its handler receives. It keeps neither when a terminal
+would ignore it: a mode must fit beside the advertised commands
+(`ModeState::fits`), a title must fit in 256 bytes. A model change needs a
+replacement `SessionConfig`, because the configured model carries its context
+capacity. Mode assignments and retry handling belong to the application, as does
+the meaning of each choice.
 
 Scoped interruption uses the detached delivery handle of the execution started
 by this attachment. Wrong-room, stale and foreign run requests are refused.

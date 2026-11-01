@@ -74,7 +74,8 @@ pub enum Event {
     TitleChanged {
         /// Conversation being renamed; other views ignore the event.
         conversation: ConversationId,
-        /// Plain text, at most 256 bytes; a longer title is ignored.
+        /// Plain text, at most 256 bytes. A longer title is ignored and the
+        /// current one kept, where a snapshot's title would be shortened.
         title: String,
     },
     /// Replace the host's statement of what exiting stops, such as running
