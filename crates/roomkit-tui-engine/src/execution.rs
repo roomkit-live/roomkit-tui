@@ -5,7 +5,8 @@ use roomkit_tui_protocol::{ConversationId, Event, Item, OperationId, RunId, RunO
 use tokio::sync::watch;
 
 use crate::activity::Active;
-use crate::{ConversationChannel, cancellation};
+use crate::approvals::Running;
+use crate::{ConversationChannel, SessionConfig, cancellation};
 
 type Completion = Result<RunOutcome, String>;
 type Task =
@@ -49,22 +50,20 @@ impl CommandExecution {
         &self.run
     }
 
-    /// Start in a room this view reserved.
+    /// Start in a room this view reserved. The run is announced, then
+    /// registered with the approval broker, so the work can ask the person
+    /// who invoked the command, as a model turn would.
     pub(crate) fn start(
         self,
         channel: ConversationChannel,
-        conversation: ConversationId,
+        config: &SessionConfig,
         operation: OperationId,
         reserved: Active,
     ) -> Interrupter {
+        let conversation: ConversationId = config.conversation().into();
         let operation =
             Operation::start(channel.clone(), conversation.clone(), operation, reserved);
         let (stop, stopped) = watch::channel(false);
-        let context = ExecutionContext {
-            channel: channel.clone(),
-            conversation: conversation.clone(),
-            stopped,
-        };
         channel.publish(
             conversation.as_str(),
             Event::RunStarted {
@@ -72,42 +71,57 @@ impl CommandExecution {
                 run: self.run.clone(),
             },
         );
-        let run = self.run.clone();
-        tokio::spawn(async move {
-            // A host panic must not leave the client permanently busy.
-            let result = tokio::spawn(async move { (self.task)(context).await }).await;
-            let outcome = match result {
-                Ok(Ok(outcome)) => outcome,
-                result => {
-                    let text = match result {
-                        Ok(Err(text)) => text,
-                        _ => {
-                            "The application command failed unexpectedly; inspect host diagnostics"
-                                .into()
-                        }
-                    };
-                    let notice = Event::Notice {
-                        conversation: conversation.clone(),
-                        text,
-                    };
-                    channel.publish(conversation.as_str(), notice);
-                    RunOutcome::Failed
-                }
-            };
-            channel.publish(
-                conversation.as_str(),
-                Event::RunFinished {
-                    conversation: conversation.clone(),
-                    run,
-                    outcome,
-                },
-            );
-            operation.finish(outcome);
-        });
-        Interrupter::Command {
-            run: self.run,
+        let approvals = channel.approvals.start(
+            conversation.as_str(),
+            config.agent.as_str(),
+            self.run.clone(),
+            Some(config.sender.clone()),
+        );
+        let interrupter = Interrupter::Command {
+            run: self.run.clone(),
             stop: std::sync::Arc::new(stop),
-        }
+        };
+        let context = ExecutionContext {
+            channel,
+            conversation,
+            stopped,
+        };
+        tokio::spawn(self.run_to_end(context, approvals, operation));
+        interrupter
+    }
+
+    /// Run the work, withdraw its unanswered approvals, then report how it
+    /// ended. A host panic must not leave the client permanently busy.
+    async fn run_to_end(self, context: ExecutionContext, approvals: Running, operation: Operation) {
+        let (channel, conversation) = (context.channel.clone(), context.conversation.clone());
+        let Self { run, task } = self;
+        let result = tokio::spawn(async move { task(context).await }).await;
+        drop(approvals);
+        let outcome = match result {
+            Ok(Ok(outcome)) => outcome,
+            result => {
+                let text = match result {
+                    Ok(Err(text)) => text,
+                    _ => "The application command failed unexpectedly; inspect host diagnostics"
+                        .into(),
+                };
+                let notice = Event::Notice {
+                    conversation: conversation.clone(),
+                    text,
+                };
+                channel.publish(conversation.as_str(), notice);
+                RunOutcome::Failed
+            }
+        };
+        channel.publish(
+            conversation.as_str(),
+            Event::RunFinished {
+                conversation: conversation.clone(),
+                run,
+                outcome,
+            },
+        );
+        operation.finish(outcome);
     }
 }
 

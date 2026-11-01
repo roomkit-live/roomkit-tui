@@ -238,7 +238,8 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         };
         self.reply(&request, None)?;
         let (channel, operation) = (self.session.channel.clone(), request.operation);
-        self.work = Some(execution.start(channel, room.into(), operation, reserved));
+        let work = execution.start(channel, &self.session.config, operation, reserved);
+        self.work = Some(work);
         Ok(None)
     }
 
