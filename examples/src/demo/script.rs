@@ -135,18 +135,23 @@ impl Demo {
                 "Order 42 is ready with three items. This order-support application uses the same terminal, with its own tool presentation and slash command."
             }
         };
-        let message = MessageId::new(format!("assistant-{}", self.counter));
+        // Like an engine, stream a draft, then store it under its own id.
+        let draft = MessageId::new(format!("draft:{}:0", run.as_str()));
         for word in text.split_inclusive(' ') {
             self.scheduled.push_back(Event::TextDelta {
                 conversation: conversation.clone(),
-                message: message.clone(),
+                message: draft.clone(),
                 actor: "assistant".into(),
                 run: run.clone(),
                 text: word.into(),
             });
         }
-        let answer = Message::new(message, "assistant", text);
-        self.scheduled.push_back(self.item(Item::Message(answer)));
+        let answer = Message::new(format!("assistant-{}", self.counter), "assistant", text);
+        self.scheduled.push_back(Event::MessageFinalized {
+            conversation: conversation.clone(),
+            draft,
+            message: answer,
+        });
         if let Some(model) = &self.snapshot.model {
             self.scheduled.push_back(Event::ContextUpdated {
                 conversation,

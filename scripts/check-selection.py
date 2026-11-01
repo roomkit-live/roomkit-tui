@@ -17,6 +17,8 @@ FIRST = "Line 01 of a long pasted message."
 LAST = f"Line {LINES} of a long pasted message."
 # The demo's welcome message opens the history.
 HISTORY_START = "This example uses a scripted host"
+# The demo streams this reply as a draft, then stores it under another id.
+REPLY = "Order 42 is ready"
 COPY = re.compile(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07")
 PRESS, DRAG, WHEEL_UP, WHEEL_DOWN = 0, 32, 64, 65
 
@@ -61,7 +63,20 @@ with terminal:
     terminal.send(b"\x1b[200~" + message.encode() + b"\x1b[201~\r")
     terminal.wait_for("Ctrl+Y allow once")
     terminal.send(b"\x19")
+
+    # Selected while the reply streams, released once it is stored under its
+    # own id: the selection follows the draft into the stored message.
+    terminal.wait_for(REPLY)
+    row = terminal.screen.row_of(REPLY)
+    column = terminal.screen.lines()[row - 1].index(REPLY) + 1
+    terminal.mouse(PRESS, column, row)
+    terminal.mouse(DRAG, COLS - 1, row)
     terminal.wait_for("Execution Completed")
+    require(terminal.screen.ever(REPLY) and terminal.process.poll() is None, "The reply never streamed")
+    offset = len(terminal.output)
+    terminal.mouse(PRESS, COLS - 1, row, release=True)
+    text = wait_for_copy(offset)
+    require(text.startswith(REPLY), f"The copy lost the finalized reply: {text!r}")
 
     # The wheel alone, button held and pointer still: the end follows what
     # the pointer shows once the conversation scrolled.
@@ -141,4 +156,4 @@ with terminal:
     terminal.send(b"\x04")
     terminal.exited()
 
-print("Selection checks passed: wheel and edge scrolling while held, off-screen copy, highlight kept after the copy, still clicks while content arrives.")
+print("Selection checks passed: a selection across a finalized draft, wheel and edge scrolling while held, off-screen copy, highlight kept after the copy, still clicks while content arrives.")
