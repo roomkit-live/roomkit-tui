@@ -320,3 +320,68 @@ async fn a_refusal_before_its_run_is_told_once_the_run_has_started() {
     );
     assert_eq!(asking.await.unwrap(), Decision::Deny);
 }
+
+/// The next event, which must be a request published within a second.
+async fn requested_permission(events: &mut broadcast::Receiver<(String, Event)>) -> Permission {
+    match tokio::time::timeout(Duration::from_secs(1), events.recv()).await {
+        Ok(Ok((_, Event::PermissionRequested { permission, .. }))) => permission,
+        other => unreachable!("Expected a permission request, got {other:?}"),
+    }
+}
+
+/// RMK-1111: the broker kept one run per scope, so a later run erased the
+/// earlier one. A request naming its run stays in it and keeps its
+/// requester; one naming none goes to the most recent run, and to the
+/// earlier one again once the later run ends.
+#[tokio::test]
+async fn a_request_belongs_to_its_run_while_a_later_one_holds_the_scope() {
+    let (events, mut receive) = broadcast::channel(16);
+    let broker = Approvals::new(events);
+    let _view = broker.attach("room", "agent");
+    let _host = broker.start("room", "agent", "deploy-1".into(), Some("alice".into()));
+    let turn = broker.start("room", "agent", "agent:evt_9".into(), None);
+    let ask = |run: Option<&str>| {
+        let broker = broker.clone();
+        let details = Details {
+            run: run.map(RunId::new),
+            ..details()
+        };
+        tokio::spawn(async move {
+            broker
+                .ask("room", "agent", details, Duration::from_secs(5))
+                .await
+        })
+    };
+
+    let named = ask(Some("deploy-1"));
+    let permission = requested_permission(&mut receive).await;
+    assert_eq!(permission.run.as_str(), "deploy-1");
+    let bob = broker.decide(("room", "agent"), &permission.id, Decision::Allow, "bob");
+    assert_eq!(
+        bob.unwrap_err().code,
+        roomkit_tui_protocol::ErrorCode::Refused
+    );
+    broker
+        .decide(("room", "agent"), &permission.id, Decision::Allow, "alice")
+        .unwrap();
+    assert_eq!(named.await.unwrap(), Decision::Allow);
+    while receive.try_recv().is_ok() {}
+
+    let latest = ask(None);
+    assert_eq!(
+        requested_permission(&mut receive).await.run.as_str(),
+        "agent:evt_9"
+    );
+    drop(turn);
+    assert_eq!(
+        latest.await.unwrap(),
+        Decision::Deny,
+        "Withdrawn with its run"
+    );
+    while receive.try_recv().is_ok() {}
+    let _back = ask(None);
+    assert_eq!(
+        requested_permission(&mut receive).await.run.as_str(),
+        "deploy-1"
+    );
+}

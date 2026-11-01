@@ -3,46 +3,41 @@
 use super::*;
 use roomkit_tui_engine::{CommandExecution, CommandHandler, CommandResult};
 
-/// Asks before deploying, from host work. `wait` shows the answer it got,
-/// `twice` asks again and shows both, ignoring interruption; `leave` asks from
-/// a detached task and ends without waiting for it.
-struct Deployer(ConversationChannel);
+/// Asks before deploying, from host work, through its context. `wait` shows
+/// the answer it got; `twice` and `thrice` ask again and show every answer,
+/// ignoring interruption; `leave` asks from a detached task and ends without
+/// waiting for it.
+struct Deployer;
 
 impl CommandHandler for Deployer {
-    async fn handle(
-        &self,
-        request: Request,
-        view: SessionConfig,
-    ) -> Result<CommandResult, Rejection> {
+    async fn handle(&self, request: Request, _: SessionConfig) -> Result<CommandResult, Rejection> {
         let Command::Invoke { arguments, .. } = request.command else {
             return Err("Unsupported".into());
         };
-        let channel = self.0.clone();
         let work = CommandExecution::new("deploy-1".into(), move |context| async move {
-            let request =
-                PermissionRequest::new("Deploy?", "Deploy to production", Duration::from_secs(2));
-            let ask = move || {
-                let (channel, view, request) = (channel.clone(), view.clone(), request.clone());
-                async move {
-                    channel
-                        .ask_permission(&view.room, &view.agent, request)
-                        .await
-                }
-            };
+            let wait = Duration::from_secs(if arguments == "thrice" { 5 } else { 2 });
+            let request = PermissionRequest::new("Deploy?", "Deploy to production", wait);
             if arguments == "leave" {
-                tokio::spawn(ask());
+                tokio::spawn(async move { context.ask_permission(request).await });
                 tokio::time::sleep(Duration::from_millis(100)).await;
-            } else {
-                let mut answer = format!("{:?}", ask().await);
-                if arguments == "twice" {
-                    answer = format!("{answer}/{:?}", ask().await);
-                }
-                context.publish(Item::Message(Message::new(
-                    "answer",
-                    "person:alice",
-                    answer,
-                )));
+                return Ok(RunOutcome::Completed);
             }
+            let times = match arguments.as_str() {
+                "twice" => 2,
+                "thrice" => 3,
+                _ => 1,
+            };
+            let mut answers = Vec::new();
+            for _ in 0..times {
+                let decision = context.ask_permission(request.clone()).await;
+                answers.push(format!("{decision:?}"));
+            }
+            let answer = answers.join("/");
+            context.publish(Item::Message(Message::new(
+                "answer",
+                "person:alice",
+                answer,
+            )));
             Ok(RunOutcome::Completed)
         });
         Ok(CommandResult::Execute(work))
@@ -60,7 +55,7 @@ async fn attach<S: ConversationStore>(
     view.commands.push(CommandSpec::new("deploy", "Deploy"));
     let (client, host) = connection(NonZeroUsize::new(64).unwrap());
     let session = LocalSession::new(kit.clone(), channel.clone(), view);
-    let task = tokio::spawn(session.run_with_commands(host, Deployer(channel.clone())));
+    let task = tokio::spawn(session.run_with_commands(host, Deployer));
     assert!(matches!(next(&client).await, Event::Snapshot(_)));
     (client, task)
 }
@@ -213,5 +208,87 @@ async fn an_unanswered_approval_is_withdrawn_before_the_run_finishes() {
     assert_eq!(withdrawn, permission.id);
     drop(alice);
     task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
+
+/// RMK-1111: a turn delivered in the room for another channel's message
+/// replaced the work's run. Meanwhile its requests went to that turn, with no
+/// requester, so Bob could approve Alice's deploy; afterwards they found no
+/// run and were denied at their timeout, unshown.
+#[tokio::test]
+async fn host_work_keeps_its_approvals_while_another_channel_turn_runs() {
+    use roomkit::ProcessInboundOptions;
+    use roomkit::model::{EventContent, InboundMessage, TextContent};
+    use tokio::sync::watch;
+
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([
+        ScriptedRound::calling(
+            "Checking",
+            [(
+                "call1",
+                "lookup_record",
+                r#"{"_roomkit_intent":"Checking the record"}"#,
+            )],
+        ),
+        ScriptedRound::answering("Done"),
+    ]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    let sms = ConversationChannel::buffered(ChannelId::new("sms").unwrap());
+    kit.register_channel(sms.clone()).unwrap();
+    let room = config().room;
+    kit.attach_channel(&room, sms.id(), Default::default())
+        .await
+        .unwrap();
+    let (open, gate) = watch::channel(false);
+    kit.before_tool_use(roomkit::ToolHookSpec::new("hold"), move |_, _| {
+        let mut gate = gate.clone();
+        async move {
+            let _ = gate.wait_for(|open| *open).await;
+            Ok(roomkit::ToolUse::Allow)
+        }
+    })
+    .unwrap();
+    let (alice, alice_task) = attach(&kit, &channel, "alice").await;
+    let (bob, bob_task) = attach(&kit, &channel, "bob").await;
+    deploy(&alice, "thrice");
+    let first = requested(&alice).await;
+
+    let text = EventContent::Text(TextContent::new("Status?"));
+    let mut message = InboundMessage::new(sms.id().clone(), "carol", text);
+    message.addressed_to = Some(vec![config().agent]);
+    let options = ProcessInboundOptions {
+        room_id: Some(room),
+        organization_id: None,
+        defer_delivery: false,
+    };
+    let inbound = {
+        let kit = kit.clone();
+        tokio::spawn(async move { kit.process_inbound(message, options).await.map(|_| ()) })
+    };
+    let turn = loop {
+        if let Event::RunStarted { run, .. } = next(&alice).await {
+            break run;
+        }
+    };
+    alice.try_send(decide(2, &first, Decision::Allow)).unwrap();
+    let during = requested(&alice).await;
+    assert_eq!(during.run.as_str(), "deploy-1", "Not the turn {turn:?}");
+    bob.try_send(decide(3, &during, Decision::Allow)).unwrap();
+    let refused = reply(&bob, 3).await.map(|rejection| rejection.code);
+    assert_eq!(refused, Some(ErrorCode::Refused), "Only Alice may answer");
+
+    // Alice answers once the turn has ended, so the work asks again after it.
+    open.send(true).unwrap();
+    while !matches!(next(&alice).await, Event::RunFinished { run, .. } if run == turn) {}
+    alice.try_send(decide(4, &during, Decision::Allow)).unwrap();
+    let after = requested(&alice).await;
+    assert_eq!(after.run.as_str(), "deploy-1");
+    alice.try_send(decide(5, &after, Decision::Allow)).unwrap();
+    assert_eq!(answer(&alice).await, "Allow/Allow/Allow");
+    inbound.await.unwrap().unwrap();
+    drop((alice, bob));
+    alice_task.await.unwrap().unwrap();
+    bob_task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }

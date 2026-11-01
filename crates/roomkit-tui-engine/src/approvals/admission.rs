@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use roomkit_tui_protocol::limits::MAX_PENDING_PERMISSIONS;
-use roomkit_tui_protocol::{Decision, Event, Permission};
+use roomkit_tui_protocol::{Decision, Event, Permission, RunId};
 use tokio::sync::oneshot;
 
 use super::{
@@ -53,14 +53,18 @@ impl Approvals {
         }
         // A refusal is told once the run has started: a terminal clears its
         // notice when the run starts.
-        let Some(run) = state.runs.get(scope).cloned() else {
-            return Registration::NoRun;
+        let Some(run) = state.run(scope, details.run.as_ref()).cloned() else {
+            // A named run is registered before its work starts: gone, it ended.
+            return match details.run {
+                Some(_) => Registration::Refused,
+                None => Registration::NoRun,
+            };
         };
         if run.stopped {
             return Registration::Refused;
         }
         if let Some(reason) = refusal(&state, room) {
-            return self.refuse(&mut state, scope, reason);
+            return self.refuse(&mut state, scope, &run.id, reason);
         }
         let Some(sequence) = state.sequence.checked_add(1) else {
             return Registration::Refused;
@@ -68,7 +72,7 @@ impl Approvals {
         state.sequence = sequence;
         let Some(permission) = details.permission(&run.id, agent, sequence) else {
             let reason = "An approval was too large to show in full; it was refused.";
-            return self.refuse(&mut state, scope, reason);
+            return self.refuse(&mut state, scope, &run.id, reason);
         };
         let pending = (run, permission, details.tool_call_id.clone());
         self.enqueue(&mut state, scope, pending)
@@ -110,10 +114,15 @@ impl Approvals {
     /// Refuse a request the person will never see, and tell them why, once
     /// per run and reason: the action reports a denial they did not make, and
     /// a host asking again must not flood the view.
-    fn refuse(&self, state: &mut State, scope: &Scope, reason: &'static str) -> Registration {
+    fn refuse(
+        &self,
+        state: &mut State,
+        scope: &Scope,
+        run: &RunId,
+        reason: &'static str,
+    ) -> Registration {
         let first = state
-            .runs
-            .get_mut(scope)
+            .run_mut(scope, run)
             .is_some_and(|run| run.announced.insert(reason));
         if first {
             self.publish(&scope.0, notice(&scope.0, reason));

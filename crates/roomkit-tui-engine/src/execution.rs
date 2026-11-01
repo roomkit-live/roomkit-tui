@@ -1,12 +1,12 @@
 //! Long-running host commands share the view's execution controls, not its model.
 use std::{fmt, future::Future, pin::Pin};
 
-use roomkit_tui_protocol::{ConversationId, Event, Item, OperationId, RunId, RunOutcome};
+use roomkit_tui_protocol::{ConversationId, Decision, Event, Item, OperationId, RunId, RunOutcome};
 use tokio::sync::watch;
 
 use crate::activity::Active;
 use crate::approvals::{Approvals, Running};
-use crate::{ConversationChannel, SessionConfig, cancellation};
+use crate::{ConversationChannel, PermissionRequest, SessionConfig, cancellation};
 
 type Completion = Result<RunOutcome, String>;
 /// Stores the decisions taken during a run; `false` when that failed.
@@ -91,6 +91,8 @@ impl CommandExecution {
         let context = ExecutionContext {
             channel,
             conversation,
+            agent: config.agent.to_string(),
+            run: self.run.clone(),
             stopped,
         };
         tokio::spawn(self.run_to_end(context, approvals, operation, persist));
@@ -207,6 +209,8 @@ impl Drop for Operation {
 pub struct ExecutionContext {
     channel: ConversationChannel,
     conversation: ConversationId,
+    agent: String,
+    run: RunId,
     stopped: watch::Receiver<bool>,
 }
 
@@ -221,6 +225,18 @@ impl ExecutionContext {
                 item,
             },
         );
+    }
+
+    /// Ask the person who invoked this command for a one-time decision before
+    /// a concrete action. The request belongs to this run whatever else runs
+    /// in the room meanwhile, and only that person may answer. It is refused
+    /// without an attached view, once the work is interrupted, and at its
+    /// timeout.
+    pub async fn ask_permission(&self, request: PermissionRequest) -> Decision {
+        let (room, run) = (self.conversation.as_str(), Some(self.run.clone()));
+        self.channel
+            .ask(room, &self.agent, request, None, run)
+            .await
     }
 
     /// Wait for explicit interruption. Detaching a view does not cancel work.

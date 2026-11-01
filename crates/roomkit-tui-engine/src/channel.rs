@@ -67,8 +67,10 @@ impl ConversationChannel {
     }
 
     /// Wait for a one-time decision from an attached view of this room and
-    /// agent. The host awaits this before executing the concrete action, in a
-    /// tool hook or in work a `CommandExecution` runs.
+    /// agent, in its most recent run. The host awaits this before executing
+    /// the concrete action, in a tool hook. Work a `CommandExecution` runs
+    /// asks through [`ExecutionContext::ask_permission`](crate::ExecutionContext::ask_permission),
+    /// which keeps the request in that run.
     /// Streaming delivery must be enabled. Missing views, oversized details,
     /// cancellation, timeout and disconnect all refuse the action. A request
     /// too large to show in full, beyond the pending limit, or made while
@@ -81,7 +83,8 @@ impl ConversationChannel {
         agent: &ChannelId,
         request: PermissionRequest,
     ) -> Decision {
-        self.ask(room.as_str(), agent.as_str(), request, None).await
+        self.ask(room.as_str(), agent.as_str(), request, None, None)
+            .await
     }
 
     /// Ask before a concrete engine tool call. The confirmed decision is kept
@@ -93,15 +96,17 @@ impl ConversationChannel {
     ) -> Decision {
         let call = Some(event.call.id.to_string());
         let (room, agent) = (event.room_id.as_str(), event.channel_id.as_str());
-        self.ask(room, agent, request, call).await
+        self.ask(room, agent, request, call, None).await
     }
 
-    async fn ask(
+    /// Ask in `run` when given, otherwise in the scope's most recent run.
+    pub(crate) async fn ask(
         &self,
         room: &str,
         agent: &str,
         request: PermissionRequest,
         tool_call_id: Option<String>,
+        run: Option<RunId>,
     ) -> Decision {
         if !self.streams() {
             return Decision::Deny;
@@ -111,6 +116,7 @@ impl ConversationChannel {
             detail: request.detail,
             summary: request.summary,
             tool_call_id,
+            run,
         };
         self.approvals
             .ask(room, agent, details, request.timeout)

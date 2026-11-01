@@ -24,10 +24,29 @@ pub use request::PermissionRequest;
 #[derive(Debug, Default)]
 struct State {
     views: BTreeMap<Scope, usize>,
-    runs: BTreeMap<Scope, Run>,
+    /// Live runs of each scope, oldest first: a turn delivered for another
+    /// channel's message can start while host work still runs.
+    runs: BTreeMap<Scope, Vec<Run>>,
     pending: BTreeMap<PermissionId, Pending>,
     sequence: u64,
     receipts: BTreeMap<String, Vec<Receipt>>,
+}
+
+impl State {
+    /// The run a request of `scope` belongs to: `run` when the request names
+    /// it, otherwise the most recent one.
+    fn run(&self, scope: &Scope, run: Option<&RunId>) -> Option<&Run> {
+        let runs = self.runs.get(scope)?;
+        match run {
+            Some(id) => runs.iter().find(|r| &r.id == id),
+            None => runs.last(),
+        }
+    }
+
+    fn run_mut(&mut self, scope: &Scope, run: &RunId) -> Option<&mut Run> {
+        let runs = self.runs.get_mut(scope)?;
+        runs.iter_mut().find(|r| &r.id == run)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -97,7 +116,11 @@ impl Approvals {
             announced: BTreeSet::new(),
             stopped: false,
         };
-        self.lock().runs.insert(scope.clone(), record);
+        self.lock()
+            .runs
+            .entry(scope.clone())
+            .or_default()
+            .push(record);
         self.ready.notify_waiters();
         Running {
             broker: self.clone(),
@@ -200,9 +223,7 @@ impl Approvals {
     /// requests, and every request it asks from now on.
     pub(crate) fn stop_run(&self, scope: &(String, String), run: &RunId) {
         let mut state = self.lock();
-        if let Some(record) = state.runs.get_mut(scope)
-            && &record.id == run
-        {
+        if let Some(record) = state.run_mut(scope, run) {
             record.stopped = true;
         }
         self.withdraw(&mut state, scope, Some(run));

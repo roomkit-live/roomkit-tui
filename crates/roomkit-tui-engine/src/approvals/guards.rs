@@ -32,12 +32,12 @@ pub(crate) struct Running {
 impl Drop for Running {
     fn drop(&mut self) {
         let mut state = self.broker.lock();
-        if state
-            .runs
-            .get(&self.scope)
-            .is_some_and(|r| r.id == self.run)
-        {
-            state.runs.remove(&self.scope);
+        // The run before it, if still live, receives the scope's requests again.
+        if let Some(runs) = state.runs.get_mut(&self.scope) {
+            runs.retain(|r| r.id != self.run);
+            if runs.is_empty() {
+                state.runs.remove(&self.scope);
+            }
         }
         self.broker
             .withdraw(&mut state, &self.scope, Some(&self.run));

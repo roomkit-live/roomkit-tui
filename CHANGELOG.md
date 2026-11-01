@@ -16,6 +16,10 @@ Initial public release.
   keeps each mode or title change a host publishes, from a command result or
   its subscription, so later snapshots show it; a change the terminal would
   ignore is not kept.
+- `ExecutionContext::ask_permission` lets host work ask the person who
+  invoked the command. The request stays in that run whatever else runs in
+  the room, is denied once the work is interrupted, and its decision is stored
+  when the work settles.
 - `Snapshot::validate` (with `SnapshotError`, which names the refused
   command, composer action or permission by position), `ModeState::fits`,
   `Permission::fits` and their limits in `limits` let hosts check what they
