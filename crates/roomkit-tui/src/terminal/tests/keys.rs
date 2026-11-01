@@ -454,3 +454,24 @@ fn a_card_is_armed_only_once_a_frame_has_shown_it() {
         Command::Decide { .. }
     ));
 }
+
+/// RMK-1135 review: requests of every live run are shown, but Esc on a card
+/// interrupted the earliest run, the view's own work, not the run that asked.
+#[test]
+fn escape_on_an_approval_card_interrupts_the_run_that_asked() {
+    let (mut session, client, host) = fixture(true);
+    session.apply(Event::RunStarted {
+        conversation: "room".into(),
+        run: "sms".into(),
+    });
+    session.apply(Event::PermissionRequested {
+        conversation: "room".into(),
+        permission: Permission::new("send", "agent", "sms", "Send SMS?", "To Carol"),
+    });
+    draw(&mut session, Duration::ZERO);
+    assert!(!press(&mut session, &client, escape(), Duration::ZERO));
+    assert_eq!(
+        host.try_recv().unwrap().command,
+        Command::Interrupt { run: "sms".into() }
+    );
+}

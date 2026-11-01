@@ -144,3 +144,73 @@ fn a_replayed_start_does_not_duplicate_or_reopen_a_run() {
     session.apply(start("agent:sms-42"));
     assert!(session.active_run().is_none(), "Replay cannot reopen it");
 }
+
+/// RMK-1135 review: streamed text of the earlier run, no longer the last
+/// started, was dropped.
+#[test]
+fn the_earlier_run_still_streams_while_a_later_one_runs() {
+    let mut session = session();
+    session.apply(start("turn-1"));
+    session.apply(start("agent:sms-42"));
+    session.apply(Event::TextDelta {
+        conversation: "room-a".into(),
+        message: "draft-1".into(),
+        actor: "agent".into(),
+        run: "turn-1".into(),
+        text: "Still answering".into(),
+    });
+    let items = &session.snapshot().unwrap().items;
+    assert!(
+        items
+            .iter()
+            .any(|item| matches!(item, Item::Message(m) if m.text == "Still answering"))
+    );
+}
+
+/// When the earliest run finishes while another runs on, the timer, Esc and
+/// the snapshot follow that run from its own start, and the earliest's
+/// failure is not hidden by the later run completing.
+#[test]
+fn the_next_run_takes_over_when_the_earliest_finishes() {
+    let mut session = session();
+    session.apply_at(start("deploy-1"), seconds(0));
+    session.apply_at(start("agent:sms-42"), seconds(10));
+    let sms = RunId::from("agent:sms-42");
+    assert!(
+        session
+            .request(Command::Interrupt { run: sms.clone() })
+            .is_ok()
+    );
+    session.apply_at(finish("deploy-1", RunOutcome::Failed), seconds(20));
+    assert_eq!(session.active_run(), Some(&sms));
+    assert_eq!(session.snapshot().unwrap().active_run.as_ref(), Some(&sms));
+    assert_eq!(session.run_elapsed(seconds(25)), Some(seconds(15)));
+    assert_eq!(session.observation().unwrap().run.unwrap().id, sms);
+    session.apply_at(finish("agent:sms-42", RunOutcome::Completed), seconds(30));
+    assert_eq!(session.snapshot().unwrap().active_run, None);
+    assert_eq!(session.run_outcome(), Some(RunOutcome::Failed));
+}
+
+/// Beyond the bound, the oldest run after the earliest is forgotten with
+/// its requests; the view's own work and its interruption stay.
+#[test]
+fn the_bound_on_live_runs_keeps_the_earliest() {
+    let mut session = session();
+    session.apply(start("deploy-1"));
+    let interrupt = session
+        .request(Command::Interrupt {
+            run: "deploy-1".into(),
+        })
+        .unwrap();
+    session.sent(&interrupt);
+    session.apply(start("other-0"));
+    session.apply(ask("from-other-0", "other-0"));
+    for n in 1..16 {
+        session.apply(start(&format!("other-{n}")));
+    }
+    assert_eq!(session.active_run(), Some(&RunId::from("deploy-1")));
+    assert!(session.interrupting(), "Still interrupting the work");
+    assert!(session.permissions().is_empty(), "other-0 was forgotten");
+    session.apply(finish("other-0", RunOutcome::Completed));
+    assert_eq!(session.active_run(), Some(&RunId::from("deploy-1")));
+}

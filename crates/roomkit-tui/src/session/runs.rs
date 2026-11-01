@@ -9,11 +9,31 @@ use std::time::Duration;
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 use roomkit_tui_protocol::{ConversationId, RunId, RunOutcome};
 
-use super::{LiveRun, ObservedRun, Session};
+use super::{ObservedRun, Session};
 
-/// Live runs one view follows; the earliest is forgotten beyond this, as a
-/// host that never finishes its runs must not grow the view.
+/// Live runs one view follows. Beyond it the oldest run after the earliest
+/// is forgotten: a host that never finishes its runs must not grow the view,
+/// and the earliest is the view's own work.
 const MAX_LIVE_RUNS: usize = 16;
+
+/// A run started and not finished yet, and when this view saw it start.
+#[derive(Debug)]
+pub(super) struct LiveRun {
+    id: RunId,
+    started_at: Option<Duration>,
+}
+
+/// The more severe of two outcomes: a failure is never hidden by a run
+/// that completed after it.
+fn worse(a: Option<RunOutcome>, b: RunOutcome) -> RunOutcome {
+    let rank = |outcome: RunOutcome| match outcome {
+        RunOutcome::Failed => 3,
+        RunOutcome::Interrupted => 2,
+        RunOutcome::Completed => 0,
+        _ => 1,
+    };
+    a.filter(|a| rank(*a) > rank(b)).unwrap_or(b)
+}
 
 impl Session {
     /// Active execution: the earliest run started and not finished.
@@ -35,6 +55,7 @@ impl Session {
                 .filter(|run| &run.id == id)
                 .and_then(|run| run.started_at)
         };
+        self.held_outcome = None;
         self.live_runs = active
             .map(|id| LiveRun {
                 id: id.clone(),
@@ -66,16 +87,11 @@ impl Session {
             self.operation = None;
         }
         self.last_run = Some(run.clone());
-        // Usage and context describe the latest run.
-        if let Some(snapshot) = &mut self.snapshot {
-            if let Some(previous) = snapshot.context.take() {
-                self.previous_context = Some(previous);
-            }
-            snapshot.usage = None;
-        }
+        self.measure_latest_run();
         let earliest = self.live_runs.first().map(|live| live.id.clone());
         if self.live_runs.len() >= MAX_LIVE_RUNS {
-            self.live_runs.remove(0);
+            let forgotten = self.live_runs.remove(1).id;
+            self.forget(&forgotten);
         }
         self.live_runs.push(LiveRun {
             id: run,
@@ -83,6 +99,7 @@ impl Session {
         });
         if earliest.is_none() {
             self.interrupting = None;
+            self.held_outcome = None;
             self.notice.clear();
         }
         if self.active_run() != earliest.as_ref() {
@@ -105,12 +122,13 @@ impl Session {
             return;
         };
         self.live_runs.remove(index);
-        if self.interrupting.as_ref() == Some(run) {
-            self.interrupting = None;
+        self.forget(run);
+        if index > 0 {
+            return;
         }
-        self.retain_permissions(|permission| permission.run != *run);
-        if index == 0 && self.live_runs.is_empty() {
-            // The last outcome and duration stay shown until the next run.
+        if self.live_runs.is_empty() {
+            // The outcome and duration stay shown until the next run.
+            let outcome = worse(self.held_outcome.take(), outcome);
             if let Some(observed) = &mut self.observed_run {
                 observed.outcome = Some(outcome);
                 observed.duration = observed
@@ -118,10 +136,30 @@ impl Session {
                     .zip(at)
                     .and_then(|(start, finish)| finish.checked_sub(start));
             }
-        } else if index == 0 {
+        } else {
+            self.held_outcome = Some(worse(self.held_outcome, outcome));
             self.follow_earliest();
         }
         self.sync_active_run();
+    }
+
+    /// Stop showing what belonged to `run`, which ended or was forgotten.
+    fn forget(&mut self, run: &RunId) {
+        if self.interrupting.as_ref() == Some(run) {
+            self.interrupting = None;
+        }
+        self.retain_permissions(|permission| permission.run != *run);
+        self.sync_active_run();
+    }
+
+    /// Usage and context describe the latest run.
+    fn measure_latest_run(&mut self) {
+        if let Some(snapshot) = &mut self.snapshot {
+            if let Some(previous) = snapshot.context.take() {
+                self.previous_context = Some(previous);
+            }
+            snapshot.usage = None;
+        }
     }
 
     /// Time the earliest live run, the one the timer and Esc follow.

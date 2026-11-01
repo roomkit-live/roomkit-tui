@@ -244,7 +244,8 @@ pub struct Snapshot {
     pub mode: Option<ModeState>,
     /// Ordered history; the host remains its durable owner.
     pub items: Vec<Item>,
-    /// Current execution, if attached while it is already running.
+    /// Current execution, if attached while it is already running. A
+    /// snapshot states one live run; its pending permissions belong to it.
     pub active_run: Option<RunId>,
     /// Decisions still waiting when this view is opened or restored.
     pub permissions: Vec<Permission>,

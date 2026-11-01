@@ -39,7 +39,8 @@ pub struct SessionObservation {
     pub mode: Option<ModeState>,
     /// Latest operation when the host supplies its optional lifecycle.
     pub operation: Option<OperationObservation>,
-    /// Latest execution, including an active run restored by a snapshot.
+    /// The run the timer follows: the earliest live run, including one a
+    /// snapshot restored, or else the last to finish.
     pub run: Option<RunObservation>,
     /// Decisions still open, including answers awaiting host confirmation.
     pub permissions: Vec<PermissionId>,

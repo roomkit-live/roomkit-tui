@@ -35,13 +35,6 @@ type ToolKey = (ActorId, RunId, CallId);
 /// composer, or a click aimed elsewhere, never answer a request unseen.
 pub const APPROVAL_ARMING_DELAY: Duration = Duration::from_millis(500);
 
-/// A run started and not finished yet, and when this view saw it start.
-#[derive(Debug)]
-struct LiveRun {
-    id: RunId,
-    started_at: Option<Duration>,
-}
-
 #[derive(Debug)]
 struct ObservedRun {
     id: RunId,
@@ -125,7 +118,9 @@ pub struct Session {
     pending: BTreeMap<RequestId, Command>,
     last_run: Option<RunId>,
     /// Runs started and not finished, earliest first.
-    live_runs: Vec<LiveRun>,
+    live_runs: Vec<runs::LiveRun>,
+    /// The outcome of the earliest run that finished while others ran on.
+    held_outcome: Option<RunOutcome>,
     interrupting: Option<RunId>,
     deciding: BTreeSet<PermissionId>,
     expanded_tools: BTreeSet<ToolKey>,
@@ -173,6 +168,7 @@ impl Session {
             pending: BTreeMap::new(),
             last_run: None,
             live_runs: Vec::new(),
+            held_outcome: None,
             interrupting: None,
             deciding: BTreeSet::new(),
             expanded_tools: BTreeSet::new(),

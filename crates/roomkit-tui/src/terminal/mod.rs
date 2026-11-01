@@ -22,7 +22,7 @@ use crate::session::Focus;
 use crate::{Client, Session, SessionObserver, UiOptions};
 use keys::Outcome;
 use mouse::shown;
-use requests::{interrupt, paste, send};
+use requests::{interrupt, interrupt_run, paste, send};
 use screen::Terminal;
 
 const POLL: Duration = Duration::from_millis(25);

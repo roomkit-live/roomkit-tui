@@ -6,7 +6,7 @@ use std::time::Duration;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use roomkit_tui_protocol::{Command, Decision};
 
-use super::{QUIT_TIMEOUT, interrupt, send};
+use super::{QUIT_TIMEOUT, interrupt_run, send};
 use crate::session::Focus;
 use crate::{Client, Session};
 
@@ -93,7 +93,10 @@ pub(super) fn handle_key(
 /// to be read; navigation and interruption stay immediate.
 fn permission_key(session: &mut Session, client: &Client, key: KeyEvent, now: Duration) {
     if is_cancel(key) {
-        interrupt(session, client);
+        // The card's run, which may be a later one than the view's own work.
+        if let Some(run) = session.permissions().first().map(|p| p.run.clone()) {
+            interrupt_run(session, client, run);
+        }
         return;
     }
     let Some(permission) = session.permissions().first() else {

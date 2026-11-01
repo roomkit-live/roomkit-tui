@@ -183,6 +183,8 @@ async fn a_turn_for_another_channel_leaves_the_work_s_approvals_on_screen() {
         asked(ui, "Migrate?")
     })
     .await;
+    // The first card is gone: `decide` resolves it before the work, on this
+    // single-threaded runtime, can ask again.
     assert_eq!(ui.permissions().len(), 1);
 
     open.send(true).unwrap();

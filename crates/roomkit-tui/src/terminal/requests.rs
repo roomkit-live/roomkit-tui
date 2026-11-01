@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::TrySendError;
 
-use roomkit_tui_protocol::Command;
+use roomkit_tui_protocol::{Command, RunId};
 
 use crate::session::Focus;
 use crate::{Client, Session};
@@ -42,9 +42,14 @@ pub(super) fn paste(session: &mut Session, text: &str) {
 }
 
 pub(super) fn interrupt(session: &mut Session, client: &Client) {
-    if !session.interrupting()
-        && let Some(run) = session.active_run().cloned()
-    {
+    if let Some(run) = session.active_run().cloned() {
+        interrupt_run(session, client, run);
+    }
+}
+
+/// Interrupt `run`, unless an interruption is already on its way.
+pub(super) fn interrupt_run(session: &mut Session, client: &Client, run: RunId) {
+    if !session.interrupting() {
         send(session, client, Command::Interrupt { run }, false);
     }
 }
