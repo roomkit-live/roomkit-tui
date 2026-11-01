@@ -7,9 +7,12 @@ use roomkit::model::HookResult;
 use roomkit_tui_engine::{CommandHandler, CommandResult};
 use tokio::sync::watch;
 
-/// Renames on `rename`, even while busy; reloads the view it was given on `reload`.
+/// Renames on `rename`, even while busy; publishes `published` on `publish`;
+/// reloads the view it was given on `reload`.
+#[derive(Default)]
 struct Renamer {
     updates: Option<watch::Receiver<Vec<Event>>>,
+    published: Vec<Event>,
 }
 
 impl CommandHandler for Renamer {
@@ -29,8 +32,10 @@ impl CommandHandler for Renamer {
         let Command::Invoke { name, arguments } = request.command else {
             return Err("Unsupported".into());
         };
-        if name == "reload" {
-            return Ok(CommandResult::Switch(Box::new(view)));
+        match name.as_str() {
+            "reload" => return Ok(CommandResult::Switch(Box::new(view))),
+            "publish" => return Ok(CommandResult::Events(self.published.clone())),
+            _ => {}
         }
         Ok(CommandResult::Events(vec![
             title(&arguments),
@@ -59,6 +64,7 @@ fn view() -> SessionConfig {
     view.commands = vec![
         CommandSpec::new("rename", "Rename this conversation").with_arguments("<title>"),
         CommandSpec::new("reload", "Reload this conversation"),
+        CommandSpec::new("publish", "Publish the host's view state"),
         CommandSpec::new("mode", "Change the mode"),
     ];
     view
@@ -107,7 +113,7 @@ async fn a_rename_while_busy_is_published_at_once_and_kept_by_a_later_snapshot()
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session = LocalSession::new(kit.clone(), channel, view());
-    let task = tokio::spawn(session.run_with_commands(host, Renamer { updates: None }));
+    let task = tokio::spawn(session.run_with_commands(host, Renamer::default()));
     assert!(matches!(next(&client).await, Event::Snapshot(s) if s.title == "room"));
     client.try_send(request("held")).unwrap();
     while !matches!(next(&client).await, Event::OperationStarted { .. }) {}
@@ -144,6 +150,7 @@ async fn a_title_and_mode_published_by_the_host_subscription_are_kept_by_a_later
     let session = LocalSession::new(kit.clone(), channel, view());
     let handler = Renamer {
         updates: Some(updates),
+        ..Renamer::default()
     };
     let task = tokio::spawn(session.run_with_commands(host, handler));
     assert!(matches!(next(&client).await, Event::Snapshot(s) if s.title == "room"));
@@ -159,4 +166,59 @@ async fn a_title_and_mode_published_by_the_host_subscription_are_kept_by_a_later
     drop(client);
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();
+}
+
+/// Modes a terminal refuses, after one it accepts: an unadvertised command, a
+/// selection outside its choices and more choices than a terminal lists.
+fn refused_modes() -> Vec<Event> {
+    let modes = [
+        ModeState::new("unadvertised", "ask", vec![Choice::new("ask", "Ask")]),
+        ModeState::new("mode", "missing", vec![Choice::new("ask", "Ask")]),
+        ModeState::new(
+            "mode",
+            "m0",
+            (0..33)
+                .map(|n| Choice::new(format!("m{n}"), "Mode"))
+                .collect(),
+        ),
+    ];
+    let refused = modes.into_iter().map(|mode| Event::ModeChanged {
+        conversation: "room".into(),
+        mode,
+    });
+    std::iter::once(mode("plan")).chain(refused).collect()
+}
+
+#[tokio::test]
+async fn a_mode_the_terminal_would_refuse_is_not_kept_on_any_path() {
+    for subscribed in [false, true] {
+        let kit = RoomKit::new(Default::default());
+        let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
+        let (publish, updates) = watch::channel(Vec::new());
+        let handler = Renamer {
+            updates: Some(updates),
+            published: refused_modes(),
+        };
+        let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+        let session = LocalSession::new(kit.clone(), channel, view());
+        let task = tokio::spawn(session.run_with_commands(host, handler));
+        assert!(matches!(next(&client).await, Event::Snapshot(_)));
+        if subscribed {
+            publish.send_replace(refused_modes());
+        } else {
+            client.try_send(invoke(1, "publish", "")).unwrap();
+        }
+        let last = refused_modes().pop().unwrap();
+        while next(&client).await != last {}
+
+        let restored = reload(&client, 2).await;
+        assert_eq!(
+            shown(&restored),
+            ("room", "plan"),
+            "subscribed: {subscribed}"
+        );
+        drop(client);
+        task.await.unwrap().unwrap();
+        kit.close().await.unwrap();
+    }
 }

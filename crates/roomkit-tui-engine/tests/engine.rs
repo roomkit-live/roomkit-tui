@@ -32,7 +32,7 @@ mod lifecycle_tests;
 mod progress_tests;
 mod request_tests;
 mod review_tests;
-mod title_tests;
+mod view_state_tests;
 
 fn config() -> SessionConfig {
     SessionConfig::new(

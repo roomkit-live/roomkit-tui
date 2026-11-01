@@ -82,12 +82,13 @@ impl SessionConfig {
     }
 
     /// Keep the mode or title a host event confirms for this view, so that
-    /// later snapshots and handlers see it. A title the terminal would ignore
-    /// is not kept either.
+    /// later snapshots and handlers see it. A change the terminal ignores is
+    /// not kept either: a snapshot carrying a mode that does not fit would be
+    /// refused whole.
     fn record(&mut self, event: &Event) {
         match event {
             Event::ModeChanged { conversation, mode }
-                if conversation.as_str() == self.conversation() =>
+                if conversation.as_str() == self.conversation() && mode.fits(&self.commands) =>
             {
                 self.mode = Some(mode.clone());
             }
