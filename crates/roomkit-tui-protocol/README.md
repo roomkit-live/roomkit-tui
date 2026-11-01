@@ -39,7 +39,9 @@ match enums with a wildcard arm. A refused request carries a `Rejection` with a
 stable `ErrorCode` and display text. Enums a terminal receives have an `Unknown`
 variant, so an older peer ignores what a newer one adds instead of failing to
 parse; `Decision` has none, so a newer answer is never read as an approval.
-Shared bounds are in `limits`. `ModeState::fits` applies the rule terminals use
-for interaction modes, so a host can check a mode before sending it.
+Shared bounds are in `limits`. The rules terminals apply are public, so a host
+can check what it sends: `Snapshot::validate` says why a whole snapshot would be
+refused (`SnapshotError`), `ModeState::fits` covers a mode change and
+`Permission::fits` an approval request.
 
 This is an unpublished 0.1 prototype; the contract can change before 1.0.

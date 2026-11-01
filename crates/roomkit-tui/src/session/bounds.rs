@@ -1,17 +1,12 @@
-//! Validation and bounds for host input. A host is trusted to own the
-//! conversation, not to keep the view's memory and screen bounded.
-
-use std::collections::BTreeSet;
+//! Bounds for host input. A host is trusted to own the conversation, not to
+//! keep the view's memory and screen bounded. What is refused outright is the
+//! protocol's rule (`Snapshot::validate`, `Permission::fits`), shared with hosts.
 
 use roomkit_tui_protocol::limits::{
-    MAX_CHOICES, MAX_LABEL_BYTES, MAX_PENDING_PERMISSIONS, MAX_PERMISSION_DETAIL_BYTES,
-    MAX_PERMISSION_SUMMARY_BYTES, MAX_PERMISSION_TITLE_BYTES, MAX_SNAPSHOT_ENTRIES,
+    MAX_LABEL_BYTES, MAX_PERMISSION_SUMMARY_BYTES, MAX_PERMISSION_TITLE_BYTES,
 };
-use roomkit_tui_protocol::{CommandSpec, Item, ModelInfo, Permission, Snapshot, ToolCall};
+use roomkit_tui_protocol::{Item, ModelInfo, Snapshot, ToolCall};
 
-const MAX_COMMAND_DESCRIPTION_BYTES: usize = 1_024;
-const MAX_INPUT_ACTIONS: usize = 8;
-const MAX_INPUT_ACTION_DESCRIPTION_BYTES: usize = 120;
 const TRUNCATION_MARK: &str = "\n[view truncated]";
 
 /// Whether a label event fits. A longer one is refused, not shortened, so the
@@ -38,91 +33,6 @@ pub(super) fn bound_model(model: &mut ModelInfo) {
     if let Some(effort) = &mut model.effort {
         bound_in_place(effort, MAX_LABEL_BYTES);
     }
-}
-
-pub(super) fn validate_snapshot(snapshot: &Snapshot) -> Result<(), &'static str> {
-    if snapshot.conversation.as_str().len() > MAX_LABEL_BYTES
-        || snapshot.actors.len() > MAX_SNAPSHOT_ENTRIES
-    {
-        return Err("Host snapshot exceeds the view's bounds");
-    }
-    if !snapshot
-        .actors
-        .iter()
-        .any(|actor| actor.id == snapshot.selected_agent)
-    {
-        return Err("Host snapshot has an unknown selected agent");
-    }
-    let names = valid_commands(&snapshot.commands)
-        .ok_or("Host snapshot has invalid or duplicate commands")?;
-    if snapshot
-        .mode
-        .as_ref()
-        .is_some_and(|mode| !mode.fits(&snapshot.commands))
-    {
-        return Err("Host snapshot has invalid interaction modes");
-    }
-    let mut prefixes = BTreeSet::new();
-    if snapshot.input_actions.len() > MAX_INPUT_ACTIONS
-        || snapshot.input_actions.iter().any(|action| {
-            action.prefix.is_alphanumeric()
-                || action.prefix.is_whitespace()
-                || action.prefix.is_control()
-                || action.prefix == '\\'
-                || action.description.len() > MAX_INPUT_ACTION_DESCRIPTION_BYTES
-                || !names.contains(&action.command)
-                || !prefixes.insert(action.prefix)
-        })
-    {
-        return Err("Host snapshot has invalid composer actions");
-    }
-    let mut permissions = BTreeSet::new();
-    if snapshot.permissions.len() > MAX_PENDING_PERMISSIONS
-        || snapshot.permissions.iter().any(|permission| {
-            snapshot.active_run.as_ref() != Some(&permission.run)
-                || !permission_fits(permission)
-                || !permissions.insert(&permission.id)
-        })
-    {
-        return Err("Host snapshot has invalid or duplicate permissions");
-    }
-    Ok(())
-}
-
-fn valid_commands(commands: &[CommandSpec]) -> Option<BTreeSet<&String>> {
-    let mut names = BTreeSet::new();
-    if commands.len() > MAX_SNAPSHOT_ENTRIES {
-        return None;
-    }
-    for command in commands {
-        let valid = !command.name.is_empty()
-            && command.name.len() <= MAX_LABEL_BYTES
-            && command
-                .name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
-            && command.description.len() <= MAX_COMMAND_DESCRIPTION_BYTES
-            && command.arguments.len() <= MAX_LABEL_BYTES
-            && command.choices.len() <= MAX_CHOICES
-            && command.choices.iter().all(|c| c.len() <= MAX_LABEL_BYTES)
-            && names.insert(&command.name);
-        if !valid {
-            return None;
-        }
-    }
-    Some(names)
-}
-
-/// A person must be able to read everything they approve: an oversized
-/// request is refused rather than displayed truncated.
-pub(super) fn permission_fits(permission: &Permission) -> bool {
-    permission.id.as_str().len() <= MAX_LABEL_BYTES
-        && permission.title.len() <= MAX_PERMISSION_TITLE_BYTES
-        && permission.detail.len() <= MAX_PERMISSION_DETAIL_BYTES
-        && permission
-            .summary
-            .as_ref()
-            .is_none_or(|s| s.len() <= MAX_PERMISSION_SUMMARY_BYTES)
 }
 
 /// Drop the oldest items beyond the limit. Returns whether any were dropped.

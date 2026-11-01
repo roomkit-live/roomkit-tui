@@ -2,6 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::limits::{
+    MAX_LABEL_BYTES, MAX_PERMISSION_DETAIL_BYTES, MAX_PERMISSION_SUMMARY_BYTES,
+    MAX_PERMISSION_TITLE_BYTES,
+};
 use crate::{ActorId, PermissionId, RunId};
 
 /// A human decision. Approval is scoped to this one request. Unknown values
@@ -59,6 +63,19 @@ impl Permission {
     pub fn with_summary(mut self, summary: impl Into<String>) -> Self {
         self.summary = Some(summary.into());
         self
+    }
+
+    /// Whether a terminal can show this request in full. A person must be
+    /// able to read everything they approve, so a terminal refuses a larger
+    /// request instead of showing it truncated.
+    pub fn fits(&self) -> bool {
+        self.id.as_str().len() <= MAX_LABEL_BYTES
+            && self.title.len() <= MAX_PERMISSION_TITLE_BYTES
+            && self.detail.len() <= MAX_PERMISSION_DETAIL_BYTES
+            && self
+                .summary
+                .as_ref()
+                .is_none_or(|s| s.len() <= MAX_PERMISSION_SUMMARY_BYTES)
     }
 }
 

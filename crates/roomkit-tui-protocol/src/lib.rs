@@ -22,6 +22,7 @@ mod permissions;
 mod rejection;
 mod request;
 mod sidebar;
+mod validity;
 
 pub use commands::{Choice, CommandSpec, InputAction, ModeState};
 pub use conversation::{Actor, Item, Message, Snapshot, ToolCall, ToolState};
@@ -41,3 +42,4 @@ pub use sidebar::{
     MeterColor, MeterSegment, SidebarAction, SidebarContent, SidebarEntry, SidebarSection,
     SidebarSpec, SidebarTone,
 };
+pub use validity::SnapshotError;

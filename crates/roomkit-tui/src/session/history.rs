@@ -7,15 +7,13 @@ use roomkit_tui_protocol::{
     ActorId, ConversationId, Item, Message, MessageId, RunId, RunOutcome, Snapshot,
 };
 
-use super::bounds::{
-    bound_in_place, bound_item, bound_labels, bounded, trim_items, validate_snapshot,
-};
+use super::bounds::{bound_in_place, bound_item, bound_labels, bounded, trim_items};
 use super::{ObservedRun, Session};
 
 impl Session {
     pub(super) fn on_snapshot(&mut self, mut snapshot: Snapshot) {
-        if let Err(error) = validate_snapshot(&snapshot) {
-            self.notice = error.into();
+        if let Err(error) = snapshot.validate() {
+            self.notice = error.to_string();
             return;
         }
         if self

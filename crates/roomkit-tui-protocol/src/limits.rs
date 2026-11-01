@@ -16,8 +16,14 @@ pub const MAX_PERMISSION_SUMMARY_BYTES: usize = 512;
 pub const MAX_PENDING_PERMISSIONS: usize = 64;
 /// Maximum bytes of a short label: a title, caption, status or argument value.
 pub const MAX_LABEL_BYTES: usize = 256;
-/// Maximum advertised commands, actors or composer actions in one snapshot.
+/// Maximum advertised commands or actors in one snapshot.
 pub const MAX_SNAPSHOT_ENTRIES: usize = 256;
+/// Maximum bytes of a command's description.
+pub const MAX_COMMAND_DESCRIPTION_BYTES: usize = 1_024;
+/// Maximum composer actions in one snapshot.
+pub const MAX_INPUT_ACTIONS: usize = 8;
+/// Maximum bytes of a composer action's guidance.
+pub const MAX_INPUT_ACTION_DESCRIPTION_BYTES: usize = 120;
 /// Maximum choices in one selector or form field.
 pub const MAX_CHOICES: usize = 1_024;
 /// Maximum interaction modes a host offers at once.

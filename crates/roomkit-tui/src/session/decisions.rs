@@ -5,7 +5,6 @@ use roomkit_tui_protocol::limits::MAX_PENDING_PERMISSIONS;
 use roomkit_tui_protocol::{ConversationId, Permission, PermissionId};
 
 use super::Session;
-use super::bounds::permission_fits;
 
 impl Session {
     pub(super) fn on_permission_requested(
@@ -16,7 +15,7 @@ impl Session {
         if !self.is_current(conversation) || self.active_run() != Some(&permission.run) {
             return;
         }
-        if !permission_fits(&permission) || self.permissions().len() >= MAX_PENDING_PERMISSIONS {
+        if !permission.fits() || self.permissions().len() >= MAX_PENDING_PERMISSIONS {
             self.notice = "The host asked for an approval this view cannot display in full; \
                            it was not shown and will be refused when it expires"
                 .into();
