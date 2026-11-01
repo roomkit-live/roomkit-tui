@@ -44,12 +44,13 @@ impl View {
             MouseEventKind::Up(MouseButton::Left) => return self.lift(mouse),
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 self.redraw.dirty = true;
-                match &mut self.selection {
-                    // Only a selection anchored in the conversation scrolls with it.
-                    Some(selection) if selection.scrolls() => selection.content_scrolled(),
-                    _ => self.selection = None,
+                // Only a selection anchored in the conversation scrolls with it.
+                if !self.selection.as_ref().is_some_and(TextSelection::scrolls) {
+                    self.selection = None;
                 }
+                let before = self.session.scroll();
                 self.wheel(mouse);
+                self.scrolled_since(before);
             }
             _ => {}
         }
@@ -123,6 +124,12 @@ impl View {
             Edge::Above => self.session.scroll_back(1),
             Edge::Below => self.session.scroll_forward(1),
         }
+        self.scrolled_since(before)
+    }
+
+    /// Whether the conversation moved from scroll offset `before`; a held
+    /// selection then follows what the pointer shows, and only then.
+    fn scrolled_since(&mut self, before: usize) -> bool {
         let scrolled = self.session.scroll() != before;
         if scrolled && let Some(selection) = &mut self.selection {
             selection.content_scrolled();

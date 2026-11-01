@@ -10,7 +10,7 @@ mod tests;
 use std::ops::{Range, RangeInclusive};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use roomkit_tui_protocol::{ConversationId, Message, MessageId};
+use roomkit_tui_protocol::Event;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -95,14 +95,18 @@ impl TextSelection {
         self.scrolled |= self.held();
     }
 
-    /// A streamed draft became `message`; an end on the draft stays on its text.
-    pub(crate) fn finalized(
-        &mut self,
-        conversation: &ConversationId,
-        draft: &MessageId,
-        message: &Message,
-    ) {
-        if let Extent::Conversation(extent) = &mut self.extent {
+    /// Keep the ends on their text across a host event, before the session
+    /// applies it: a streamed draft that becomes a message moves them along.
+    pub(crate) fn observe(&mut self, event: &Event) {
+        if let (
+            Extent::Conversation(extent),
+            Event::MessageFinalized {
+                conversation,
+                draft,
+                message,
+            },
+        ) = (&mut self.extent, event)
+        {
             extent.finalized(conversation, draft, message);
         }
     }

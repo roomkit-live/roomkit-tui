@@ -393,14 +393,14 @@ fn a_selection_in_a_streamed_reply_survives_its_finalization() {
         &frame,
         &session,
     );
-    let finalized = Message::new("stored-1", "agent", reply);
-    // The terminal shows the selection each event before the session applies it.
-    selection.finalized(&"room-a".into(), &"draft:run-1:0".into(), &finalized);
-    session.apply(Event::MessageFinalized {
+    let finalized = Event::MessageFinalized {
         conversation: "room-a".into(),
         draft: "draft:run-1:0".into(),
-        message: finalized,
-    });
+        message: Message::new("stored-1", "agent", reply),
+    };
+    // The terminal shows the selection each event before the session applies it.
+    selection.observe(&finalized);
+    session.apply(finalized);
     let mut shown = draw(&mut session);
     selection.release();
     selection.paint(&mut shown, &session);

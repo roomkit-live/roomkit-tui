@@ -3,7 +3,8 @@
 Scrolling while the button is held keeps the selection, whether by the wheel
 or by holding the pointer past the conversation's edge, and the copy holds
 the lines no longer on screen. Once copied, the selection stays highlighted
-and scrolls with its text until a key is pressed.
+and scrolls with its text until a key is pressed. Content arriving under a
+still pointer never turns a click into a copy.
 """
 import base64
 import errno
@@ -126,8 +127,21 @@ try:
     os.write(master, b"\x19")
     wait_for("Execution Completed")
 
-    # The wheel, button held: press on the first line, scroll to the last.
+    # The wheel alone, button held and pointer still: the end follows what
+    # the pointer shows once the conversation scrolled.
     middle = ROWS // 2
+    wheel_until(FIRST, WHEEL_UP, 10, middle)
+    start = screen.row_of(FIRST)
+    mouse(PRESS, 1, start)
+    mouse(WHEEL_DOWN, 1, start)
+    wait_until(lambda: screen.row_of(FIRST) != start, "the wheel scrolling under a held button")
+    offset = len(captured)
+    mouse(PRESS, 1, start, release=True)
+    text = wait_for_copy(offset)
+    require(text.lstrip().startswith(FIRST) and "Line 02 of" in text,
+            f"The wheel did not extend the selection: {text!r}")
+
+    # The wheel, button held: press on the first line, scroll to the last.
     wheel_until(FIRST, WHEEL_UP, 10, middle)
     start = screen.row_of(FIRST)
     mouse(PRESS, 1, start)
@@ -164,6 +178,26 @@ try:
     check_copy(text)
     require(HISTORY_START in text, f"The copy should start at the history's start: {text!r}")
 
+    # A still click while a reply streams in below it, with a wheel notch that
+    # cannot scroll (the view is at the latest activity): a click, no copy.
+    os.write(master, b"\x1b[1;5FAnother question\r")
+    wait_for("Ctrl+Y allow once")
+    pump(.6)  # An approval accepts answers once on screen for half a second.
+    os.write(master, b"\x19")
+    wait_until(lambda: not screen.shows("Ctrl+Y allow once"), "the approval closing")
+    row = screen.row_of("Another question")
+    seen = screen.lines()[row - 1]
+    offset = len(captured)
+    mouse(PRESS, 10, row)
+    wait_until(lambda: "Working" not in screen.text() and screen.shows("Execution Completed"),
+               "the second reply")
+    mouse(WHEEL_DOWN, 10, row)
+    pump(.2)
+    mouse(PRESS, 10, row, release=True)
+    pump(.3)
+    require(screen.lines()[row - 1] != seen, "The history did not move under the pointer")
+    require(copied_since(offset) is None, f"A still click copied: {copied_since(offset)!r}")
+
     os.write(master, b"\x04")
     require(process.wait(timeout=5) == 0, "The terminal did not exit cleanly")
 finally:
@@ -173,4 +207,4 @@ finally:
     os.close(master)
     os.close(slave)
 
-print("Selection checks passed: wheel and edge scrolling while held, off-screen copy, highlight kept after the copy.")
+print("Selection checks passed: wheel and edge scrolling while held, off-screen copy, highlight kept after the copy, still clicks while content arrives.")

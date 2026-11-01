@@ -14,7 +14,6 @@ use std::sync::mpsc::TryRecvError;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event as Input, KeyCode, KeyEvent, KeyEventKind};
-use roomkit_tui_protocol::Event;
 
 use crate::clipboard::Clipboard;
 use crate::render::{self, Frame, Renderers};
@@ -152,16 +151,8 @@ impl View {
         for _ in 0..MAX_EVENTS_PER_FRAME {
             match self.client.try_recv() {
                 Ok(event) => {
-                    if let (
-                        Some(selection),
-                        Event::MessageFinalized {
-                            conversation,
-                            draft,
-                            message,
-                        },
-                    ) = (&mut self.selection, &event)
-                    {
-                        selection.finalized(conversation, draft, message);
+                    if let Some(selection) = &mut self.selection {
+                        selection.observe(&event);
                     }
                     let now = self.now();
                     self.session.apply_at(event, now);
