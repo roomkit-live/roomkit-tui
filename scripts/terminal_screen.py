@@ -59,6 +59,8 @@ class Screen:
                     continue
                 self._control(match)
                 index = match.end()
+                if match.group(0) == _FRAME_END:
+                    self._record()
             elif byte == 0x0D:
                 self.col, index = 0, index + 1
             elif byte == 0x0A:
@@ -72,6 +74,12 @@ class Screen:
                     break
                 self._put(data[index:index + size].decode("utf-8", "replace"))
                 index += size
+        self._record()
+
+    def _record(self):
+        """Keep what the screen shows now: after each frame, so a state the
+        program shows only briefly is seen even when several frames arrive
+        in one read."""
         text = self.text()
         if text != self.history[-1]:
             self.history.append(text)
@@ -185,10 +193,11 @@ class Screen:
 
     def shows(self, marker):
         """Whether the current screen shows `marker`: text, bytes or a pattern."""
-        if isinstance(marker, re.Pattern):
-            text = self.text()
-            return marker.search(text.encode() if isinstance(marker.pattern, bytes) else text) is not None
-        return _text(marker) in self.text()
+        return _found(marker, self.text())
+
+    def showed(self, marker, since):
+        """Whether a screen recorded from history entry `since` on showed `marker`."""
+        return any(_found(marker, text) for text in self.history[since:])
 
     def ever(self, marker):
         """Whether any screen so far showed `marker`."""
@@ -203,6 +212,17 @@ class Screen:
         """The 1-based row of the last line showing `marker`, or None."""
         found = [index for index, line in enumerate(self.lines()) if _text(marker) in line]
         return found[-1] + 1 if found else None
+
+
+# Each frame the programs draw ends by showing the cursor again.
+_FRAME_END = b"\x1b[?25h"
+
+
+def _found(marker, text):
+    """Whether `text` holds `marker`: text, bytes or a pattern."""
+    if isinstance(marker, re.Pattern):
+        return marker.search(text.encode() if isinstance(marker.pattern, bytes) else text) is not None
+    return _text(marker) in text
 
 
 def _text(marker):

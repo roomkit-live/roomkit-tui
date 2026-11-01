@@ -58,11 +58,20 @@ class Terminal:
         self.close()
 
     def resize(self, rows, cols):
-        """Resize the terminal and tell the program, as a window would."""
+        """Resize the terminal and tell the program, as a window would. What it
+        wrote at the old size is read first, so the screen model never lays it
+        out at the new size, and its full repaint at the new size is awaited:
+        crossterm 0.29 can leave a key unread when it arrives with the resize
+        signal, until the next key comes."""
+        running = self.process is not None
+        if running:
+            self.pump(0.05)
+            offset = len(self.output)
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.screen.resize(rows, cols)
-        if self.process is not None:
+        if running:
             os.kill(self.process.pid, signal.SIGWINCH)
+            self.wait_for(b"\x1b[2J", after=offset)
 
     def send(self, data):
         os.write(self.master, data)
@@ -101,21 +110,31 @@ class Terminal:
             self.read(remaining)
 
     def wait_for(self, marker, after=0):
-        """Wait until the screen shows `marker`: text, bytes or a pattern. Raw
-        sequences (bytes starting with ESC) are searched in the output written
-        since `after`."""
+        """Wait until a frame drawn since the wait began shows `marker`: text,
+        bytes or a pattern. Raw sequences (bytes starting with ESC) are
+        searched in the output written since `after`."""
         if isinstance(marker, bytes) and marker.startswith(b"\x1b"):
             self.wait_until(lambda: marker in self.output[after:], repr(marker))
         else:
-            self.wait_until(lambda: self.screen.shows(marker), repr(marker))
+            # Any frame since the wait began counts: a brief hint can be drawn
+            # and cleared within one read when the check falls behind.
+            since = len(self.screen.history) - 1
+            self.wait_until(lambda: self.screen.showed(marker, since), repr(marker))
 
     def context(self):
         """What a failed wait shows to explain itself."""
         return f"screen:\n{self.screen.text()}\ntail={bytes(self.output[-1000:])!r}"
 
     def exited(self):
-        """The program exits cleanly and restores the terminal's modes."""
-        require(self.process.wait(timeout=5) == 0, "The program did not exit cleanly")
+        """The program exits cleanly and restores the terminal's modes. Its
+        output is read while it exits: unread, a full pseudo-terminal buffer
+        blocks the program's last writes, and it never exits."""
+        deadline = time.monotonic() + DEADLINE
+        while self.process.poll() is None:
+            remaining = deadline - time.monotonic()
+            require(remaining > 0, f"The program did not exit; {self.context()}")
+            self.read(min(remaining, 0.05))
+        require(self.process.returncode == 0, "The program did not exit cleanly")
         while select.select([self.master], [], [], 0)[0]:
             self.output.extend(os.read(self.master, 65536))
         require(termios.tcgetattr(self.slave) == self.original, "Terminal modes were not restored")
