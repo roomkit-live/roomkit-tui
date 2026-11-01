@@ -34,6 +34,11 @@ impl CommandHandler for Renamer {
         };
         match name.as_str() {
             "reload" => return Ok(CommandResult::Switch(Box::new(view))),
+            "break" => {
+                let mut broken = view;
+                broken.mode = Some(ModeState::new("unadvertised", "ask", vec![]));
+                return Ok(CommandResult::Switch(Box::new(broken)));
+            }
             "publish" => return Ok(CommandResult::Events(self.published.clone())),
             _ => {}
         }
@@ -65,6 +70,7 @@ fn view() -> SessionConfig {
         CommandSpec::new("rename", "Rename this conversation").with_arguments("<title>"),
         CommandSpec::new("reload", "Reload this conversation"),
         CommandSpec::new("publish", "Publish the host's view state"),
+        CommandSpec::new("break", "Switch to a view whose mode does not fit"),
         CommandSpec::new("mode", "Change the mode"),
     ];
     view
@@ -221,4 +227,28 @@ async fn a_mode_the_terminal_would_refuse_is_not_kept_on_any_path() {
         task.await.unwrap().unwrap();
         kit.close().await.unwrap();
     }
+}
+
+#[tokio::test]
+async fn a_replacement_view_whose_mode_does_not_fit_is_refused() {
+    let kit = RoomKit::new(Default::default());
+    let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session = LocalSession::new(kit.clone(), channel, view());
+    let task = tokio::spawn(session.run_with_commands(host, Renamer::default()));
+    assert!(matches!(next(&client).await, Event::Snapshot(_)));
+    client.try_send(invoke(1, "break", "")).unwrap();
+    assert!(matches!(
+        next(&client).await,
+        Event::Reply { error: Some(rejection), .. } if rejection.code == ErrorCode::Invalid
+    ));
+    let restored = reload(&client, 2).await;
+    assert_eq!(
+        shown(&restored),
+        ("room", ""),
+        "The current view is unchanged"
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
 }

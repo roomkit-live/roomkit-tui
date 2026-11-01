@@ -240,6 +240,17 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
             let error = Rejection::busy("Cannot switch an executing conversation");
             return self.reply(&request, Some(error)).map(|()| None);
         }
+        // The terminal would refuse the whole snapshot while this view moved on.
+        if config
+            .mode
+            .as_ref()
+            .is_some_and(|mode| !mode.fits(&config.commands))
+        {
+            let error = Rejection::invalid(
+                "The replacement view's modes do not fit its commands; the current session is unchanged",
+            );
+            return self.reply(&request, Some(error)).map(|()| None);
+        }
         let (kit, channel) = (self.session.kit.clone(), self.session.channel.clone());
         self.switching = true;
         Ok(Some(Box::pin(async move {
