@@ -19,6 +19,13 @@ const MAX_MODE_DESCRIPTION_BYTES: usize = 512;
 const MAX_MODE_LABEL_BYTES: usize = 80;
 const TRUNCATION_MARK: &str = "\n[view truncated]";
 
+/// Whether a label event fits. A longer one is refused, not shortened, so the
+/// view keeps the last label; only a snapshot, which cannot be half applied,
+/// shortens its labels.
+pub(super) fn fits_label(text: &str) -> bool {
+    text.len() <= MAX_LABEL_BYTES
+}
+
 /// Shorten display labels; identities are never truncated.
 pub(super) fn bound_labels(snapshot: &mut Snapshot) {
     bound_in_place(&mut snapshot.title, MAX_LABEL_BYTES);

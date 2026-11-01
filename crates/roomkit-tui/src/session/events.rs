@@ -3,14 +3,14 @@
 
 use std::time::Duration;
 
-use roomkit_tui_protocol::limits::{MAX_LABEL_BYTES, MAX_OPERATION_ID_BYTES};
+use roomkit_tui_protocol::limits::MAX_OPERATION_ID_BYTES;
 use roomkit_tui_protocol::{
     BackgroundStatus, Choice, Command, ConversationId, Event, FormSpec, ModeState, OperationId,
     PanelSpec, Rejection, RequestId, RunOutcome, SidebarSpec,
 };
 
 use super::Session;
-use super::bounds::{bounded, valid_mode};
+use super::bounds::{bounded, fits_label, valid_mode};
 use crate::{ChoicePicker, FormState, OperationObservation, PanelState, SidebarState};
 
 impl Session {
@@ -209,9 +209,7 @@ impl Session {
     fn on_background(&mut self, conversation: &ConversationId, status: Option<BackgroundStatus>) {
         if self.is_current(conversation)
             && status.as_ref().is_none_or(|s| {
-                s.label.len() <= MAX_LABEL_BYTES
-                    && s.arguments.len() <= MAX_LABEL_BYTES
-                    && self.advertises(&s.command)
+                fits_label(&s.label) && fits_label(&s.arguments) && self.advertises(&s.command)
             })
         {
             self.background = status;

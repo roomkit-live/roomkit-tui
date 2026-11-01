@@ -3,9 +3,9 @@
 //! from every label it draws.
 
 use roomkit_tui_protocol::ConversationId;
-use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 
 use super::Session;
+use super::bounds::fits_label as fits;
 
 impl Session {
     pub(super) fn on_application_info(
@@ -33,9 +33,4 @@ impl Session {
             snapshot.title = title;
         }
     }
-}
-
-/// A longer label is refused, not truncated, so the view keeps the last one.
-fn fits(text: &str) -> bool {
-    text.len() <= MAX_LABEL_BYTES
 }
