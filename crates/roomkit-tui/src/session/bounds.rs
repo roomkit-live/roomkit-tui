@@ -7,16 +7,11 @@ use roomkit_tui_protocol::limits::{
     MAX_CHOICES, MAX_LABEL_BYTES, MAX_PENDING_PERMISSIONS, MAX_PERMISSION_DETAIL_BYTES,
     MAX_PERMISSION_SUMMARY_BYTES, MAX_PERMISSION_TITLE_BYTES, MAX_SNAPSHOT_ENTRIES,
 };
-use roomkit_tui_protocol::{
-    CommandSpec, Item, ModeState, ModelInfo, Permission, Snapshot, ToolCall,
-};
+use roomkit_tui_protocol::{CommandSpec, Item, ModelInfo, Permission, Snapshot, ToolCall};
 
 const MAX_COMMAND_DESCRIPTION_BYTES: usize = 1_024;
 const MAX_INPUT_ACTIONS: usize = 8;
 const MAX_INPUT_ACTION_DESCRIPTION_BYTES: usize = 120;
-const MAX_MODES: usize = 32;
-const MAX_MODE_DESCRIPTION_BYTES: usize = 512;
-const MAX_MODE_LABEL_BYTES: usize = 80;
 const TRUNCATION_MARK: &str = "\n[view truncated]";
 
 /// Whether a label event fits. A longer one is refused, not shortened, so the
@@ -63,7 +58,7 @@ pub(super) fn validate_snapshot(snapshot: &Snapshot) -> Result<(), &'static str>
     if snapshot
         .mode
         .as_ref()
-        .is_some_and(|mode| !valid_mode(mode, &snapshot.commands))
+        .is_some_and(|mode| !mode.fits(&snapshot.commands))
     {
         return Err("Host snapshot has invalid interaction modes");
     }
@@ -116,21 +111,6 @@ fn valid_commands(commands: &[CommandSpec]) -> Option<BTreeSet<&String>> {
         }
     }
     Some(names)
-}
-
-pub(super) fn valid_mode(mode: &ModeState, commands: &[CommandSpec]) -> bool {
-    let mut values = BTreeSet::new();
-    commands.iter().any(|command| command.name == mode.command)
-        && !mode.choices.is_empty()
-        && mode.choices.len() <= MAX_MODES
-        && mode.choices.iter().all(|choice| {
-            !choice.value.is_empty()
-                && choice.value.len() <= MAX_LABEL_BYTES
-                && choice.label.len() <= MAX_MODE_LABEL_BYTES
-                && choice.description.len() <= MAX_MODE_DESCRIPTION_BYTES
-                && values.insert(&choice.value)
-        })
-        && values.contains(&mode.selected)
 }
 
 /// A person must be able to read everything they approve: an oversized

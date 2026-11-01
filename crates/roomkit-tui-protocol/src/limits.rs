@@ -18,8 +18,14 @@ pub const MAX_PENDING_PERMISSIONS: usize = 64;
 pub const MAX_LABEL_BYTES: usize = 256;
 /// Maximum advertised commands, actors or composer actions in one snapshot.
 pub const MAX_SNAPSHOT_ENTRIES: usize = 256;
-/// Maximum choices in one selector, mode list or form field.
+/// Maximum choices in one selector or form field.
 pub const MAX_CHOICES: usize = 1_024;
+/// Maximum interaction modes a host offers at once.
+pub const MAX_MODES: usize = 32;
+/// Maximum bytes of an interaction mode's label.
+pub const MAX_MODE_LABEL_BYTES: usize = 80;
+/// Maximum bytes of an interaction mode's description.
+pub const MAX_MODE_DESCRIPTION_BYTES: usize = 512;
 /// Maximum fields in one form.
 pub const MAX_FORM_FIELDS: usize = 32;
 /// Maximum bytes of a submitted form value.

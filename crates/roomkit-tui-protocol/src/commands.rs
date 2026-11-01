@@ -1,6 +1,10 @@
 //! What a host offers the composer: commands, choices, modes and prefixes.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
+
+use crate::limits::{MAX_LABEL_BYTES, MAX_MODE_DESCRIPTION_BYTES, MAX_MODE_LABEL_BYTES, MAX_MODES};
 
 /// A host command advertised to the input composer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,6 +100,25 @@ impl ModeState {
             selected: selected.into(),
             choices,
         }
+    }
+
+    /// Whether a terminal accepts these modes beside `commands`: their command
+    /// is advertised, the choices are bounded, distinct and non-empty, and the
+    /// selected value is one of them. A terminal ignores a mode change that
+    /// does not fit and refuses a snapshot whose mode does not.
+    pub fn fits(&self, commands: &[CommandSpec]) -> bool {
+        let mut values = BTreeSet::new();
+        commands.iter().any(|command| command.name == self.command)
+            && !self.choices.is_empty()
+            && self.choices.len() <= MAX_MODES
+            && self.choices.iter().all(|choice| {
+                !choice.value.is_empty()
+                    && choice.value.len() <= MAX_LABEL_BYTES
+                    && choice.label.len() <= MAX_MODE_LABEL_BYTES
+                    && choice.description.len() <= MAX_MODE_DESCRIPTION_BYTES
+                    && values.insert(&choice.value)
+            })
+            && values.contains(&self.selected)
     }
 }
 

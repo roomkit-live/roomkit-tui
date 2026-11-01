@@ -10,7 +10,7 @@ use roomkit_tui_protocol::{
 };
 
 use super::Session;
-use super::bounds::{bounded, fits_label, valid_mode};
+use super::bounds::{bounded, fits_label};
 use crate::{ChoicePicker, FormState, OperationObservation, PanelState, SidebarState};
 
 impl Session {
@@ -241,7 +241,7 @@ impl Session {
     fn on_mode(&mut self, conversation: &ConversationId, mode: ModeState) {
         if self.is_current(conversation)
             && let Some(snapshot) = &mut self.snapshot
-            && valid_mode(&mode, &snapshot.commands)
+            && mode.fits(&snapshot.commands)
         {
             snapshot.mode = Some(mode);
         }
