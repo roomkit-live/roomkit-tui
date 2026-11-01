@@ -56,6 +56,9 @@ impl Approvals {
         let Some(run) = state.runs.get(scope).cloned() else {
             return Registration::NoRun;
         };
+        if run.stopped {
+            return Registration::Refused;
+        }
         if let Some(reason) = refusal(&state, room) {
             return self.refuse(&mut state, scope, reason);
         }

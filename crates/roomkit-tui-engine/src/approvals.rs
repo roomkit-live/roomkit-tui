@@ -37,6 +37,8 @@ struct Run {
     requester: Option<String>,
     /// Refusals already announced during this run, said once each.
     announced: BTreeSet<&'static str>,
+    /// The person interrupted the run: it may ask nothing more.
+    stopped: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +95,7 @@ impl Approvals {
             id: run.clone(),
             requester,
             announced: BTreeSet::new(),
+            stopped: false,
         };
         self.lock().runs.insert(scope.clone(), record);
         self.ready.notify_waiters();
@@ -193,9 +196,15 @@ impl Approvals {
         );
     }
 
-    /// Deny and withdraw the pending requests of `run` in `(room, agent)`.
-    pub(crate) fn withdraw_run(&self, scope: &(String, String), run: &RunId) {
+    /// The person interrupted `run` in `(room, agent)`: deny its pending
+    /// requests, and every request it asks from now on.
+    pub(crate) fn stop_run(&self, scope: &(String, String), run: &RunId) {
         let mut state = self.lock();
+        if let Some(record) = state.runs.get_mut(scope)
+            && &record.id == run
+        {
+            record.stopped = true;
+        }
         self.withdraw(&mut state, scope, Some(run));
     }
 

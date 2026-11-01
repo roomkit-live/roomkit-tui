@@ -255,8 +255,8 @@ impl Interrupter {
             } if active == &run => {
                 stop.send(true)
                     .map_err(|_| "This execution has already ended")?;
-                // As for a turn: an approval of interrupted work cannot be given.
-                broker.withdraw_run(scope, &run);
+                // As for a turn: interrupted work can no longer be approved.
+                broker.stop_run(scope, &run);
                 Ok(())
             }
             Self::Command { .. } => Err("This execution is no longer active in this attachment"),

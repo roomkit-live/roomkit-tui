@@ -3,8 +3,9 @@
 use super::*;
 use roomkit_tui_engine::{CommandExecution, CommandHandler, CommandResult};
 
-/// Asks before deploying, from host work. `wait` shows the answer it got;
-/// `leave` asks from a detached task and ends without waiting for it.
+/// Asks before deploying, from host work. `wait` shows the answer it got,
+/// `twice` asks again and shows both, ignoring interruption; `leave` asks from
+/// a detached task and ends without waiting for it.
 struct Deployer(ConversationChannel);
 
 impl CommandHandler for Deployer {
@@ -20,16 +21,22 @@ impl CommandHandler for Deployer {
         let work = CommandExecution::new("deploy-1".into(), move |context| async move {
             let request =
                 PermissionRequest::new("Deploy?", "Deploy to production", Duration::from_secs(2));
-            let ask = async move {
-                channel
-                    .ask_permission(&view.room, &view.agent, request)
-                    .await
+            let ask = move || {
+                let (channel, view, request) = (channel.clone(), view.clone(), request.clone());
+                async move {
+                    channel
+                        .ask_permission(&view.room, &view.agent, request)
+                        .await
+                }
             };
             if arguments == "leave" {
-                tokio::spawn(ask);
+                tokio::spawn(ask());
                 tokio::time::sleep(Duration::from_millis(100)).await;
             } else {
-                let answer = format!("{:?}", ask.await);
+                let mut answer = format!("{:?}", ask().await);
+                if arguments == "twice" {
+                    answer = format!("{answer}/{:?}", ask().await);
+                }
                 context.publish(Item::Message(Message::new(
                     "answer",
                     "person:alice",
@@ -143,14 +150,15 @@ async fn host_work_asks_the_person_who_invoked_it() {
     kit.close().await.unwrap();
 }
 
-/// RMK-1107 review: an interrupted run's approval stayed answerable, and a
-/// late Allow reached work the person had stopped.
+/// RMK-1107 review: an interrupted run's approvals stayed answerable, those
+/// pending and those it asked afterwards, and a late Allow reached work the
+/// person had stopped.
 #[tokio::test]
-async fn interrupting_host_work_withdraws_its_pending_approval() {
+async fn interrupted_host_work_can_no_longer_be_approved() {
     let kit = RoomKit::new(Default::default());
     let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
     let (alice, task) = attach(&kit, &channel, "alice").await;
-    deploy(&alice, "wait");
+    deploy(&alice, "twice");
     let permission = requested(&alice).await;
     let interrupt = Command::Interrupt {
         run: "deploy-1".into(),
@@ -162,10 +170,11 @@ async fn interrupting_host_work_withdraws_its_pending_approval() {
     alice
         .try_send(decide(3, &permission, Decision::Allow))
         .unwrap();
-    let (mut late, mut answer, mut settled) = (None, None, false);
+    let (mut late, mut answer, mut asked_again, mut settled) = (None, None, false, false);
     while late.is_none() || !settled {
         match next(&alice).await {
             Event::Reply { request, error } if request == RequestId::new(3) => late = Some(error),
+            Event::PermissionRequested { .. } => asked_again = true,
             Event::Item {
                 item: Item::Message(message),
                 ..
@@ -175,7 +184,11 @@ async fn interrupting_host_work_withdraws_its_pending_approval() {
         }
     }
     assert!(late.flatten().is_some(), "No longer answerable");
-    assert_eq!(answer.as_deref(), Some("Deny"));
+    assert!(
+        !asked_again,
+        "A request asked after the interruption is not shown"
+    );
+    assert_eq!(answer.as_deref(), Some("Deny/Deny"));
     drop(alice);
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();
