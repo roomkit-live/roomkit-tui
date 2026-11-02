@@ -3,6 +3,7 @@
 use super::*;
 
 mod host;
+mod requester;
 #[tokio::test]
 async fn interruption_cancels_a_pending_permission_and_the_next_turn_still_runs() {
     let kit = RoomKit::new(Default::default());

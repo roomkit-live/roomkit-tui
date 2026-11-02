@@ -34,8 +34,9 @@ still matches it.
 Tool data is forwarded only from authoritative structured content.
 Optional public tool intentions are copied from the engine into `ToolCall.intent`,
 including live updates and restored history. The host enables their generation
-on its agent with `with_tool_call_intents(true)`. Intentions never determine tool
-state or permission decisions; the adapter does not normalize them a second time.
+on its agent with `AiChannelOptions { tool_call_intents: true, .. }`. Intentions
+never determine tool state or permission decisions; the adapter does not
+normalize them a second time.
 
 The engine records a call's start and its end, nothing between: meanwhile the
 call waits for the decisions of its round, then executes with the round. A view

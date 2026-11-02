@@ -15,6 +15,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   context and token usage to show.
 - `ConversationChannel::ask_tool_permission` refuses a call made outside a
   room: no view can answer it.
+- `ConversationChannel` declares a window of 50 recent events, so a turn's
+  requester is still found beside an agent declaring no window
+  (`max_context_events: 0`), which then reads those 50 events, as every
+  agent did before roomkit-rs 93e757c.
+- `roomkit-chat` sends RoomKit's default temperature, 0.7, as Python does.
 
 ## [0.1.0] - 2026-11-01
 

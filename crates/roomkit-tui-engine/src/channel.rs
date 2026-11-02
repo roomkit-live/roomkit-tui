@@ -81,7 +81,8 @@ impl ConversationChannel {
     }
 
     /// Ask before a concrete engine tool call. The confirmed decision is kept
-    /// beside that call in the session history.
+    /// beside that call in the session history. A call outside a room is
+    /// denied: no view can answer it.
     pub async fn ask_tool_permission(
         &self,
         event: &ToolCallEvent,

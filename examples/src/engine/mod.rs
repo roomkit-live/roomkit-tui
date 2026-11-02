@@ -22,8 +22,6 @@ pub use check::check;
 
 type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
-/// The provider name the OpenAI-compatible agent reports with its usage.
-/// A view shows context and token usage only for the provider it advertises.
 /// The provider name the engine reports for the OpenAI provider, which a
 /// view's model must carry for its measurements: Python's class name.
 const PROVIDER: &str = "OpenAIAIProvider";

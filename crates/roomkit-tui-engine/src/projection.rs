@@ -100,6 +100,9 @@ pub(crate) fn item(row: &RoomEvent) -> Option<Item> {
             call: tool,
         });
     }
+    // The text RoomKit transcodes a row to, the one its agents read. Only
+    // roomkit-core exposes it (roomkit keeps it private, as Python does);
+    // a copy here would drift from it silently, a pin bump fails loudly.
     matches!(row.r#type, EventType::Message | EventType::System).then(|| {
         Item::Message(Message::new(
             MessageId::new(row.id.to_string()),

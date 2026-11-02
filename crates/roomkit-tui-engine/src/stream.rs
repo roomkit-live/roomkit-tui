@@ -9,6 +9,11 @@ use roomkit_tui_protocol::{ActorId, Event, Item, MessageId, RunId, RunOutcome};
 
 use crate::{ConversationChannel, projection};
 
+/// How many of a room's latest events a stream's context holds, at least:
+/// RoomKit's default window, the one every context held before channels
+/// declared their own.
+const TRIGGER_WINDOW: usize = 50;
+
 impl Channel for ConversationChannel {
     fn channel_id(&self) -> ChannelId {
         self.id().clone()
@@ -20,6 +25,15 @@ impl Channel for ConversationChannel {
 
     fn supports_streaming_delivery(&self) -> bool {
         self.streams()
+    }
+
+    /// A stream finds the event its turn answers, and so its requester, in
+    /// the context's latest events. RoomKit sizes that window by the largest
+    /// one the room's channels declare: without this one, beside an agent
+    /// declaring none and with no hook registered, the context would hold
+    /// none. An agent declaring none reads this window as its history.
+    fn recent_events_window(&self) -> usize {
+        TRIGGER_WINDOW
     }
 
     async fn handle_inbound(
