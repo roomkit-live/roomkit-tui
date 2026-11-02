@@ -60,6 +60,16 @@ their own outcomes; successful processing does not mean every run succeeded.
 The conversation stays busy throughout admission and finalization; wait for
 `OperationFinished` before restoring an idle snapshot or switching views.
 
+An agent registered with `AiChannelOptions::steer_room_turns` takes a message
+sent while its turn runs. Set `SessionConfig::can_steer` for it, and only for
+it: another agent's turns would run side by side. A message submitted while
+the room is busy with a turn is then committed at once, without an operation
+of its own, and RoomKit hands it to the running turn, which reads it at its
+next step; `Event::MessageSteered` names that turn's run. When the turn no
+longer reads its queue, the message waits a turn of its own, whose
+`RunStarted` names it in `answers`. While application work started by a
+command holds the room, a message is still refused as busy, as are images.
+
 Applications can set `SessionConfig::commands` and use `run_with_commands` with
 their own `CommandHandler`. Commands are never sent to the model and default to
 idle-only. A handler may opt individual control commands into `allow_while_busy`;

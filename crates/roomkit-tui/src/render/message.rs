@@ -6,6 +6,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::text::input_gutter;
 use super::{Line, Tone, View, line, span};
+use crate::Steering;
 
 pub(super) fn render(view: &View<'_>, message: &Message, cols: usize) -> Vec<Line> {
     let (session, options) = (view.session, view.options);
@@ -69,5 +70,19 @@ pub(super) fn render(view: &View<'_>, message: &Message, cols: usize) -> Vec<Lin
     if own {
         lines.push(line(" ".repeat(cols), Tone::Input));
     }
+    if let Some(steering) = session.steering(&message.id) {
+        lines.push(line(
+            format!("   ↳ {}", steering_note(steering)),
+            Tone::Muted,
+        ));
+    }
     lines
+}
+
+/// Where a message sent during a turn went (RMK-1161).
+fn steering_note(steering: Steering) -> &'static str {
+    match steering {
+        Steering::Handed => "sent to the running turn",
+        Steering::OwnTurn => "answered in its own turn",
+    }
 }

@@ -12,7 +12,7 @@ use roomkit_tui_protocol::{Command, ErrorCode, Event, Rejection, Request, Snapsh
 use super::serve::{CatchUnwind, Pending, View, send};
 use super::{AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig};
 use crate::CommandExecution;
-use crate::activity::Active;
+use crate::activity::{Active, Work};
 
 /// What application code returned for a request.
 #[allow(
@@ -143,8 +143,11 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         let Some(reserved) = self
             .session
             .channel
-            .reserve(self.session.config.conversation())
+            .reserve(self.session.config.conversation(), Work::Turn)
         else {
+            if self.steers(&request) {
+                return self.steer(&request).map(|()| None);
+            }
             let error = Rejection::busy("A request is still executing");
             return self.reply(&request, Some(error)).map(|()| None);
         };
@@ -230,7 +233,7 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         if let Some(error) = execution.refusal(last.as_ref()) {
             return self.reply(&request, Some(error)).map(|()| None);
         }
-        let Some(reserved) = self.session.channel.reserve(room) else {
+        let Some(reserved) = self.session.channel.reserve(room, Work::Host) else {
             let error = Rejection::busy("Cannot start another execution while busy");
             return self.reply(&request, Some(error)).map(|()| None);
         };

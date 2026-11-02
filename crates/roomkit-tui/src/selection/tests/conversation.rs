@@ -354,6 +354,7 @@ fn started(session: &mut Session) {
     session.apply(Event::RunStarted {
         conversation: "room-a".into(),
         run: "run-1".into(),
+        answers: None,
     });
 }
 

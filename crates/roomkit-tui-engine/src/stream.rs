@@ -2,7 +2,8 @@
 //! with its drafts, finalized messages and run boundaries.
 
 use roomkit::model::{
-    ChannelBinding, ChannelId, ChannelOutput, ChannelType, InboundMessage, RoomContext, RoomEvent,
+    ChannelBinding, ChannelId, ChannelOutput, ChannelType, EventType, InboundMessage, RoomContext,
+    RoomEvent,
 };
 use roomkit::{Channel, ChannelError, DeliveryStream, StreamItem, default_inbound_event};
 use roomkit_tui_protocol::{ActorId, Event, Item, MessageId, RunId, RunOutcome};
@@ -75,9 +76,14 @@ impl Channel for ConversationChannel {
             self.row(trigger);
         }
         let conversation = room.as_str().into();
+        // A message handed to a turn that no longer read it gets this one.
+        let answers = trigger
+            .filter(|row| row.r#type == EventType::Message)
+            .map(|row| MessageId::new(row.id.to_string()));
         let started = Event::RunStarted {
             conversation,
             run: run.clone(),
+            answers,
         };
         // Announce the run before the broker records it: a refusal is told
         // once the run exists, and a terminal clears its notice on RunStarted.

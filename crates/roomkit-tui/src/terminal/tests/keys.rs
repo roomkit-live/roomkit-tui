@@ -40,6 +40,7 @@ fn activity_details_toggle_with_f2_and_reject_stale_mouse_targets() {
     session.apply(Event::RunStarted {
         conversation: "room".into(),
         run: "new-run".into(),
+        answers: None,
     });
     session.apply(Event::TextDelta {
         conversation: "room".into(),
@@ -463,6 +464,7 @@ fn escape_on_an_approval_card_interrupts_the_run_that_asked() {
     session.apply(Event::RunStarted {
         conversation: "room".into(),
         run: "sms".into(),
+        answers: None,
     });
     session.apply(Event::PermissionRequested {
         conversation: "room".into(),

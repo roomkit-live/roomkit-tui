@@ -357,3 +357,40 @@ fn snapshot_constructor_lists_its_selected_agent() {
             .any(|a| a.id == snapshot.selected_agent)
     );
 }
+
+/// RMK-1161: a message handed to a running turn, and the run that answers a
+/// message, keep their wire shape; an older host's start names no message.
+#[test]
+fn steering_keeps_its_wire_shape() {
+    let steered = Event::MessageSteered {
+        conversation: "room".into(),
+        message: "m2".into(),
+        run: "agent:m1".into(),
+    };
+    assert_eq!(
+        round_trip(&steered),
+        json!({"kind": "message_steered", "conversation": "room", "message": "m2", "run": "agent:m1"})
+    );
+    let answering = Event::RunStarted {
+        conversation: "room".into(),
+        run: "agent:m2".into(),
+        answers: Some("m2".into()),
+    };
+    assert_eq!(round_trip(&answering)["answers"], json!("m2"));
+    let older: Event =
+        serde_json::from_value(json!({"kind": "run_started", "conversation": "room", "run": "r"}))
+            .unwrap();
+    assert_eq!(
+        older,
+        Event::RunStarted {
+            conversation: "room".into(),
+            run: "r".into(),
+            answers: None,
+        }
+    );
+    let mut snapshot =
+        serde_json::to_value(Snapshot::new("room", "T", Actor::new("a", "A"))).unwrap();
+    snapshot.as_object_mut().unwrap().remove("can_steer");
+    let snapshot: Snapshot = serde_json::from_value(snapshot).unwrap();
+    assert!(!snapshot.can_steer, "an older host does not steer");
+}

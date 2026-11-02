@@ -1,16 +1,27 @@
 //! Which rooms are executing. A view reserves a room atomically before it
 //! starts work there, so two views can never start two operations at once.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use roomkit_tui_protocol::{MessageId, RunId, RunOutcome};
 use tokio::sync::watch;
 
+/// What a reservation starts in a room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Work {
+    /// A turn of the agent, for a person's message.
+    Turn,
+    /// Work of the application's own, outside any turn.
+    Host,
+}
+
 /// Active operations and deliveries per room, plus their total for waiters.
 #[derive(Clone, Debug)]
 pub(crate) struct Activity {
     rooms: Arc<Mutex<BTreeMap<String, usize>>>,
+    /// Rooms whose reservation is the application's own work.
+    hosting: Arc<Mutex<BTreeSet<String>>>,
     total: watch::Sender<usize>,
 }
 
@@ -18,6 +29,7 @@ impl Default for Activity {
     fn default() -> Self {
         Self {
             rooms: Arc::default(),
+            hosting: Arc::default(),
             total: watch::channel(0).0,
         }
     }
@@ -28,8 +40,8 @@ impl Activity {
         self.lock().contains_key(room)
     }
 
-    /// Reserve an idle room; `None` when anything is active there.
-    pub fn reserve(&self, room: &str) -> Option<Active> {
+    /// Reserve an idle room for `work`; `None` when anything is active there.
+    pub fn reserve(&self, room: &str, work: Work) -> Option<Active> {
         let mut rooms = self.lock();
         if rooms.contains_key(room) {
             return None;
@@ -37,7 +49,20 @@ impl Activity {
         rooms.insert(room.to_owned(), 1);
         self.total.send_modify(|total| *total += 1);
         drop(rooms);
-        Some(self.active(room))
+        let hosting = work == Work::Host;
+        if hosting {
+            self.hosts().insert(room.to_owned());
+        }
+        Some(Active {
+            activity: self.clone(),
+            room: room.to_owned(),
+            hosting,
+        })
+    }
+
+    /// Whether the application's own work holds `room`.
+    pub fn hosting(&self, room: &str) -> bool {
+        self.hosts().contains(room)
     }
 
     /// Mark engine-owned work active, whatever else runs in the room.
@@ -58,11 +83,16 @@ impl Activity {
         Active {
             activity: self.clone(),
             room: room.to_owned(),
+            hosting: false,
         }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, usize>> {
         self.rooms.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn hosts(&self) -> std::sync::MutexGuard<'_, BTreeSet<String>> {
+        self.hosting.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -71,10 +101,15 @@ impl Activity {
 pub(crate) struct Active {
     activity: Activity,
     room: String,
+    /// The reservation of the application's own work.
+    hosting: bool,
 }
 
 impl Drop for Active {
     fn drop(&mut self) {
+        if self.hosting {
+            self.activity.hosts().remove(&self.room);
+        }
         let mut rooms = self.activity.lock();
         if let Some(count) = rooms.get_mut(&self.room) {
             *count -= 1;
@@ -185,14 +220,19 @@ mod tests {
     #[tokio::test]
     async fn a_room_is_reserved_once_and_idle_waits_for_every_release() {
         let activity = Activity::default();
-        let first = activity.reserve("room").expect("an idle room");
+        let first = activity.reserve("room", Work::Host).expect("an idle room");
         assert!(
-            activity.reserve("room").is_none(),
+            activity.reserve("room", Work::Turn).is_none(),
             "One reservation at a time"
         );
+        assert!(activity.hosting("room"));
         let stream = activity.enter("room");
-        let other = activity.reserve("other").expect("rooms are independent");
+        let other = activity
+            .reserve("other", Work::Turn)
+            .expect("rooms are independent");
+        assert!(!activity.hosting("other"));
         drop(first);
+        assert!(!activity.hosting("room"), "The host work ended");
         assert!(activity.busy("room"), "The delivery still runs");
         drop((stream, other));
         assert!(!activity.busy("room"));

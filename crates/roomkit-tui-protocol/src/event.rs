@@ -185,6 +185,11 @@ pub enum Event {
         conversation: ConversationId,
         /// New execution identity.
         run: RunId,
+        /// The message the execution answers, when it answers one. A message
+        /// handed to a running turn gets a turn of its own when that turn no
+        /// longer reads it. Older hosts send none.
+        #[serde(default)]
+        answers: Option<MessageId>,
     },
     /// An execution has actually stopped.
     RunFinished {
@@ -243,6 +248,17 @@ pub enum Event {
         context: Option<ContextUsage>,
         /// Execution consumption, replacing any earlier report for this run.
         usage: TokenUsage,
+    },
+    /// The host handed a message to a run already under way, which reads it
+    /// at its next step instead of starting a turn of its own. Should the run
+    /// no longer read it, a later `RunStarted` names the message in `answers`.
+    MessageSteered {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// The message handed over.
+        message: MessageId,
+        /// The run it was handed to.
+        run: RunId,
     },
     /// A host diagnostic suitable for the user, with credentials removed.
     Notice {

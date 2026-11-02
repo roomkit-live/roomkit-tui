@@ -97,6 +97,7 @@ impl Demo {
             Event::RunStarted {
                 conversation: conversation.clone(),
                 run: run.clone(),
+                answers: None,
             },
             self.tool_event(run, ToolState::Pending),
             Event::PermissionRequested {

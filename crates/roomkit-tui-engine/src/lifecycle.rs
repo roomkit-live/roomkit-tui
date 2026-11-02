@@ -94,7 +94,7 @@ pub(crate) async fn prepare(
             result = &mut future => Some(result),
             () = tokio::time::sleep(std::time::Duration::from_millis(80)) => {
                 announced = true;
-                channel.publish(session.room.as_str(), Event::RunStarted { conversation: session.room.as_str().into(), run: run.clone() });
+                channel.publish(session.room.as_str(), Event::RunStarted { conversation: session.room.as_str().into(), run: run.clone(), answers: None });
                 crate::cancellation::prepare(&mut future, &run, controls).await
             }
         }

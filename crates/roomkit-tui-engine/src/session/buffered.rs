@@ -23,6 +23,7 @@ impl<'a> Buffered<'a> {
             let started = Event::RunStarted {
                 conversation: room.into(),
                 run: run.clone(),
+                answers: None,
             };
             channel.publish(room, started);
         }

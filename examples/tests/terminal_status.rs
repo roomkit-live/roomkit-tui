@@ -76,6 +76,7 @@ fn serve(host: Host) {
                             Event::RunStarted {
                                 conversation: room.clone(),
                                 run: "failed-run".into(),
+                                answers: None,
                             },
                             Event::RunFinished {
                                 conversation: room.clone(),
@@ -110,6 +111,7 @@ fn serve(host: Host) {
                         Event::RunStarted {
                             conversation: room.clone(),
                             run: run.clone(),
+                            answers: None,
                         },
                     ],
                 );

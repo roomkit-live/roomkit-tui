@@ -8,6 +8,7 @@ fn progress() -> ToolProgress {
     progress.apply(Event::RunStarted {
         conversation: "room".into(),
         run: "turn".into(),
+        answers: None,
     });
     progress
 }

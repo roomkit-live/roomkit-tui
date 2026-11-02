@@ -116,6 +116,7 @@ impl History {
         snapshot.commands.clone_from(&config.commands);
         snapshot.input_actions.clone_from(&config.input_actions);
         snapshot.can_attach_images = config.can_attach_images;
+        snapshot.can_steer = config.can_steer;
         snapshot.mode.clone_from(&config.mode);
         snapshot.items = self.items;
         snapshot.can_interrupt = true;

@@ -239,6 +239,10 @@ pub struct Snapshot {
     /// Whether the selected agent and host accept image attachments.
     #[serde(default)]
     pub can_attach_images: bool,
+    /// Whether a message sent while the selected agent's turn runs is handed
+    /// to that turn rather than refused. Older hosts advertise none.
+    #[serde(default)]
+    pub can_steer: bool,
     /// Optional interaction mode, changed only after host confirmation.
     #[serde(default)]
     pub mode: Option<ModeState>,
@@ -273,6 +277,7 @@ impl Snapshot {
             commands: Vec::new(),
             input_actions: Vec::new(),
             can_attach_images: false,
+            can_steer: false,
             mode: None,
             items: Vec::new(),
             active_run: None,

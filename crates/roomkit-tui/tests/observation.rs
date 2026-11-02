@@ -43,6 +43,7 @@ fn accepted_work_is_observable_and_busy_before_a_run_and_after_its_stream() {
     session.apply(Event::RunStarted {
         conversation: "orders".into(),
         run: "lookup".into(),
+        answers: None,
     });
     session.apply(Event::RunFinished {
         conversation: "orders".into(),
@@ -101,6 +102,7 @@ fn permissions_stay_open_until_the_host_settles_each_decision() {
     session.apply(Event::RunStarted {
         conversation: "orders".into(),
         run: "lookup".into(),
+        answers: None,
     });
     for id in ["first", "second"] {
         session.apply(Event::PermissionRequested {
@@ -163,6 +165,7 @@ fn a_late_run_start_cannot_reopen_the_previous_operations_execution() {
     let started = Event::RunStarted {
         conversation: "orders".into(),
         run: "old".into(),
+        answers: None,
     };
     let finished = Event::RunFinished {
         conversation: "orders".into(),

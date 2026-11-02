@@ -254,6 +254,7 @@ fn unchanged_tool_bodies_are_reused_without_caching_activity_or_click_scope() {
         Event::RunStarted {
             conversation: "room-a".into(),
             run: "run-1".into(),
+            answers: None,
         },
         Duration::ZERO,
     );

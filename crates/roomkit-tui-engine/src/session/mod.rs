@@ -5,6 +5,7 @@ mod buffered;
 mod requests;
 mod restore;
 mod serve;
+mod steer;
 mod turn;
 
 use std::collections::BTreeMap;
@@ -51,6 +52,11 @@ pub struct SessionConfig {
     pub input_actions: Vec<InputAction>,
     /// Host-confirmed image support for this attachment and selected agent.
     pub can_attach_images: bool,
+    /// Whether the agent steers its room's turns (`AiChannelOptions::
+    /// steer_room_turns`): a message sent while its turn runs then goes to
+    /// that turn. Leave it false for any other agent, whose turns would run
+    /// side by side.
+    pub can_steer: bool,
     /// Optional host-owned interaction mode, independent of engine/model state.
     pub mode: Option<ModeState>,
 }
@@ -71,6 +77,7 @@ impl SessionConfig {
             commands: Vec::new(),
             input_actions: Vec::new(),
             can_attach_images: false,
+            can_steer: false,
             mode: None,
         }
     }

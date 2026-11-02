@@ -87,6 +87,7 @@ impl CommandExecution {
             Event::RunStarted {
                 conversation: conversation.clone(),
                 run: self.run.clone(),
+                answers: None,
             },
         );
         let approvals = channel.approvals.start(

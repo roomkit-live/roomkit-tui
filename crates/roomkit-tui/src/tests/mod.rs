@@ -12,6 +12,7 @@ mod permissions;
 mod runs;
 mod screens;
 mod sidebar;
+mod steering;
 mod streaming;
 mod timing;
 mod tools;
@@ -46,6 +47,7 @@ pub(crate) fn started(session: &mut Session, run: &str) {
     session.apply(Event::RunStarted {
         conversation: "room-a".into(),
         run: run.into(),
+        answers: None,
     });
 }
 

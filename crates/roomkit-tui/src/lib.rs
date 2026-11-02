@@ -34,7 +34,7 @@ pub use observation::{OperationObservation, RunObservation, SessionObservation, 
 pub use panel::PanelState;
 pub use picker::ChoicePicker;
 pub use roomkit_tui_transport::{Client, Host, connection};
-pub use session::{APPROVAL_ARMING_DELAY, Focus, Limits, Session, SessionError};
+pub use session::{APPROVAL_ARMING_DELAY, Focus, Limits, Session, SessionError, Steering};
 pub use sidebar::SidebarState;
 pub use status::TerminalStatus;
 pub use terminal::{ExitReason, run, run_with_observer, run_with_options};

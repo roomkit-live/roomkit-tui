@@ -176,6 +176,8 @@ async fn assemble(
         system_prompt: system_prompt.map(str::to_owned),
         tools: vec![ToolEntry::Definition(lookup)],
         tool_handler: Some(handler),
+        // A message written while the agent works goes to its turn.
+        steer_room_turns: true,
         ..Default::default()
     };
     let provider = OpenAiAiProvider::new(provider)?;
@@ -189,7 +191,9 @@ async fn assemble(
     kit.register_channel(channel.clone())?;
     let room = RoomId::new(room)?;
     open_room(&kit, &room, [channel.id(), &agent]).await?;
-    Ok((kit, channel, SessionConfig::new(room, agent, "local-user")))
+    let mut view = SessionConfig::new(room, agent, "local-user");
+    view.can_steer = true;
+    Ok((kit, channel, view))
 }
 
 /// Create the room if needed and attach any missing channel, so an earlier

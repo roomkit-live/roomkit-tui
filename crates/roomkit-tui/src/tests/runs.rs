@@ -16,6 +16,7 @@ fn start(run: &str) -> Event {
     Event::RunStarted {
         conversation: "room-a".into(),
         run: run.into(),
+        answers: None,
     }
 }
 

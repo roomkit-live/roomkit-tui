@@ -65,6 +65,7 @@ fn permissions_and_finalization_follow_host_facts_without_leaking_content() {
     emit(Event::RunStarted {
         conversation: "room".into(),
         run: "run".into(),
+        answers: None,
     });
     for id in ["first", "second"] {
         emit(Event::PermissionRequested {
@@ -205,6 +206,7 @@ fn snapshots_interruption_and_cleanup_do_not_replay_completion() {
         Event::RunStarted {
             conversation: "room".into(),
             run: "old".into(),
+            answers: None,
         },
     );
     apply(

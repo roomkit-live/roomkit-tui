@@ -241,6 +241,13 @@ impl Approvals {
         state.last_runs.insert(room.to_owned(), run.clone());
     }
 
+    /// The run started last, and not finished yet, in `(room, agent)`.
+    pub(crate) fn live_run(&self, room: &str, agent: &str) -> Option<RunId> {
+        let scope: Scope = (room.into(), agent.into());
+        let state = self.lock();
+        state.runs.get(&scope)?.last().map(|run| run.id.clone())
+    }
+
     /// The last run announced in `room`, while a view watches it.
     pub(crate) fn last_run(&self, room: &str) -> Option<RunId> {
         self.lock().last_runs.get(room).cloned()

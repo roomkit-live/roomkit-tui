@@ -109,7 +109,21 @@ impl Session {
                 message,
             } => self.on_message_finalized(&conversation, &draft, message),
             Event::Item { conversation, item } => self.on_item(&conversation, item),
-            Event::RunStarted { conversation, run } => self.on_run_started(&conversation, run, at),
+            Event::RunStarted {
+                conversation,
+                run,
+                answers,
+            } => {
+                if let Some(message) = &answers {
+                    self.on_answered(&conversation, message);
+                }
+                self.on_run_started(&conversation, run, at);
+            }
+            Event::MessageSteered {
+                conversation,
+                message,
+                run,
+            } => self.on_message_steered(&conversation, message, &run),
             Event::RunFinished {
                 conversation,
                 run,

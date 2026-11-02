@@ -6,7 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Write to the model while it works (RMK-1161). For an agent registered with
+  `AiChannelOptions::steer_room_turns`, a host sets `SessionConfig::can_steer`
+  and the view's `Snapshot::can_steer`: a message submitted while the agent's
+  turn runs goes to that turn, which reads it at its next step, instead of
+  being refused as busy. `Event::MessageSteered` says which run it went to,
+  and `Event::RunStarted::answers` names the message a run answers, so a
+  message the turn no longer read is shown as answered by its own turn. Host
+  work and images stay busy. `roomkit-chat` enables it, and
+  `scripts/check-steering.py` drives it on a real pseudo-terminal.
+
 ### Changed
+
+- `Event::RunStarted` has an `answers` field; constructing it now names one
+  (`None` when the run answers no message).
 
 - The engine follows roomkit-rs 93e757c, whose channel, hook and AI APIs
   follow Python's. Tool approvals are asked from a `BEFORE_TOOL_USE` hook

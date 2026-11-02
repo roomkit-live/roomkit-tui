@@ -24,6 +24,12 @@ Its outcome describes processing, while `RunFinished` describes the run; a
 completed operation must not erase a failed run. Hosts that only publish run
 events remain supported. Idle snapshots do not replay historical completions.
 
+A host advertising `Snapshot::can_steer` accepts a `Command::Submit` while its
+agent's turn runs and hands the message to that turn. `Event::MessageSteered`
+names the run it went to; should that run no longer read it, the run that
+answers it says so in `RunStarted::answers`. Older hosts send neither, and a
+terminal treats an absent `answers` as a run that answers no message.
+
 Hosts can open a conversation-scoped `FormSpec` through `Event::Form`. Text,
 multiline, choice and secret fields use product-independent definitions.
 Submitting sends `Command::SubmitForm` to its advertised command, with an opaque

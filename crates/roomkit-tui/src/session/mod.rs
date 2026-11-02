@@ -10,6 +10,7 @@ mod input;
 mod labels;
 mod measures;
 mod runs;
+mod steering;
 mod tools;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,11 +19,12 @@ use std::time::Duration;
 
 use roomkit_tui_protocol::{
     ActorId, BackgroundStatus, CallId, Command, ContextUsage, ConversationId, ImageUpload,
-    Permission, PermissionId, RequestId, RunId, RunOutcome, Snapshot, TokenUsage,
+    MessageId, Permission, PermissionId, RequestId, RunId, RunOutcome, Snapshot, TokenUsage,
 };
 
 pub(crate) use bounds::bounded;
 pub use input::SessionError;
+pub use steering::Steering;
 
 use crate::{
     ChoicePicker, CommandMenu, FormState, OperationObservation, PanelState, SessionObserver,
@@ -122,6 +124,8 @@ pub struct Session {
     /// The most severe outcome of the runs that finished while another ran
     /// on, since the room was last idle.
     held_outcome: Option<RunOutcome>,
+    /// Messages sent while a turn ran, oldest first, and where they went.
+    steered: Vec<(MessageId, Steering)>,
     interrupting: Option<RunId>,
     deciding: BTreeSet<PermissionId>,
     expanded_tools: BTreeSet<ToolKey>,
@@ -170,6 +174,7 @@ impl Session {
             last_run: None,
             live_runs: Vec::new(),
             held_outcome: None,
+            steered: Vec::new(),
             interrupting: None,
             deciding: BTreeSet::new(),
             expanded_tools: BTreeSet::new(),

@@ -150,7 +150,9 @@ impl Session {
         if let Some(command) = text.strip_prefix(self.command_prefix) {
             return self.invocation(command);
         }
-        if self.is_executing() || self.message_pending() {
+        // During a turn, only a message the host hands to that turn.
+        let steering = self.can_steer() && self.images.is_empty();
+        if (self.is_executing() && !steering) || self.message_pending() {
             return Err(SessionError::Busy);
         }
         if !self.images.is_empty() {

@@ -16,6 +16,7 @@ fn observed_execution_time_advances_through_waits_and_freezes_only_on_completion
     let start = Event::RunStarted {
         conversation: "room-a".into(),
         run: "timed".into(),
+        answers: None,
     };
     session.apply_at(start.clone(), Duration::from_secs(10));
     assert_eq!(
@@ -84,6 +85,7 @@ fn observed_execution_time_advances_through_waits_and_freezes_only_on_completion
         Event::RunStarted {
             conversation: "room-a".into(),
             run: "next".into(),
+            answers: None,
         },
         Duration::from_secs(110),
     );
@@ -102,6 +104,7 @@ fn restored_or_untimed_runs_never_invent_a_total_duration() {
         Event::RunStarted {
             conversation: "room-a".into(),
             run: "known".into(),
+            answers: None,
         },
         Duration::from_secs(5),
     );
@@ -119,6 +122,7 @@ fn restored_or_untimed_runs_never_invent_a_total_duration() {
         Event::RunStarted {
             conversation: "another-room".into(),
             run: "known".into(),
+            answers: None,
         },
         Duration::from_secs(26),
     );
@@ -179,6 +183,7 @@ fn activity_shows_live_and_final_durations_with_space_before_the_composer() {
         Event::RunStarted {
             conversation: "room-a".into(),
             run: "timed".into(),
+            answers: None,
         },
         Duration::from_secs(10),
     );

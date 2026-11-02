@@ -18,6 +18,7 @@ impl Session {
             .is_some_and(|old| old.conversation != snapshot.conversation)
         {
             self.images.clear();
+            self.steered.clear();
             self.draft_epoch = self.draft_epoch.wrapping_add(1);
         }
         bound_labels(&mut snapshot);
