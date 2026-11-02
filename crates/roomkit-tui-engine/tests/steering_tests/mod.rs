@@ -376,62 +376,127 @@ async fn a_message_while_the_host_prepares_the_turn_is_busy() {
 }
 
 /// The review of 5374eb1: a message sent once the turn was being stopped
-/// went to it, which reads nothing more. It now waits for the room, or
-/// starts a turn of its own once the stopped turn is over.
+/// went to it, which reads nothing more. The turn is interrupted while its
+/// answer is held, its stream still open: the message waits.
 #[tokio::test]
 async fn a_message_after_an_interruption_never_goes_to_the_stopped_turn() {
     let kit = RoomKit::new(Default::default());
     let rounds = vec![
-        ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
-        ScriptedRound::answering("Done"),
+        ScriptedRound::answering("First answer"),
         ScriptedRound::answering("Second answer"),
     ];
     let (channel, _) = steering_room(&kit, rounds).await;
     let (open, gate) = watch::channel(false);
-    let entered = Arc::new(Notify::new());
-    hold_tools(&kit, gate, entered.clone());
+    let held = Arc::new(Notify::new());
+    hold_first_answer(&kit, gate, held.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel, steering()).run(host));
     next(&client).await;
-    client
-        .try_send(submit(1, "one", "Look up record 42"))
-        .unwrap();
+    client.try_send(submit(1, "one", "First question")).unwrap();
     let stopped = loop {
         if let Event::RunStarted { run, .. } = next(&client).await {
             break run;
         }
     };
-    entered.notified().await;
-    let interrupt = Command::Interrupt {
-        run: stopped.clone(),
-    };
+    held.notified().await;
+    let interrupt = Command::Interrupt { run: stopped };
     client
         .try_send(Request::new(RequestId::new(3), "stop", "room", interrupt))
         .unwrap();
     assert_eq!(reply(&client, 3).await, None);
     client.try_send(submit(2, "two", "Too late")).unwrap();
-    let accepted = loop {
+    let refused = reply(&client, 2).await.map(|rejection| rejection.code);
+    assert_eq!(
+        refused,
+        Some(ErrorCode::Busy),
+        "Never handed to the stopped turn"
+    );
+    open.send_replace(true);
+    drop(client);
+    task.await.unwrap().unwrap();
+    channel_idle(&kit).await;
+}
+
+/// A host whose admission of operation `m0` waits until `release`.
+#[derive(Debug, Default)]
+struct StuckAdmit {
+    entered: Notify,
+    release: Notify,
+}
+
+impl SessionLifecycle for StuckAdmit {
+    fn admit<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        operation: &'a OperationId,
+        _: &'a roomkit::model::EventContent,
+    ) -> LifecycleFuture<'a, Result<(), Rejection>> {
+        let stuck = operation.as_str() == "m0";
+        Box::pin(async move {
+            if stuck {
+                self.entered.notify_one();
+                self.release.notified().await;
+            }
+            Ok(())
+        })
+    }
+}
+
+/// The light review of 55ee836: stopping a steered message's own turn
+/// waited behind an earlier steered message still in its host's admission.
+#[tokio::test]
+async fn stopping_a_steered_turn_never_waits_behind_another_message() {
+    let kit = RoomKit::new(Default::default());
+    let rounds = vec![
+        ScriptedRound::answering("First answer"),
+        ScriptedRound::calling("Checking", [("call2", "lookup_record", "{}")]),
+        ScriptedRound::answering("Never said"),
+        ScriptedRound::answering("Spare"),
+    ];
+    let (channel, _) = steering_room(&kit, rounds).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_first_answer(&kit, gate, held.clone());
+    let (tools_open, tools_gate) = watch::channel(false);
+    let entered = Arc::new(Notify::new());
+    hold_tools(&kit, tools_gate, entered.clone());
+    let lifecycle = Arc::new(StuckAdmit::default());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session =
+        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+    let task = tokio::spawn(session.run(host));
+    next(&client).await;
+    client.try_send(submit(1, "one", "First question")).unwrap();
+    held.notified().await;
+    client.try_send(submit(2, "m0", "Zero")).unwrap();
+    assert_eq!(reply(&client, 2).await, None);
+    lifecycle.entered.notified().await;
+    client.try_send(submit(4, "m1", "Second question")).unwrap();
+    let mut steered = None;
+    let own = loop {
         match next(&client).await {
-            Event::MessageSteered { run, .. } => {
-                assert_ne!(run, stopped, "Never handed to the stopped turn");
+            Event::Reply { request, error } if request == RequestId::new(4) => {
+                assert_eq!(error, None);
+                open.send_replace(true);
             }
-            Event::Reply { request, error } if request == RequestId::new(2) => {
-                break error.is_none();
-            }
+            Event::MessageSteered { message, .. } => steered = steered.or(Some(message)),
+            Event::RunStarted {
+                run,
+                answers: Some(message),
+                ..
+            } if Some(&message) == steered.as_ref() => break run,
             _ => {}
         }
     };
-    if accepted {
-        // The stopped turn was over: the message started a turn of its own.
-        loop {
-            if let Event::OperationFinished { operation, .. } = next(&client).await
-                && operation.as_str() == "two"
-            {
-                break;
-            }
-        }
-    }
-    open.send_replace(true);
+    entered.notified().await;
+    let interrupt = Command::Interrupt { run: own };
+    client
+        .try_send(Request::new(RequestId::new(5), "stop", "room", interrupt))
+        .unwrap();
+    let answered = tokio::time::timeout(Duration::from_secs(2), reply(&client, 5)).await;
+    lifecycle.release.notify_one();
+    tools_open.send_replace(true);
+    assert_eq!(answered.ok(), Some(None), "Stopped at once");
     drop(client);
     task.await.unwrap().unwrap();
     channel_idle(&kit).await;

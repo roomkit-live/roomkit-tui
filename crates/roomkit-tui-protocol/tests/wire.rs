@@ -377,6 +377,15 @@ fn steering_keeps_its_wire_shape() {
         answers: Some("m2".into()),
     };
     assert_eq!(round_trip(&answering)["answers"], json!("m2"));
+    let plain = Event::RunStarted {
+        conversation: "room".into(),
+        run: "r".into(),
+        answers: None,
+    };
+    assert!(
+        round_trip(&plain).get("answers").is_none(),
+        "An absent message is omitted"
+    );
     let older: Event =
         serde_json::from_value(json!({"kind": "run_started", "conversation": "room", "run": "r"}))
             .unwrap();

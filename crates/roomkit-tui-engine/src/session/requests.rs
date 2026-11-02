@@ -7,12 +7,13 @@ use roomkit_tui_protocol::limits::{
     MAX_FORM_FIELDS, MAX_FORM_NAME_BYTES, MAX_FORM_VALUE_BYTES, MAX_LABEL_BYTES,
     MAX_OPERATION_ID_BYTES, MAX_TEXT_BYTES,
 };
-use roomkit_tui_protocol::{Command, ErrorCode, Event, Rejection, Request, Snapshot};
+use roomkit_tui_protocol::{Command, ErrorCode, Event, Rejection, Request, RunId, Snapshot};
 
 use super::serve::{CatchUnwind, Pending, View, send};
 use super::{AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig};
 use crate::CommandExecution;
 use crate::activity::{Active, Work};
+use crate::execution::Interrupter;
 
 /// What application code returned for a request.
 #[allow(
@@ -41,6 +42,30 @@ pub(super) fn is_control(request: &Request) -> bool {
         request.command,
         Command::Decide { .. } | Command::Interrupt { .. }
     )
+}
+
+/// Interrupt `run` through whichever of `works` runs it: each accepts only
+/// its own run. Several are asked at once, so one busy elsewhere, as in its
+/// host's admission, does not delay the others' answer; a single one is
+/// asked directly, its answer reaching the view as before.
+async fn first_to_stop(works: Vec<Interrupter>, run: RunId) -> Result<(), &'static str> {
+    if let [work] = works.as_slice() {
+        return work.interrupt(run).await;
+    }
+    let mut asked = tokio::task::JoinSet::new();
+    for work in works {
+        let run = run.clone();
+        asked.spawn(async move { work.interrupt(run).await });
+    }
+    let mut refusal = "This execution has already ended";
+    while let Some(answer) = asked.join_next().await {
+        match answer {
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(error)) => refusal = error,
+            Err(_) => {}
+        }
+    }
+    Err(refusal)
 }
 
 fn panicked() -> Rejection {
@@ -112,17 +137,10 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         }
         let (host, id) = (self.host.clone(), request.id);
         tokio::spawn(async move {
-            let mut refusal = None;
-            for work in works {
-                match work.interrupt(run.clone()).await {
-                    Ok(()) => {
-                        refusal = None;
-                        break;
-                    }
-                    Err(error) => refusal = refusal.or(Some(error)),
-                }
-            }
-            let error = refusal.map(Rejection::unavailable);
+            let error = first_to_stop(works, run)
+                .await
+                .err()
+                .map(Rejection::unavailable);
             let _ = send(&host, Event::Reply { request: id, error });
         });
         Ok(())

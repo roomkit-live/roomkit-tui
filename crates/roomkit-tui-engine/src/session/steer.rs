@@ -44,6 +44,12 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         let Command::Submit { text, .. } = &request.command else {
             return Ok(());
         };
+        self.steering.retain(Interrupter::is_live);
+        if self.steering.len() >= MAX_STEERING {
+            // Each steered message keeps its own turn stoppable.
+            let error = Rejection::busy("Too many messages are waiting for the running turn");
+            return self.reply(request, Some(error));
+        }
         // Held before the reply: `idle` waits for the message from then on.
         let active = self
             .session
@@ -51,10 +57,6 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
             .activity
             .enter(self.session.config.conversation());
         let (control, controls) = cancellation::connection();
-        self.steering.retain(Interrupter::is_live);
-        if self.steering.len() >= MAX_STEERING {
-            self.steering.remove(0);
-        }
         self.steering.push(Interrupter::Engine(control));
         self.reply(request, None)?;
         let steer = Steer {
@@ -87,7 +89,8 @@ struct Steer<S: ConversationStore> {
 
 impl<S: ConversationStore> Steer<S> {
     /// Admit the message as the host admits every message, deliver it, and
-    /// tell the host how it ended. It starts no turn: no `started`.
+    /// tell the host how it ended. The view starts no turn for it: no
+    /// `started`, even when RoomKit gives it a turn of its own.
     async fn run(mut self, text: String) {
         let content = EventContent::from(TextContent::new(text));
         let outcome = match self.admit(&content).await {
