@@ -79,6 +79,9 @@ pub(crate) async fn wait(
                     // finalizers and cancelled tool rows to settle.
                     let guard = channel.stopping.register(room, &run);
                     if delivery.request_cancel() {
+                        // Only now: a stream woken earlier reads on before
+                        // the engine applies the cancel.
+                        channel.stopping.accepted();
                         stopping = Some(guard);
                         channel.approvals.stop_turn(room, &run);
                         Ok(())

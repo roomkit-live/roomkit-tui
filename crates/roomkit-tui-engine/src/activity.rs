@@ -136,15 +136,15 @@ type StoppingRuns = Arc<Mutex<BTreeMap<(String, RunId), Stop>>>;
 #[derive(Clone, Debug)]
 pub(crate) struct Stopping {
     runs: StoppingRuns,
-    /// Counts registrations, for those waiting on one.
-    registered: watch::Sender<u64>,
+    /// Counts accepted interruptions, for those waiting on one.
+    accepted: watch::Sender<u64>,
 }
 
 impl Default for Stopping {
     fn default() -> Self {
         Self {
             runs: Arc::default(),
-            registered: watch::channel(0).0,
+            accepted: watch::channel(0).0,
         }
     }
 }
@@ -153,7 +153,6 @@ impl Stopping {
     pub fn register(&self, room: &str, run: &RunId) -> StopGuard {
         let key = (room.to_owned(), run.clone());
         self.lock().insert(key.clone(), Stop::default());
-        self.registered.send_modify(|count| *count += 1);
         StopGuard {
             runs: self.runs.clone(),
             key,
@@ -165,12 +164,17 @@ impl Stopping {
         self.lock().contains_key(&(room.to_owned(), run.clone()))
     }
 
+    /// Wake those waiting on a run's stop: its engine accepted the cancel.
+    pub fn accepted(&self) {
+        self.accepted.send_modify(|count| *count += 1);
+    }
+
     /// Resolves once the interruption of `run` is accepted.
     pub async fn stopped(&self, room: &str, run: &RunId) {
-        let mut registered = self.registered.subscribe();
+        let mut accepted = self.accepted.subscribe();
         while !self.contains(room, run) {
             // The sender lives as long as this value; an error cannot occur.
-            let _ = registered.changed().await;
+            let _ = accepted.changed().await;
         }
     }
 

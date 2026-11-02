@@ -244,6 +244,10 @@ async fn stopping_a_steered_message_s_own_turn_as_it_starts() {
     drop(client);
     task.await.unwrap().unwrap();
     channel_idle(&kit).await;
+    // The light review of 0ab4ad3: the stream, woken as the stop was
+    // registered, read on before the engine applied it. On this
+    // single-threaded runtime the cancel now lands first.
+    assert_eq!(provider.requests().len(), 1, "The stopped turn never asked");
 }
 
 /// The review of 2b03f64: a client resending the message with the same

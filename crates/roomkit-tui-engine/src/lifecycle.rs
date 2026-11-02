@@ -54,7 +54,8 @@ pub trait SessionLifecycle: Debug + Send + Sync {
     /// of its own, and `started` comes once the agent has prepared that turn
     /// (memory, `BEFORE_AI_GENERATION` hooks), before its loop asks the model
     /// or calls a tool. An interruption drops it then, as it drops a
-    /// preparation, and the turn ends `Interrupted`.
+    /// preparation, and the turn ends `Interrupted`; its first model request
+    /// may still go out, and its answer is dropped.
     fn started<'a>(
         &'a self,
         _session: &'a SessionConfig,
