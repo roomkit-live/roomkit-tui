@@ -2,10 +2,9 @@
 //! its room's turns, so RoomKit hands the message to that turn, which reads
 //! it at its next step. Should the turn no longer read its queue, the
 //! message waits a turn of its own after it, which this view can stop and
-//! the host hears start (RMK-1232). Only
-//! a turn of this view's agent, streamed to this console and not being
-//! interrupted, takes a message this way; anything else in the room keeps
-//! the message busy, as before.
+//! the host hears start (RMK-1232). Only a turn of this view's agent,
+//! streamed to this console and not being interrupted, takes a message this
+//! way; anything else in the room keeps the message busy, as before.
 
 use std::sync::Arc;
 
@@ -92,7 +91,7 @@ impl<S: ConversationStore> Steer<S> {
     /// Admit the message as the host admits every message, deliver it, and
     /// tell the host how it ended. Handed to the running turn, it starts no
     /// turn: no `started`. Given a turn of its own, the stream carrying that
-    /// turn calls `started` before the turn asks the model.
+    /// turn calls `started` before its first read (`own_turns`).
     async fn run(mut self, text: String) {
         let content = EventContent::from(TextContent::new(text));
         let outcome = match self.admit(&content).await {

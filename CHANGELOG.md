@@ -18,10 +18,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names the message a run answers: a message the turn no longer read gets a
   turn of its own, which the view shows, can interrupt, and whose decisions
   are stored. The host hears that turn start through
-  `SessionLifecycle::started`, as any turn (RMK-1232). Host preparation,
-  command work, another agent's stream, images and buffered consoles stay
-  busy. `roomkit-chat` enables it, and `scripts/check-steering.py` drives it
-  on a real pseudo-terminal.
+  `SessionLifecycle::started`, before its loop asks the model (RMK-1232).
+  Host preparation, command work, another agent's stream, images and
+  buffered consoles stay busy. `roomkit-chat` enables it, and
+  `scripts/check-steering.py` drives it on a real pseudo-terminal.
 
 ### Changed
 

@@ -133,15 +133,29 @@ type StoppingRuns = Arc<Mutex<BTreeMap<(String, RunId), Stop>>>;
 
 /// Runs whose interruption was accepted. Their stream defers its terminal
 /// event until delivery is joined, recording the draft it was writing.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Stopping(StoppingRuns);
+#[derive(Clone, Debug)]
+pub(crate) struct Stopping {
+    runs: StoppingRuns,
+    /// Counts registrations, for those waiting on one.
+    registered: watch::Sender<u64>,
+}
+
+impl Default for Stopping {
+    fn default() -> Self {
+        Self {
+            runs: Arc::default(),
+            registered: watch::channel(0).0,
+        }
+    }
+}
 
 impl Stopping {
     pub fn register(&self, room: &str, run: &RunId) -> StopGuard {
         let key = (room.to_owned(), run.clone());
         self.lock().insert(key.clone(), Stop::default());
+        self.registered.send_modify(|count| *count += 1);
         StopGuard {
-            runs: self.0.clone(),
+            runs: self.runs.clone(),
             key,
         }
     }
@@ -149,6 +163,15 @@ impl Stopping {
     /// Whether the interruption of `run` was accepted and it is stopping.
     pub fn contains(&self, room: &str, run: &RunId) -> bool {
         self.lock().contains_key(&(room.to_owned(), run.clone()))
+    }
+
+    /// Resolves once the interruption of `run` is accepted.
+    pub async fn stopped(&self, room: &str, run: &RunId) {
+        let mut registered = self.registered.subscribe();
+        while !self.contains(room, run) {
+            // The sender lives as long as this value; an error cannot occur.
+            let _ = registered.changed().await;
+        }
     }
 
     /// Called by a stream as it ends. Returns whether its terminal event is
@@ -173,7 +196,7 @@ impl Stopping {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<(String, RunId), Stop>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.runs.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

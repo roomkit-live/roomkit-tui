@@ -70,8 +70,10 @@ running turn, which reads it at its next step: it starts no turn, so no
 `started`, and `Event::MessageSteered` names that turn's run. Should the turn
 no longer read its queue, as when it is already writing its last answer, the
 message gets a turn of its own, whose `RunStarted` names it in `answers`. The
-host hears that turn start through `started`, before it asks the model; the
-view can interrupt it, and its decisions are stored. Anything else holding
+host hears that turn start through `started` once the agent has prepared it
+(memory, `BEFORE_AI_GENERATION` hooks), before its loop asks the model or
+calls a tool; Esc drops a `started` still running. The view can interrupt
+the turn, and its decisions are stored. Anything else holding
 the room keeps a message busy: the host preparing a turn, work started by a
 command, a turn being interrupted, another agent's stream, images. A buffered
 console never steers, and its snapshot says so.

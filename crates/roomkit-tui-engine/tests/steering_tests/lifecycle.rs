@@ -3,6 +3,7 @@
 //! of its own is `started` before that turn asks the model.
 
 use super::*;
+use roomkit_core::rules::transcoding::text_of;
 
 /// What the host was told, for one operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -13,15 +14,14 @@ enum Call {
     Finished(TurnOutcome),
 }
 
-/// A host that records its calls per operation, and holds the `started` of
-/// `held` until `release` is told.
+/// A host that records its calls per operation; the `started` of `held`
+/// never returns.
 #[derive(Debug)]
 struct Recording {
     provider: ScriptedProvider,
     calls: Mutex<Vec<(String, Call)>>,
     held: Option<&'static str>,
     entered: Notify,
-    release: Notify,
 }
 
 impl Recording {
@@ -31,7 +31,6 @@ impl Recording {
             calls: Mutex::default(),
             held,
             entered: Notify::new(),
-            release: Notify::new(),
         })
     }
 
@@ -48,9 +47,19 @@ impl Recording {
 
     /// The calls of `operation`, once the host was told how it ended.
     async fn finished(&self, operation: &str) -> Vec<Call> {
-        let ended = || matches!(self.calls(operation).last(), Some(Call::Finished(_)));
+        self.finished_times(operation, 1).await
+    }
+
+    /// The calls of `operation`, once the host was told `times` ends.
+    async fn finished_times(&self, operation: &str, times: usize) -> Vec<Call> {
+        let ends = |calls: Vec<Call>| {
+            calls
+                .iter()
+                .filter(|c| matches!(c, Call::Finished(_)))
+                .count()
+        };
         tokio::time::timeout(Duration::from_secs(5), async {
-            while !ended() {
+            while ends(self.calls(operation)) < times {
                 tokio::time::sleep(Duration::from_millis(1)).await;
             }
         })
@@ -81,7 +90,7 @@ impl SessionLifecycle for Recording {
         Box::pin(async move {
             if self.held == Some(operation.as_str()) {
                 self.entered.notify_one();
-                self.release.notified().await;
+                std::future::pending::<()>().await;
             }
         })
     }
@@ -186,7 +195,9 @@ async fn a_message_handed_to_the_running_turn_starts_nothing() {
 }
 
 /// Esc while the host starts the message's own turn: the host hears the
-/// turn start, then end interrupted, and the turn never asks the model.
+/// turn start, then end interrupted, and nothing of the turn is said. The
+/// review of 2b03f64: Esc waited for the host's start, which a host that
+/// never returns held for good; it drops it, as it drops a preparation.
 #[tokio::test]
 async fn stopping_a_steered_message_s_own_turn_as_it_starts() {
     let kit = RoomKit::new(Default::default());
@@ -213,7 +224,6 @@ async fn stopping_a_steered_message_s_own_turn_as_it_starts() {
         .try_send(Request::new(RequestId::new(3), "stop", "room", interrupt))
         .unwrap();
     assert_eq!(reply(&client, 3).await, None, "The person stops it");
-    lifecycle.release.notify_one();
     assert_eq!(run_finished(&client, &own).await, RunOutcome::Interrupted);
     let calls = lifecycle.finished("two").await;
     let expected = [
@@ -222,7 +232,69 @@ async fn stopping_a_steered_message_s_own_turn_as_it_starts() {
         Call::Finished(TurnOutcome::Interrupted),
     ];
     assert_eq!(calls, expected);
-    assert_eq!(provider.requests().len(), 1, "The stopped turn never asked");
+    let rows = kit
+        .get_timeline(&config().room, GetTimelineOptions::default())
+        .await
+        .unwrap();
+    let said = |row: &RoomEvent| text_of(&row.content).contains("Never said");
+    assert!(
+        !rows.iter().any(said),
+        "The stopped turn's answer is dropped"
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
+    channel_idle(&kit).await;
+}
+
+/// The review of 2b03f64: a client resending the message with the same
+/// operation, as a transport retry does, erased what the first one expected,
+/// and its own turn ran without the host hearing it start.
+#[tokio::test]
+async fn a_resent_message_s_own_turn_is_still_started() {
+    let kit = RoomKit::new(Default::default());
+    let rounds = vec![
+        ScriptedRound::answering("First answer"),
+        ScriptedRound::answering("Second answer"),
+    ];
+    let (channel, provider) = steering_room(&kit, rounds).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_first_answer(&kit, gate, held.clone());
+    let lifecycle = Recording::new(provider.clone(), None);
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session =
+        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+    let task = tokio::spawn(session.run(host));
+    next(&client).await;
+    client.try_send(submit(1, "one", "First question")).unwrap();
+    held.notified().await;
+    for id in [2, 3] {
+        client
+            .try_send(submit(id, "two", "Second question"))
+            .unwrap();
+        assert_eq!(reply(&client, id).await, None, "Accepted for the turn");
+    }
+    open.send_replace(true);
+    let mut steered = None;
+    let own = loop {
+        match next(&client).await {
+            Event::MessageSteered { message, .. } => steered = Some(message),
+            Event::RunStarted {
+                run,
+                answers: Some(message),
+                ..
+            } if Some(&message) == steered.as_ref() => break run,
+            _ => {}
+        }
+    };
+    assert_eq!(run_finished(&client, &own).await, RunOutcome::Completed);
+    let calls = lifecycle.finished_times("two", 2).await;
+    let starts = calls
+        .iter()
+        .filter(|c| matches!(c, Call::Started(_)))
+        .count();
+    assert_eq!(starts, 1, "Its own turn is started once: {calls:?}");
+    assert_eq!(provider.requests().len(), 2, "One turn of its own");
     drop(client);
     task.await.unwrap().unwrap();
     channel_idle(&kit).await;
