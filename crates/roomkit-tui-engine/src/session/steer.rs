@@ -1,7 +1,8 @@
 //! A message sent while the agent's turn runs (RMK-1161). The agent steers
 //! its room's turns, so RoomKit hands the message to that turn, which reads
 //! it at its next step. Should the turn no longer read its queue, the
-//! message waits a turn of its own after it, which this view can stop. Only
+//! message waits a turn of its own after it, which this view can stop and
+//! the host hears start (RMK-1232). Only
 //! a turn of this view's agent, streamed to this console and not being
 //! interrupted, takes a message this way; anything else in the room keeps
 //! the message busy, as before.
@@ -89,8 +90,9 @@ struct Steer<S: ConversationStore> {
 
 impl<S: ConversationStore> Steer<S> {
     /// Admit the message as the host admits every message, deliver it, and
-    /// tell the host how it ended. The view starts no turn for it: no
-    /// `started`, even when RoomKit gives it a turn of its own.
+    /// tell the host how it ended. Handed to the running turn, it starts no
+    /// turn: no `started`. Given a turn of its own, the stream carrying that
+    /// turn calls `started` before the turn asks the model.
     async fn run(mut self, text: String) {
         let content = EventContent::from(TextContent::new(text));
         let outcome = match self.admit(&content).await {
@@ -119,17 +121,18 @@ impl<S: ConversationStore> Steer<S> {
     }
 
     async fn deliver(&mut self, content: EventContent) -> TurnOutcome {
+        let key = self.idempotency_key();
+        // Its own turn, should it get one, starts as any turn.
+        let _own_turn = self.lifecycle.clone().map(|lifecycle| {
+            let (config, operation) = (self.config.clone(), self.operation.clone());
+            self.channel
+                .own_turns
+                .expect(&key, lifecycle, config, operation)
+        });
         let (channel, config) = (&self.channel, &self.config);
-        let room = config.conversation();
         let mut message = InboundMessage::new(channel.id().clone(), &config.sender, content);
         message.addressed_to = Some(vec![config.agent.clone()]);
-        let key = [
-            room,
-            channel.id().as_str(),
-            &config.sender,
-            self.operation.as_str(),
-        ];
-        message.idempotency_key = Some(serde_json::json!(key).to_string());
+        message.idempotency_key = Some(key);
         let options = ProcessInboundOptions {
             room_id: Some(config.room.clone()),
             organization_id: config.organization.clone(),
@@ -188,6 +191,18 @@ impl<S: ConversationStore> Steer<S> {
             None if interrupted => TurnOutcome::Interrupted,
             None => TurnOutcome::Completed,
         }
+    }
+
+    /// The message's key in the room, from the operation it was sent as.
+    fn idempotency_key(&self) -> String {
+        let config = &self.config;
+        let key = [
+            config.conversation(),
+            self.channel.id().as_str(),
+            &config.sender,
+            self.operation.as_str(),
+        ];
+        serde_json::json!(key).to_string()
     }
 
     fn notice(&self, text: &str) {

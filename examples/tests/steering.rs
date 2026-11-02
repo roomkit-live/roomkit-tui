@@ -10,6 +10,8 @@
 )]
 
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use roomkit::model::{ChannelId, RoomId};
@@ -17,10 +19,13 @@ use roomkit::{CreateRoomOptions, HookOptions, RoomKit};
 use roomkit_ai::testing::{ScriptedProvider, ScriptedRound};
 use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
 use roomkit_tui::{Client, Session, Steering, connection};
-use roomkit_tui_engine::{ConversationChannel, LocalSession, SessionConfig};
+use roomkit_tui_engine::{
+    ConversationChannel, LifecycleFuture, LocalSession, SessionConfig, SessionLifecycle,
+    TurnOutcome,
+};
 use roomkit_tui_protocol::*;
 use serde_json::json;
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 
 /// The agent steers its room's turns; its tool call waits until `gate` opens.
 async fn room(
@@ -98,12 +103,33 @@ async fn until(client: &Client, ui: &mut Session, what: &str, done: impl Fn(&Ses
 }
 
 /// Type `text` in the composer and press Enter, as the terminal's key would.
-fn write(client: &Client, ui: &mut Session, text: &str) {
+/// Returns the request the message went as.
+fn write(client: &Client, ui: &mut Session, text: &str) -> Request {
     ui.set_draft(text);
     let command = ui.input_command().expect("the terminal sends the message");
     let request = ui.request(command).unwrap();
     client.try_send(request.clone()).unwrap();
     ui.sent(&request);
+    request
+}
+
+/// Apply the host's events to the terminal until the host answers `request`.
+async fn replied(client: &Client, ui: &mut Session, request: &Request) -> Option<Rejection> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        while let Ok(event) = client.try_recv() {
+            let reply = match &event {
+                Event::Reply { request: id, error } if *id == request.id => Some(error.clone()),
+                _ => None,
+            };
+            ui.apply(event);
+            if let Some(error) = reply {
+                return error;
+            }
+        }
+        assert!(Instant::now() < deadline, "The host never answered");
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
 }
 
 fn message<'a>(ui: &'a Session, text: &str) -> Option<&'a Message> {
@@ -111,6 +137,71 @@ fn message<'a>(ui: &'a Session, text: &str) -> Option<&'a Message> {
         Item::Message(message) if message.text == text => Some(message),
         _ => None,
     })
+}
+
+/// A host that records what it is told, per operation.
+#[derive(Debug, Default)]
+struct Host(Mutex<Vec<(String, &'static str)>>);
+
+impl Host {
+    fn record(&self, operation: &OperationId, call: &'static str) {
+        let operation = operation.as_str().to_owned();
+        self.0.lock().unwrap().push((operation, call));
+    }
+
+    /// What the host was told about `operation`, once told how it ended.
+    async fn told(&self, operation: &str) -> Vec<&'static str> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let told: Vec<_> = self
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(id, _)| id == operation)
+                .map(|(_, call)| *call)
+                .collect();
+            if told.last() == Some(&"finished") {
+                return told;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "The host never heard {operation} end"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+}
+
+impl SessionLifecycle for Host {
+    fn admit<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        operation: &'a OperationId,
+        _: &'a roomkit::model::EventContent,
+    ) -> LifecycleFuture<'a, Result<(), Rejection>> {
+        self.record(operation, "admit");
+        Box::pin(async { Ok(()) })
+    }
+
+    fn started<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        operation: &'a OperationId,
+    ) -> LifecycleFuture<'a, ()> {
+        self.record(operation, "started");
+        Box::pin(async {})
+    }
+
+    fn finished<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        operation: &'a OperationId,
+        _: TurnOutcome,
+    ) -> LifecycleFuture<'a, ()> {
+        self.record(operation, "finished");
+        Box::pin(async {})
+    }
 }
 
 #[tokio::test]
@@ -123,7 +214,9 @@ async fn a_message_written_during_a_tool_round_reaches_the_running_turn() {
     let (open, gate) = watch::channel(false);
     let (console, view) = room(&kit, provider.clone(), gate).await;
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), console, view).run(host));
+    let lifecycle = Arc::new(Host::default());
+    let session = LocalSession::new(kit.clone(), console, view).with_lifecycle(lifecycle.clone());
+    let task = tokio::spawn(session.run(host));
     let mut ui = Session::default();
     until(&client, &mut ui, "the conversation", |ui| {
         ui.snapshot().is_some()
@@ -138,7 +231,7 @@ async fn a_message_written_during_a_tool_round_reaches_the_running_turn() {
     .await;
     assert!(ui.active_run().is_some(), "The turn runs");
 
-    write(&client, &mut ui, "Use the second ledger");
+    let steered = write(&client, &mut ui, "Use the second ledger");
     until(&client, &mut ui, "the message handed to the turn", |ui| {
         message(ui, "Use the second ledger")
             .is_some_and(|m| ui.steering(&m.id) == Some(Steering::Handed))
@@ -165,6 +258,94 @@ async fn a_message_written_during_a_tool_round_reaches_the_running_turn() {
         "The turn read the message at its next step"
     );
     assert_eq!(provider.requests().len(), 2, "No turn of its own");
+    let told = lifecycle.told(steered.operation.as_str()).await;
+    assert_eq!(told, ["admit", "finished"], "It started nothing");
+
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
+
+/// Hold the agent's first answer as it is stored, telling `held` once it
+/// waits: that turn's loop is over and reads no more messages.
+fn hold_first_answer(kit: &RoomKit, gate: watch::Receiver<bool>, held: Arc<Notify>) {
+    let first = Arc::new(AtomicUsize::new(0));
+    kit.hook(
+        roomkit::HookTrigger::BeforeBroadcast,
+        move |event: roomkit::model::RoomEvent, _| {
+            let (mut gate, held) = (gate.clone(), held.clone());
+            let agent = event.source.channel_id.as_str() == "agent";
+            let hold = agent && first.fetch_add(1, Ordering::SeqCst) == 0;
+            async move {
+                if hold {
+                    held.notify_one();
+                    let _ = gate.wait_for(|open| *open).await;
+                }
+                Ok(roomkit::model::HookResult::allow(Default::default()))
+            }
+        },
+        HookOptions {
+            name: "hold-answer".to_owned(),
+            timeout: Duration::from_secs(300),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+}
+
+/// RMK-1232: written as the turn writes its last answer, the message gets a
+/// turn of its own, which the host hears start as any turn.
+#[tokio::test]
+async fn a_message_the_turn_no_longer_reads_gets_a_turn_the_host_hears_start() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([
+        ScriptedRound::answering("First answer"),
+        ScriptedRound::answering("Second answer"),
+    ]);
+    let (_tools, tools_gate) = watch::channel(true);
+    let (console, view) = room(&kit, provider.clone(), tools_gate).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_first_answer(&kit, gate, held.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let lifecycle = Arc::new(Host::default());
+    let session = LocalSession::new(kit.clone(), console, view).with_lifecycle(lifecycle.clone());
+    let task = tokio::spawn(session.run(host));
+    let mut ui = Session::default();
+    until(&client, &mut ui, "the conversation", |ui| {
+        ui.snapshot().is_some()
+    })
+    .await;
+
+    write(&client, &mut ui, "First question");
+    held.notified().await;
+    until(&client, &mut ui, "the turn writing its answer", |ui| {
+        ui.active_run().is_some()
+    })
+    .await;
+    let steered = write(&client, &mut ui, "Second question");
+    let accepted = replied(&client, &mut ui, &steered).await;
+    assert_eq!(accepted, None, "Accepted for the running turn");
+
+    // The held answer also holds the room: the message is committed once
+    // the turn's last answer is.
+    open.send(true).unwrap();
+    until(&client, &mut ui, "the answer of its own turn", |ui| {
+        message(ui, "Second answer").is_some()
+    })
+    .await;
+    until(&client, &mut ui, "the room idle", |ui| {
+        ui.active_run().is_none()
+    })
+    .await;
+    let sent = message(&ui, "Second question").unwrap();
+    assert_eq!(ui.steering(&sent.id), Some(Steering::OwnTurn));
+    let told = lifecycle.told(steered.operation.as_str()).await;
+    assert_eq!(
+        told,
+        ["admit", "started", "finished"],
+        "Started as any turn"
+    );
 
     drop(client);
     task.await.unwrap().unwrap();

@@ -7,6 +7,7 @@ use tokio::sync::broadcast;
 
 use crate::activity::{Active, Activity, Held, Stopping, Work};
 use crate::approvals::{Approvals, Details};
+use crate::own_turns::OwnTurns;
 use crate::{PermissionRequest, projection};
 
 /// Events retained for a slow view before it must reattach.
@@ -28,6 +29,7 @@ pub struct ConversationChannel {
     pub(crate) activity: Activity,
     pub(crate) stopping: Stopping,
     pub(crate) approvals: Approvals,
+    pub(crate) own_turns: OwnTurns,
 }
 
 impl ConversationChannel {
@@ -51,6 +53,7 @@ impl ConversationChannel {
             events,
             activity: Activity::default(),
             stopping: Stopping::default(),
+            own_turns: OwnTurns::default(),
         }
     }
 

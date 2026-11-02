@@ -8,6 +8,8 @@ use roomkit_tui_engine::{
 use std::sync::Mutex;
 use tokio::sync::{Notify, watch};
 
+mod lifecycle;
+
 /// An agent that steers its room's turns, answering `rounds`, beside a
 /// streaming console.
 async fn steering_room(

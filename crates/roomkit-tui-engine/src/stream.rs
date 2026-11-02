@@ -92,6 +92,7 @@ impl Channel for ConversationChannel {
         let agent = responder.as_str().to_owned();
         let approvals = self.approvals.start(&room, &agent, run.clone(), requester);
         let mut reader = Reader::new(self, &room, &run, agent.as_str().into());
+        self.own_turns.start(trigger).await;
         while let Some(next) = stream.next().await {
             match next {
                 Ok(item) => reader.read(item),

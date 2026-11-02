@@ -49,8 +49,10 @@ pub trait SessionLifecycle: Debug + Send + Sync {
     /// Once per admitted logical turn, before engine processing. A matching
     /// `finished` follows on normal completion, failure or explicit interruption.
     /// A message handed to the running turn (`SessionConfig::can_steer`) is
-    /// admitted and finished like any message, but the view starts no turn
-    /// for it: no `started`, even when RoomKit gives it a turn of its own.
+    /// admitted and finished like any message, but starts no turn: no
+    /// `started`. Should that turn no longer read it, RoomKit gives it a turn
+    /// of its own, and `started` comes as that turn begins, before it asks
+    /// the model; an interruption meanwhile still ends it `Interrupted`.
     fn started<'a>(
         &'a self,
         _session: &'a SessionConfig,
