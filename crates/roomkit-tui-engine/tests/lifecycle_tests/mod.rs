@@ -85,16 +85,20 @@ async fn callbacks_cover_one_whole_turn_across_tool_rounds_and_survive_detach() 
     let reached = Arc::new(tokio::sync::Notify::new());
     let release = gate.clone();
     let entered = reached.clone();
-    kit.before_tool_use("hold-first", move |event, _| {
-        let (release, entered) = (release.clone(), entered.clone());
-        async move {
-            if event.call.id == "a" {
-                entered.notify_one();
-                release.notified().await;
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |event: roomkit::ToolCallEvent, _| {
+            let (release, entered) = (release.clone(), entered.clone());
+            async move {
+                if event.tool_call_id == "a" {
+                    entered.notify_one();
+                    release.notified().await;
+                }
+                Ok(roomkit::model::HookResult::allow(Default::default()))
             }
-            Ok(roomkit::ToolUse::Allow)
-        }
-    })
+        },
+        hook_options("hold-first"),
+    )
     .unwrap();
     let lifecycle = Arc::new(Lifecycle::default());
     let (client, host) = connection(NonZeroUsize::new(128).unwrap());

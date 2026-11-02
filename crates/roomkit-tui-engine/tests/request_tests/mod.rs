@@ -116,13 +116,17 @@ async fn only_opted_in_controls_run_while_busy_and_arguments_are_bounded() {
     let rounds = vec![ScriptedRound::answering("Done")];
     let channel = prepare(&kit, ScriptedProvider::new(rounds), Arc::default(), false).await;
     let (open, gate) = tokio::sync::watch::channel(false);
-    kit.before_broadcast("hold", move |_, _| {
-        let mut gate = gate.clone();
-        async move {
-            let _ = gate.wait_for(|open| *open).await;
-            Ok(HookResult::allow(Default::default()))
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeBroadcast,
+        move |_: roomkit::model::RoomEvent, _| {
+            let mut gate = gate.clone();
+            async move {
+                let _ = gate.wait_for(|open| *open).await;
+                Ok(HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("hold"),
+    )
     .unwrap();
     let mut commands = config();
     commands.commands = vec![

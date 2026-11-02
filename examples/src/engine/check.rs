@@ -22,7 +22,13 @@ pub async fn check() -> Result<()> {
         "roomkit-tui-example-{}.sqlite3",
         uuid::Uuid::new_v4()
     )));
-    let provider = || OpenAiConfig::new(&mock.base_url, "", "fixture-model");
+    let provider = || {
+        let config = OpenAiConfig {
+            base_url: Some(mock.base_url.clone()),
+            ..OpenAiConfig::new("", "fixture-model")
+        };
+        (config, None)
+    };
     let calls = Arc::new(AtomicUsize::new(0));
     let (kit, channel, mut view) =
         assemble(&database.0, "example", provider(), calls.clone(), false).await?;

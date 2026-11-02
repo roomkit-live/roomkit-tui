@@ -38,7 +38,8 @@ pub struct SessionConfig {
     /// Display title.
     pub title: String,
     /// Effective settings supplied by the host that configured this agent.
-    /// The provider must be the one the engine reports, such as `openai`.
+    /// The provider must be the one the engine reports, such as
+    /// `OpenAIAIProvider` for `roomkit-openai`.
     pub model: Option<ModelInfo>,
     /// Host-confirmed capacity for this configured model, in tokens.
     pub context_capacity: Option<u64>,

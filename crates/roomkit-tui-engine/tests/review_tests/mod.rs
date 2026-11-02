@@ -7,21 +7,21 @@ use roomkit_tui_engine::{CommandHandler, CommandResult};
 use tokio::sync::Notify;
 
 async fn limited(kit: &RoomKit, rounds: Vec<ScriptedRound>, buffered: bool) -> ConversationChannel {
-    let tools = Tools::new().tool(
-        ToolDefinition::new(
-            "lookup_record",
-            "Read",
-            json!({"type":"object","properties":{},"additionalProperties":false}),
-        ),
-        |_, _| async { Ok(ToolOutput::Json(json!({"status":"ready"}))) },
-    );
-    let agent = AiAgent::new(
-        ChannelId::new("agent").unwrap(),
-        ScriptedProvider::new(rounds),
-    )
-    .with_tools(tools)
-    .unwrap()
-    .with_max_rounds(1);
+    let lookup = AiTool {
+        name: "lookup_record".to_owned(),
+        description: "Read".to_owned(),
+        parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
+    };
+    let options = AiChannelOptions {
+        tools: vec![ToolEntry::Definition(lookup)],
+        tool_handler: Some(ToolHandler::new(|_, _| async {
+            Ok(ToolResult::Json(json!({"status":"ready"})))
+        })),
+        max_tool_rounds: 1,
+        ..Default::default()
+    };
+    let provider = ScriptedProvider::new(rounds);
+    let agent = AiChannel::new(ChannelId::new("agent").unwrap(), provider, options).unwrap();
     kit.register_channel(agent).unwrap();
     let id = ChannelId::new("console").unwrap();
     let channel = if buffered {
@@ -145,14 +145,18 @@ async fn concurrent_views_never_start_two_operations_in_one_room() {
     let (open, gate) = tokio::sync::watch::channel(false);
     let admitted = Arc::new(Notify::new());
     let reached = admitted.clone();
-    kit.before_broadcast("hold", move |_, _| {
-        let (mut gate, reached) = (gate.clone(), reached.clone());
-        async move {
-            reached.notify_one();
-            let _ = gate.wait_for(|open| *open).await;
-            Ok(HookResult::allow(Default::default()))
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeBroadcast,
+        move |_: roomkit::model::RoomEvent, _| {
+            let (mut gate, reached) = (gate.clone(), reached.clone());
+            async move {
+                reached.notify_one();
+                let _ = gate.wait_for(|open| *open).await;
+                Ok(HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("hold"),
+    )
     .unwrap();
     let handler = SlowSubmit {
         entered: Arc::new(Notify::new()),
@@ -213,22 +217,27 @@ async fn a_closed_room_still_restores_with_its_unsaved_decisions() {
     let rounds = vec![calling(), ScriptedRound::answering("Done")];
     let channel = prepare(&kit, ScriptedProvider::new(rounds), Arc::default(), false).await;
     let (gate, closer) = (channel.clone(), kit.clone());
-    kit.before_tool_use(roomkit::ToolHookSpec::new("permission"), move |event, _| {
-        let (gate, closer) = (gate.clone(), closer.clone());
-        async move {
-            let request = PermissionRequest::new("Read?", "Read a record", Duration::from_secs(30));
-            let decision = gate.ask_tool_permission(&event, request).await;
-            // The tool closes the room: the decision can no longer be stored.
-            closer
-                .close_room(&event.room_id, CloseRoomOptions::default())
-                .await
-                .unwrap();
-            Ok(match decision {
-                Decision::Allow => roomkit::ToolUse::Allow,
-                _ => roomkit::ToolUse::block("Denied"),
-            })
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |event: roomkit::ToolCallEvent, _| {
+            let (gate, closer) = (gate.clone(), closer.clone());
+            async move {
+                let request =
+                    PermissionRequest::new("Read?", "Read a record", Duration::from_secs(30));
+                let decision = gate.ask_tool_permission(&event, request).await;
+                // The tool closes the room: the decision can no longer be stored.
+                closer
+                    .close_room(event.room_id.as_ref().unwrap(), CloseRoomOptions::default())
+                    .await
+                    .unwrap();
+                Ok(match decision {
+                    Decision::Allow => roomkit::model::HookResult::allow(Default::default()),
+                    _ => roomkit::model::HookResult::block("Denied", Default::default()),
+                })
+            }
+        },
+        hook_options("permission"),
+    )
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
@@ -286,7 +295,7 @@ async fn idle_waits_for_accepted_work_to_settle() {
         .unwrap();
     assert!(
         rows.iter()
-            .any(|row| roomkit::text_of(&row.content) == "Done")
+            .any(|row| roomkit_core::rules::transcoding::text_of(&row.content) == "Done")
     );
     kit.close().await.unwrap();
 }

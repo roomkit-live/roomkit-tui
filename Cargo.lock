@@ -1358,7 +1358,7 @@ dependencies = [
 [[package]]
 name = "roomkit"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=e5ced400061a8558f9b59dbadbf16f9cbac97ba3#e5ced400061a8558f9b59dbadbf16f9cbac97ba3"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93e757c0e59c85642d32cffd13c4020746ba0047#93e757c0e59c85642d32cffd13c4020746ba0047"
 dependencies = [
  "futures-core",
  "roomkit-core",
@@ -1373,21 +1373,23 @@ dependencies = [
 [[package]]
 name = "roomkit-ai"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=e5ced400061a8558f9b59dbadbf16f9cbac97ba3#e5ced400061a8558f9b59dbadbf16f9cbac97ba3"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93e757c0e59c85642d32cffd13c4020746ba0047#93e757c0e59c85642d32cffd13c4020746ba0047"
 dependencies = [
  "futures-core",
  "roomkit",
+ "roomkit-core",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
 name = "roomkit-core"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=e5ced400061a8558f9b59dbadbf16f9cbac97ba3#e5ced400061a8558f9b59dbadbf16f9cbac97ba3"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93e757c0e59c85642d32cffd13c4020746ba0047#93e757c0e59c85642d32cffd13c4020746ba0047"
 dependencies = [
  "jiff",
  "serde",
@@ -1401,12 +1403,13 @@ dependencies = [
 [[package]]
 name = "roomkit-openai"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=e5ced400061a8558f9b59dbadbf16f9cbac97ba3#e5ced400061a8558f9b59dbadbf16f9cbac97ba3"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93e757c0e59c85642d32cffd13c4020746ba0047#93e757c0e59c85642d32cffd13c4020746ba0047"
 dependencies = [
  "futures-core",
  "reqwest",
  "roomkit",
  "roomkit-ai",
+ "roomkit-core",
  "rustls",
  "serde",
  "serde_json",
@@ -1417,7 +1420,7 @@ dependencies = [
 [[package]]
 name = "roomkit-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=e5ced400061a8558f9b59dbadbf16f9cbac97ba3#e5ced400061a8558f9b59dbadbf16f9cbac97ba3"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93e757c0e59c85642d32cffd13c4020746ba0047#93e757c0e59c85642d32cffd13c4020746ba0047"
 dependencies = [
  "roomkit",
  "roomkit-core",
@@ -1453,6 +1456,7 @@ version = "0.1.0"
 dependencies = [
  "roomkit",
  "roomkit-ai",
+ "roomkit-core",
  "roomkit-sqlite",
  "roomkit-tui-protocol",
  "roomkit-tui-transport",

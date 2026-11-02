@@ -38,16 +38,20 @@ async fn admission_remains_busy_and_a_policy_block_settles_without_a_run() {
     let channel = prepare(&kit, provider.clone(), Arc::default(), false).await;
     let release = Arc::new(tokio::sync::Notify::new());
     let gate = release.clone();
-    kit.before_broadcast("admission", move |_, _| {
-        let gate = gate.clone();
-        async move {
-            gate.notified().await;
-            Ok(roomkit::model::HookResult::block(
-                "Closed for maintenance",
-                Default::default(),
-            ))
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeBroadcast,
+        move |_: roomkit::model::RoomEvent, _| {
+            let gate = gate.clone();
+            async move {
+                gate.notified().await;
+                Ok(roomkit::model::HookResult::block(
+                    "Closed for maintenance",
+                    Default::default(),
+                ))
+            }
+        },
+        hook_options("admission"),
+    )
     .unwrap();
     let check = LocalSession::new(kit.clone(), channel.clone(), config());
     let (client, host) = connection(NonZeroUsize::new(128).unwrap());
@@ -179,15 +183,19 @@ async fn detaching_a_view_does_not_stop_a_tool_or_close_the_shared_engine() {
     let reached = Arc::new(tokio::sync::Notify::new());
     let release = gate.clone();
     let entered = reached.clone();
-    kit.before_tool_use(roomkit::ToolHookSpec::new("hold"), move |_, _| {
-        let release = release.clone();
-        let entered = entered.clone();
-        async move {
-            entered.notify_one();
-            release.notified().await;
-            Ok(roomkit::ToolUse::Allow)
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |_: roomkit::ToolCallEvent, _| {
+            let release = release.clone();
+            let entered = entered.clone();
+            async move {
+                entered.notify_one();
+                release.notified().await;
+                Ok(roomkit::model::HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("hold"),
+    )
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(128).unwrap());
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
@@ -226,7 +234,9 @@ async fn sqlite_restart_and_retried_operation_do_not_execute_the_tool_twice() {
     let calls = Arc::new(AtomicUsize::new(0));
     {
         let kit = RoomKit::new(RoomKitOptions::with_store(
-            roomkit_sqlite::SqliteStore::open(&file).await.unwrap(),
+            roomkit_sqlite::SqliteStore::new(roomkit_sqlite::SqliteStoreOptions {
+                path: std::path::PathBuf::from(&file),
+            }),
         ));
         let provider = ScriptedProvider::new([
             ScriptedRound::calling(
@@ -251,13 +261,22 @@ async fn sqlite_restart_and_retried_operation_do_not_execute_the_tool_twice() {
     }
     {
         let kit = RoomKit::new(RoomKitOptions::with_store(
-            roomkit_sqlite::SqliteStore::open(&file).await.unwrap(),
+            roomkit_sqlite::SqliteStore::new(roomkit_sqlite::SqliteStoreOptions {
+                path: std::path::PathBuf::from(&file),
+            }),
         ));
         let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
         kit.register_channel(channel.clone()).unwrap();
         let provider = ScriptedProvider::default();
-        kit.register_channel(AiAgent::new(config().agent, provider.clone()))
-            .unwrap();
+        kit.register_channel(
+            AiChannel::new(
+                config().agent,
+                provider.clone(),
+                AiChannelOptions::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
         let adapter = LocalSession::new(kit.clone(), channel, config());
         let snapshot = adapter.snapshot().await.unwrap();
         assert!(snapshot.items.iter().any(|item| matches!(item, Item::Tool { call, .. } if call.intent.as_deref() == Some("Checking the record"))));
@@ -288,17 +307,19 @@ async fn sqlite_restart_and_retried_operation_do_not_execute_the_tool_twice() {
         ));
         drop(client);
         task.await.unwrap().unwrap();
-        kit.close().await.unwrap();
         assert!(provider.requests().is_empty());
         assert_eq!(
             kit.get_timeline(&config().room, GetTimelineOptions::default())
                 .await
                 .unwrap()
                 .iter()
-                .filter(|e| roomkit::text_of(&e.content) == "Look up record 42")
+                .filter(|e| roomkit_core::rules::transcoding::text_of(&e.content)
+                    == "Look up record 42")
                 .count(),
             1
         );
+        // The kit refuses reads once closed.
+        kit.close().await.unwrap();
     }
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     std::fs::remove_file(file).unwrap();
@@ -413,17 +434,21 @@ async fn buffered_delivery_respects_moderation_before_showing_the_answer() {
         true,
     )
     .await;
-    kit.before_broadcast("review", |mut event, _| async move {
-        if event.source.channel_id.as_str() == "agent" {
-            event.content = roomkit::model::TextContent::new("Reviewed content").into();
-            Ok(roomkit::model::HookResult::modify(
-                event,
-                Default::default(),
-            ))
-        } else {
-            Ok(roomkit::model::HookResult::allow(Default::default()))
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeBroadcast,
+        |mut event: roomkit::model::RoomEvent, _| async move {
+            if event.source.channel_id.as_str() == "agent" {
+                event.content = roomkit::model::TextContent::new("Reviewed content").into();
+                Ok(roomkit::model::HookResult::modify(
+                    event,
+                    Default::default(),
+                ))
+            } else {
+                Ok(roomkit::model::HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("review"),
+    )
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(128).unwrap());
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));

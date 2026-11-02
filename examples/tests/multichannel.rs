@@ -12,9 +12,9 @@ use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 
 use roomkit::model::{ChannelId, EventContent, InboundMessage, RoomId, TextContent};
-use roomkit::{CreateRoomOptions, ProcessInboundOptions, RoomKit, ToolHookSpec, ToolUse};
+use roomkit::{CreateRoomOptions, HookOptions, ProcessInboundOptions, RoomKit};
 use roomkit_ai::testing::{ScriptedProvider, ScriptedRound};
-use roomkit_ai::{AiAgent, ToolDefinition, ToolOutput, Tools};
+use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
 use roomkit_tui::{Client, Session, connection};
 use roomkit_tui_engine::{
     CommandExecution, CommandHandler, CommandResult, ConversationChannel, LocalSession,
@@ -47,23 +47,36 @@ impl CommandHandler for Deployer {
     }
 }
 
+/// A hook named `name`, allowed long enough for a person to decide.
+fn hook_options(name: &str) -> HookOptions {
+    HookOptions {
+        name: name.to_owned(),
+        timeout: Duration::from_secs(300),
+        ..Default::default()
+    }
+}
+
 /// The agent checks a record, held at its tool call until `gate` opens.
 async fn room(kit: &RoomKit, gate: watch::Receiver<bool>) -> (ConversationChannel, SessionConfig) {
-    let tools = Tools::new().tool(
-        ToolDefinition::new("lookup_record", "Read a record", json!({"type":"object"})),
-        |_, _| async { Ok(ToolOutput::Json(json!({"record": "42"}))) },
-    );
+    let lookup = AiTool {
+        name: "lookup_record".to_owned(),
+        description: "Read a record".to_owned(),
+        parameters: json!({"type":"object"}),
+    };
+    let options = AiChannelOptions {
+        tools: vec![ToolEntry::Definition(lookup)],
+        tool_handler: Some(ToolHandler::new(|_, _| async {
+            Ok(ToolResult::Json(json!({"record": "42"})))
+        })),
+        ..Default::default()
+    };
     let provider = ScriptedProvider::new([
         ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
         ScriptedRound::answering("Record 42 is ready"),
     ]);
     let agent = ChannelId::new("agent").unwrap();
-    kit.register_channel(
-        AiAgent::new(agent.clone(), provider)
-            .with_tools(tools)
-            .unwrap(),
-    )
-    .unwrap();
+    kit.register_channel(AiChannel::new(agent.clone(), provider, options).unwrap())
+        .unwrap();
     let console = ConversationChannel::new(ChannelId::new("console").unwrap());
     kit.register_channel(console.clone()).unwrap();
     let sms = ConversationChannel::buffered(ChannelId::new("sms").unwrap());
@@ -80,13 +93,17 @@ async fn room(kit: &RoomKit, gate: watch::Receiver<bool>) -> (ConversationChanne
             .await
             .unwrap();
     }
-    kit.before_tool_use(ToolHookSpec::new("hold"), move |_, _| {
-        let mut gate = gate.clone();
-        async move {
-            let _ = gate.wait_for(|open| *open).await;
-            Ok(ToolUse::Allow)
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |_: roomkit::ToolCallEvent, _| {
+            let mut gate = gate.clone();
+            async move {
+                let _ = gate.wait_for(|open| *open).await;
+                Ok(roomkit::model::HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("hold"),
+    )
     .unwrap();
     let mut view = SessionConfig::new(room, agent, "alice");
     view.commands.push(CommandSpec::new("deploy", "Deploy"));

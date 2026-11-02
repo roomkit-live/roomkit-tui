@@ -48,17 +48,18 @@ async fn application_commands_wait_for_idle_and_validate_switches_before_replaci
     let release = Arc::new(tokio::sync::Notify::new());
     let notify = entered.clone();
     let gate = release.clone();
-    kit.before_tool_use(
-        roomkit::ToolHookSpec::new("hold-for-switch"),
-        move |_, _| {
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |_: roomkit::ToolCallEvent, _| {
             let notify = notify.clone();
             let gate = gate.clone();
             async move {
                 notify.notify_one();
                 gate.notified().await;
-                Ok(roomkit::ToolUse::Allow)
+                Ok(roomkit::model::HookResult::allow(Default::default()))
             }
         },
+        hook_options("hold-for-switch"),
     )
     .unwrap();
     let calls = Arc::new(AtomicUsize::new(0));

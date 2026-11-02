@@ -10,9 +10,9 @@ use std::{error::Error, num::NonZeroUsize, path::Path, path::PathBuf, time::Dura
 
 use roomkit::model::{ChannelId, RoomId};
 use roomkit::{CreateRoomOptions, GetRoomOptions, ListBindingsOptions, RoomKit, RoomKitOptions};
-use roomkit_ai::{ToolDefinition, ToolOutput, Tools};
-use roomkit_openai::{OpenAiAgent, OpenAiConfig};
-use roomkit_sqlite::SqliteStore;
+use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
+use roomkit_openai::{OpenAiAiProvider, OpenAiConfig};
+use roomkit_sqlite::{SqliteStore, SqliteStoreOptions};
 use roomkit_tui::{connection, render::Renderers};
 use roomkit_tui_engine::{ConversationChannel, LocalSession, SessionConfig};
 use roomkit_tui_protocol::ModelInfo;
@@ -24,7 +24,11 @@ type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
 /// The provider name the OpenAI-compatible agent reports with its usage.
 /// A view shows context and token usage only for the provider it advertises.
-const PROVIDER: &str = "openai";
+/// The provider name the engine reports for the OpenAI provider, which a
+/// view's model must carry for its measurements: Python's class name.
+const PROVIDER: &str = "OpenAIAIProvider";
+const SYSTEM_PROMPT: &str =
+    "You are a helpful assistant. You can look up fictional records when asked.";
 /// How long a detached view waits for the current turn before closing.
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -58,13 +62,14 @@ pub async fn launch() -> Result<()> {
     if !key.is_empty() && !args.insecure && exposes_credentials(&base) {
         return Err("Refusing to send ROOMKIT_API_KEY over plain HTTP to another machine; use HTTPS or pass --allow-insecure-http".into());
     }
-    let config = OpenAiConfig::new(base, key, &model).with_system_prompt(
-        "You are a helpful assistant. You can look up fictional records when asked.",
-    );
+    let config = OpenAiConfig {
+        base_url: Some(base),
+        ..OpenAiConfig::new(key, &model)
+    };
     let (kit, channel, mut view) = assemble(
         &args.database,
         &args.room,
-        config,
+        (config, Some(SYSTEM_PROMPT)),
         Arc::default(),
         args.buffered,
     )
@@ -141,27 +146,42 @@ fn model_info(model: &str) -> ModelInfo {
     ModelInfo::new(PROVIDER, model)
 }
 
+/// The engine, its store at `path`, the agent from `provider` (an endpoint
+/// and an optional system prompt) and this view's channel, attached to `room`.
 async fn assemble(
     path: &Path,
     room: &str,
-    provider: OpenAiConfig,
+    (provider, system_prompt): (OpenAiConfig, Option<&str>),
     calls: Arc<AtomicUsize>,
     buffered: bool,
 ) -> Result<(RoomKit<SqliteStore>, ConversationChannel, SessionConfig)> {
-    let store = SqliteStore::open(path).await?;
+    let store = SqliteStore::new(SqliteStoreOptions {
+        path: path.to_path_buf(),
+    });
     let kit = RoomKit::new(RoomKitOptions::with_store(store));
     let agent = ChannelId::new("assistant")?;
     let schema = json!({"type":"object","properties":{"reference":{"type":"string"}},"required":["reference"],"additionalProperties":false});
-    let lookup = ToolDefinition::new(
-        "lookup_record",
-        "Read a fictional record by reference",
-        schema,
-    );
-    let tools = Tools::new().tool(lookup, move |call, _| {
+    let lookup = AiTool {
+        name: "lookup_record".to_owned(),
+        description: "Read a fictional record by reference".to_owned(),
+        parameters: schema,
+    };
+    let handler = ToolHandler::new(move |_, arguments| {
         calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        async move { Ok(ToolOutput::Json(json!({"reference":call.arguments.get("reference"),"status":"ready","fictional":true}))) }
+        async move {
+            Ok(ToolResult::Json(
+                json!({"reference":arguments.get("reference"),"status":"ready","fictional":true}),
+            ))
+        }
     });
-    kit.register_channel(OpenAiAgent::new(agent.clone(), provider)?.with_tools(tools)?)?;
+    let options = AiChannelOptions {
+        system_prompt: system_prompt.map(str::to_owned),
+        tools: vec![ToolEntry::Definition(lookup)],
+        tool_handler: Some(handler),
+        ..Default::default()
+    };
+    let provider = OpenAiAiProvider::new(provider)?;
+    kit.register_channel(AiChannel::new(agent.clone(), provider, options)?)?;
     let id = ChannelId::new("terminal")?;
     let channel = if buffered {
         ConversationChannel::buffered(id)

@@ -29,24 +29,28 @@ async fn finished(client: &Client) -> Option<(RunId, RunOutcome)> {
 
 /// Ask the person before every tool call.
 fn ask_before_tools<S: ConversationStore>(kit: &RoomKit<S>, gate: ConversationChannel) {
-    kit.before_tool_use(roomkit::ToolHookSpec::new("permission"), move |event, _| {
-        let gate = gate.clone();
-        async move {
-            let request = PermissionRequest::new(
-                "Read record?",
-                "Read a fictional record.",
-                Duration::from_secs(60),
-            );
-            let decision = gate
-                .ask_permission(&event.room_id, &event.channel_id, request)
-                .await;
-            Ok(if decision == Decision::Allow {
-                roomkit::ToolUse::Allow
-            } else {
-                roomkit::ToolUse::block("Denied")
-            })
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |event: roomkit::ToolCallEvent, _| {
+            let gate = gate.clone();
+            async move {
+                let request = PermissionRequest::new(
+                    "Read record?",
+                    "Read a fictional record.",
+                    Duration::from_secs(60),
+                );
+                let decision = gate
+                    .ask_permission(event.room_id.as_ref().unwrap(), &event.channel_id, request)
+                    .await;
+                Ok(if decision == Decision::Allow {
+                    roomkit::model::HookResult::allow(Default::default())
+                } else {
+                    roomkit::model::HookResult::block("Denied", Default::default())
+                })
+            }
+        },
+        hook_options("permission"),
+    )
     .unwrap();
 }
 

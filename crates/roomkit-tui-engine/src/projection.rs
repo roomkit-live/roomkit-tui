@@ -104,7 +104,7 @@ pub(crate) fn item(row: &RoomEvent) -> Option<Item> {
         Item::Message(Message::new(
             MessageId::new(row.id.to_string()),
             actor(row),
-            roomkit::text_of(&row.content),
+            roomkit_core::rules::transcoding::text_of(&row.content),
         ))
     })
 }

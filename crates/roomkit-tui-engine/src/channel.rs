@@ -1,9 +1,7 @@
 //! The RoomKit transport channel shared by local views of a room.
 
-use roomkit::model::{
-    ChannelCategory, ChannelDirection, ChannelId, ChannelType, RoomEvent, RoomId,
-};
-use roomkit::{ChannelDeclaration, ToolCallEvent};
+use roomkit::ToolCallEvent;
+use roomkit::model::{ChannelId, RoomEvent, RoomId};
 use roomkit_tui_protocol::{Decision, Event, Item, RunId};
 use tokio::sync::broadcast;
 
@@ -23,7 +21,9 @@ const EVENT_BUFFER: usize = 1_024;
 /// [`Self::buffered`] when the application's policy requires pre-display review.
 #[derive(Clone, Debug)]
 pub struct ConversationChannel {
-    declaration: ChannelDeclaration,
+    id: ChannelId,
+    /// Whether the engine streams answers to it as they are written.
+    streaming: bool,
     pub(crate) events: broadcast::Sender<(String, Event)>,
     pub(crate) activity: Activity,
     pub(crate) stopping: Stopping,
@@ -43,17 +43,10 @@ impl ConversationChannel {
     }
 
     fn with_streaming(id: ChannelId, streaming: bool) -> Self {
-        let mut declaration = ChannelDeclaration::new(
-            id,
-            ChannelType::WEBSOCKET,
-            ChannelCategory::Transport,
-            ChannelDirection::Bidirectional,
-        );
-        declaration.supports_streaming_delivery = streaming;
-        declaration.receives_tool_calls = true;
         let events = broadcast::channel(EVENT_BUFFER).0;
         Self {
-            declaration,
+            id,
+            streaming,
             approvals: Approvals::new(events.clone()),
             events,
             activity: Activity::default(),
@@ -63,7 +56,7 @@ impl ConversationChannel {
 
     /// Identity used when the application registers and attaches this channel.
     pub fn id(&self) -> &ChannelId {
-        &self.declaration.channel_id
+        &self.id
     }
 
     /// Wait for a one-time decision from an attached view of this room and
@@ -94,8 +87,12 @@ impl ConversationChannel {
         event: &ToolCallEvent,
         request: PermissionRequest,
     ) -> Decision {
-        let call = Some(event.call.id.to_string());
-        let (room, agent) = (event.room_id.as_str(), event.channel_id.as_str());
+        // A call outside a room has no view to ask.
+        let Some(room) = &event.room_id else {
+            return Decision::Deny;
+        };
+        let call = Some(event.tool_call_id.clone());
+        let (room, agent) = (room.as_str(), event.channel_id.as_str());
         self.ask(room, agent, request, call, None).await
     }
 
@@ -131,11 +128,7 @@ impl ConversationChannel {
     }
 
     pub(crate) fn streams(&self) -> bool {
-        self.declaration.supports_streaming_delivery
-    }
-
-    pub(crate) fn declared(&self) -> &ChannelDeclaration {
-        &self.declaration
+        self.streaming
     }
 
     pub(crate) fn publish(&self, room: &str, event: Event) {

@@ -20,27 +20,31 @@ async fn interruption_cancels_a_pending_permission_and_the_next_turn_still_runs(
     let calls = Arc::new(AtomicUsize::new(0));
     let channel = prepare(&kit, provider, calls.clone(), false).await;
     let gate = channel.clone();
-    kit.before_tool_use(roomkit::ToolHookSpec::new("permission"), move |event, _| {
-        let gate = gate.clone();
-        async move {
-            let decision = gate
-                .ask_permission(
-                    &event.room_id,
-                    &event.channel_id,
-                    PermissionRequest::new(
-                        "Read record?",
-                        "Read a fictional record.",
-                        Duration::from_secs(60),
-                    ),
-                )
-                .await;
-            Ok(if decision == Decision::Allow {
-                roomkit::ToolUse::Allow
-            } else {
-                roomkit::ToolUse::block("Denied")
-            })
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |event: roomkit::ToolCallEvent, _| {
+            let gate = gate.clone();
+            async move {
+                let decision = gate
+                    .ask_permission(
+                        event.room_id.as_ref().unwrap(),
+                        &event.channel_id,
+                        PermissionRequest::new(
+                            "Read record?",
+                            "Read a fictional record.",
+                            Duration::from_secs(60),
+                        ),
+                    )
+                    .await;
+                Ok(if decision == Decision::Allow {
+                    roomkit::model::HookResult::allow(Default::default())
+                } else {
+                    roomkit::model::HookResult::block("Denied", Default::default())
+                })
+            }
+        },
+        hook_options("permission"),
+    )
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(128).unwrap());
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
@@ -157,7 +161,9 @@ async fn verify_decision_history(linked: bool) {
         uuid::Uuid::new_v4()
     ));
     let kit = RoomKit::new(RoomKitOptions::with_store(
-        roomkit_sqlite::SqliteStore::open(&file).await.unwrap(),
+        roomkit_sqlite::SqliteStore::new(roomkit_sqlite::SqliteStoreOptions {
+            path: std::path::PathBuf::from(&file),
+        }),
     ));
     let provider = ScriptedProvider::new([
         ScriptedRound::calling(
@@ -176,31 +182,35 @@ async fn verify_decision_history(linked: bool) {
     let calls = Arc::new(AtomicUsize::new(0));
     let channel = prepare(&kit, provider.clone(), calls.clone(), false).await;
     let gate = channel.clone();
-    kit.before_tool_use(roomkit::ToolHookSpec::new("permission"), move |event, _| {
-        let gate = gate.clone();
-        async move {
-            if event.call.id.as_str() == "automatic" {
-                return Ok(roomkit::ToolUse::Allow);
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |event: roomkit::ToolCallEvent, _| {
+            let gate = gate.clone();
+            async move {
+                if event.tool_call_id.as_str() == "automatic" {
+                    return Ok(roomkit::model::HookResult::allow(Default::default()));
+                }
+                let request = PermissionRequest::new(
+                    "Read record?",
+                    "Private audit detail",
+                    Duration::from_secs(30),
+                )
+                .with_summary("Private audit summary");
+                let decision = if linked {
+                    gate.ask_tool_permission(&event, request).await
+                } else {
+                    gate.ask_permission(event.room_id.as_ref().unwrap(), &event.channel_id, request)
+                        .await
+                };
+                Ok(if decision == Decision::Allow {
+                    roomkit::model::HookResult::allow(Default::default())
+                } else {
+                    roomkit::model::HookResult::block("Denied", Default::default())
+                })
             }
-            let request = PermissionRequest::new(
-                "Read record?",
-                "Private audit detail",
-                Duration::from_secs(30),
-            )
-            .with_summary("Private audit summary");
-            let decision = if linked {
-                gate.ask_tool_permission(&event, request).await
-            } else {
-                gate.ask_permission(&event.room_id, &event.channel_id, request)
-                    .await
-            };
-            Ok(if decision == Decision::Allow {
-                roomkit::ToolUse::Allow
-            } else {
-                roomkit::ToolUse::block("Denied")
-            })
-        }
-    })
+        },
+        hook_options("permission"),
+    )
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(128).unwrap());
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
@@ -291,12 +301,21 @@ async fn verify_decision_history(linked: bool) {
     kit.close().await.unwrap();
     drop(kit);
     let kit = RoomKit::new(RoomKitOptions::with_store(
-        roomkit_sqlite::SqliteStore::open(&file).await.unwrap(),
+        roomkit_sqlite::SqliteStore::new(roomkit_sqlite::SqliteStoreOptions {
+            path: std::path::PathBuf::from(&file),
+        }),
     ));
     let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
     kit.register_channel(channel.clone()).unwrap();
-    kit.register_channel(AiAgent::new(config().agent, ScriptedProvider::default()))
-        .unwrap();
+    kit.register_channel(
+        AiChannel::new(
+            config().agent,
+            ScriptedProvider::default(),
+            AiChannelOptions::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let snapshot = LocalSession::new(kit.clone(), channel, config())
         .snapshot()
         .await

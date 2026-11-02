@@ -241,13 +241,17 @@ async fn host_work_keeps_its_approvals_while_another_channel_turn_runs() {
         .await
         .unwrap();
     let (open, gate) = watch::channel(false);
-    kit.before_tool_use(roomkit::ToolHookSpec::new("hold"), move |_, _| {
-        let mut gate = gate.clone();
-        async move {
-            let _ = gate.wait_for(|open| *open).await;
-            Ok(roomkit::ToolUse::Allow)
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |_: roomkit::ToolCallEvent, _| {
+            let mut gate = gate.clone();
+            async move {
+                let _ = gate.wait_for(|open| *open).await;
+                Ok(roomkit::model::HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("hold"),
+    )
     .unwrap();
     let (alice, alice_task) = attach(&kit, &channel, "alice").await;
     let (bob, bob_task) = attach(&kit, &channel, "bob").await;

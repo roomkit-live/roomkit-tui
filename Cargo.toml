@@ -14,10 +14,11 @@ publish = false
 roomkit-tui-transport = { path = "crates/roomkit-tui-transport", version = "0.1.0" }
 roomkit-tui-engine = { path = "crates/roomkit-tui-engine", version = "0.1.0" }
 # One validated main commit for all engine crates; never depend on a sibling checkout.
-roomkit = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "e5ced400061a8558f9b59dbadbf16f9cbac97ba3" }
-roomkit-ai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "e5ced400061a8558f9b59dbadbf16f9cbac97ba3" }
-roomkit-openai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "e5ced400061a8558f9b59dbadbf16f9cbac97ba3" }
-roomkit-sqlite = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "e5ced400061a8558f9b59dbadbf16f9cbac97ba3" }
+roomkit = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "93e757c0e59c85642d32cffd13c4020746ba0047" }
+roomkit-core = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "93e757c0e59c85642d32cffd13c4020746ba0047" }
+roomkit-ai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "93e757c0e59c85642d32cffd13c4020746ba0047" }
+roomkit-openai = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "93e757c0e59c85642d32cffd13c4020746ba0047" }
+roomkit-sqlite = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "93e757c0e59c85642d32cffd13c4020746ba0047" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }

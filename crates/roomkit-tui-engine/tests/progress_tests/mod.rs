@@ -29,19 +29,24 @@ async fn round(decision: Option<Decision>) -> Vec<Seen> {
     ]);
     let channel = prepare(&kit, provider, Arc::new(AtomicUsize::new(0)), false).await;
     let gate = channel.clone();
-    kit.before_tool_use(roomkit::ToolHookSpec::new("permission"), move |event, _| {
-        let gate = gate.clone();
-        async move {
-            if decision.is_none() || event.call.id.as_str() != "ask" {
-                return Ok(roomkit::ToolUse::Allow);
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |event: roomkit::ToolCallEvent, _| {
+            let gate = gate.clone();
+            async move {
+                if decision.is_none() || event.tool_call_id.as_str() != "ask" {
+                    return Ok(roomkit::model::HookResult::allow(Default::default()));
+                }
+                let request =
+                    PermissionRequest::new("Read?", "Read a record", Duration::from_secs(30));
+                Ok(match gate.ask_tool_permission(&event, request).await {
+                    Decision::Allow => roomkit::model::HookResult::allow(Default::default()),
+                    _ => roomkit::model::HookResult::block("Denied", Default::default()),
+                })
             }
-            let request = PermissionRequest::new("Read?", "Read a record", Duration::from_secs(30));
-            Ok(match gate.ask_tool_permission(&event, request).await {
-                Decision::Allow => roomkit::ToolUse::Allow,
-                _ => roomkit::ToolUse::block("Denied"),
-            })
-        }
-    })
+        },
+        hook_options("permission"),
+    )
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(128).unwrap());
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));

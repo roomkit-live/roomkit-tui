@@ -88,7 +88,8 @@ controls available.
 The host owns resource shutdown, authorization and operation deduplication; neither
 view detachment nor dropping the adapter cancels this application-owned work.
 
-For streaming channels, a host's `before_tool_use` hook can await
+For streaming channels, a host's `BEFORE_TOOL_USE` hook, registered with
+`kit.hook(HookTrigger::BeforeToolUse, ..)`, can await
 `ConversationChannel::ask_tool_permission(&event, request)` with the hook's
 `ToolCallEvent` before allowing the concrete action:
 
@@ -154,9 +155,9 @@ start two operations in one room, and it keeps forwarding events while it awaits
 the application's command handler. Before closing the engine, an application
 can await `ConversationChannel::idle` so the current turn settles and stores its
 decisions. `SessionConfig.model` must name the provider the engine reports in
-its usage metadata (`openai` for `roomkit-openai`); otherwise context and token
-usage are not shown. Use `ConversationChannel::buffered` for rooms whose output
-hooks must review an answer before it is displayed.
+its usage metadata (`OpenAIAIProvider` for `roomkit-openai`); otherwise context
+and token usage are not shown. Use `ConversationChannel::buffered` for rooms
+whose output hooks must review an answer before it is displayed.
 
 The API is unpublished and may change before 1.0. Engine dependencies use one
 pinned revision from `roomkit-rs/main`; no adjacent checkout is required.
@@ -173,7 +174,7 @@ incomplete. Neither figure compacts or changes the model's context.
 
 Snapshots restore only the latest applicable visible message's measurements.
 New runs and model changes clear old measurements. Hosts configuring OpenAI
-use the provider identity `openai`, matching the engine's attribution.
+use the provider identity `OpenAIAIProvider`, matching the engine's attribution.
 
 
 `CommandHandler` also receives `SubmitForm` for advertised commands, with the

@@ -198,8 +198,8 @@ terminal??;
 ```
 
 To show context and token usage, describe the agent's model with the provider
-name your engine reports, for example `openai` for `roomkit-openai`:
-`config.model = Some(ModelInfo::new("openai", "gpt-4.1"))`.
+name your engine reports, for example `OpenAIAIProvider` for `roomkit-openai`:
+`config.model = Some(ModelInfo::new("OpenAIAIProvider", "gpt-4.1"))`.
 
 [`examples/src/engine/mod.rs`](examples/src/engine/mod.rs) is the complete,
 runnable version. The [adapter's README](crates/roomkit-tui-engine/README.md)
@@ -209,31 +209,41 @@ views of one room and usage measurements.
 ### Ask for approval
 
 Tools run in your engine, so your engine decides which calls need a person.
-In a `before_tool_use` hook, ask the attached view and wait for the answer:
+In a `BEFORE_TOOL_USE` hook, ask the attached view and wait for the answer:
 
 ```rust
 use std::time::Duration;
 
-use roomkit::{ToolHookSpec, ToolUse};
+use roomkit::model::HookResult;
+use roomkit::{HookOptions, HookTrigger, ToolCallEvent};
 use roomkit_tui_engine::PermissionRequest;
 use roomkit_tui::protocol::Decision;
 
 let views = channel.clone();
-kit.before_tool_use(ToolHookSpec::new("approval"), move |event, _| {
-    let views = views.clone();
-    async move {
-        let request = PermissionRequest::new(
-            "Delete the build directory?",
-            "rm -rf ./build",
-            Duration::from_secs(120),
-        )
-        .with_summary("Deleted the build directory");
-        Ok(match views.ask_tool_permission(&event, request).await {
-            Decision::Allow => ToolUse::Allow,
-            _ => ToolUse::block("Refused by the user"),
-        })
-    }
-})?;
+kit.hook(
+    HookTrigger::BeforeToolUse,
+    move |event: ToolCallEvent, _context| {
+        let views = views.clone();
+        async move {
+            let request = PermissionRequest::new(
+                "Delete the build directory?",
+                "rm -rf ./build",
+                Duration::from_secs(120),
+            )
+            .with_summary("Deleted the build directory");
+            Ok(match views.ask_tool_permission(&event, request).await {
+                Decision::Allow => HookResult::allow(Default::default()),
+                _ => HookResult::block("Refused by the user", Default::default()),
+            })
+        }
+    },
+    // A person may take longer than a hook's default 30 seconds.
+    HookOptions {
+        name: "approval".to_owned(),
+        timeout: Duration::from_secs(300),
+        ..Default::default()
+    },
+)?;
 ```
 
 No view, a timeout, an interruption or a refusal all block the call.

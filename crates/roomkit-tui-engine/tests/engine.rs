@@ -9,7 +9,7 @@
 use roomkit::model::{ChannelId, RoomId};
 use roomkit::{ConversationStore, CreateRoomOptions, GetTimelineOptions, RoomKit, RoomKitOptions};
 use roomkit_ai::testing::{ScriptedProvider, ScriptedRound};
-use roomkit_ai::{AiAgent, ToolDefinition, ToolOutput, Tools};
+use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
 use roomkit_tui_engine::{
     AdapterError, ConversationChannel, LocalSession, PermissionRequest, SessionConfig,
 };
@@ -43,6 +43,15 @@ fn config() -> SessionConfig {
     )
 }
 
+/// A hook named `name`, allowed long enough for a person to decide.
+fn hook_options(name: &str) -> roomkit::HookOptions {
+    roomkit::HookOptions {
+        name: name.to_owned(),
+        timeout: Duration::from_secs(300),
+        ..Default::default()
+    }
+}
+
 async fn prepare<S: ConversationStore>(
     kit: &RoomKit<S>,
     provider: impl roomkit_ai::AiProvider,
@@ -60,28 +69,27 @@ async fn prepare_as<S: ConversationStore>(
     calls: Arc<AtomicUsize>,
     buffered: bool,
 ) -> ConversationChannel {
-    let tools = Tools::new().tool(
-        ToolDefinition::new(
-            "lookup_record",
-            "Read a fictional record",
-            json!({"type":"object","properties":{},"additionalProperties":false}),
-        ),
-        move |call, _| {
-            assert!(
-                call.arguments.is_empty(),
-                "Only business arguments reach the handler"
-            );
-            calls.fetch_add(1, Ordering::SeqCst);
-            async { Ok(ToolOutput::Json(json!({"record":"42","status":"ready"}))) }
-        },
-    );
-    kit.register_channel(
-        AiAgent::new(agent.clone(), provider)
-            .with_tool_call_intents(true)
-            .with_tools(tools)
-            .unwrap(),
-    )
-    .unwrap();
+    let lookup = AiTool {
+        name: "lookup_record".to_owned(),
+        description: "Read a fictional record".to_owned(),
+        parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
+    };
+    let handler = ToolHandler::new(move |_, arguments| {
+        assert!(
+            arguments.is_empty(),
+            "Only business arguments reach the handler"
+        );
+        calls.fetch_add(1, Ordering::SeqCst);
+        async { Ok(ToolResult::Json(json!({"record":"42","status":"ready"}))) }
+    });
+    let options = AiChannelOptions {
+        tools: vec![ToolEntry::Definition(lookup)],
+        tool_handler: Some(handler),
+        tool_call_intents: true,
+        ..Default::default()
+    };
+    kit.register_channel(AiChannel::new(agent.clone(), provider, options).unwrap())
+        .unwrap();
     let channel = if buffered {
         ConversationChannel::buffered(ChannelId::new("console").unwrap())
     } else {
@@ -166,16 +174,27 @@ fn assert_operation(events: &[Event], operation: &str, outcome: RunOutcome) {
 
 struct NamedProvider(ScriptedProvider);
 impl roomkit_ai::AiProvider for NamedProvider {
-    fn name(&self) -> Option<&str> {
-        Some("local")
+    fn name(&self) -> &str {
+        "local"
     }
-    fn model(&self) -> Option<&str> {
-        Some("fixture")
+    fn model_name(&self) -> &str {
+        "fixture"
+    }
+    fn supports_structured_streaming(&self) -> bool {
+        self.0.supports_structured_streaming()
     }
     fn generate<'a>(
         &'a self,
-        request: &'a roomkit_ai::AiRequest,
+        context: &'a roomkit_ai::AiContext,
+    ) -> impl std::future::Future<Output = Result<roomkit_ai::AiResponse, roomkit_ai::ProviderError>>
+    + Send
+    + 'a {
+        self.0.generate(context)
+    }
+    fn generate_structured_stream<'a>(
+        &'a self,
+        context: &'a roomkit_ai::AiContext,
     ) -> roomkit_ai::ProviderStream<'a> {
-        roomkit_ai::AiProvider::generate(&self.0, request)
+        self.0.generate_structured_stream(context)
     }
 }

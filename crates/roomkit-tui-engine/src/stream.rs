@@ -1,15 +1,33 @@
 //! Engine deliveries to the channel: committed rows, or a streamed answer
 //! with its drafts, finalized messages and run boundaries.
 
-use roomkit::model::{ChannelBinding, ChannelOutput, RoomContext, RoomEvent};
-use roomkit::{Channel, ChannelDeclaration, ChannelError, DeliveryStream, StreamItem};
+use roomkit::model::{
+    ChannelBinding, ChannelId, ChannelOutput, ChannelType, InboundMessage, RoomContext, RoomEvent,
+};
+use roomkit::{Channel, ChannelError, DeliveryStream, StreamItem, default_inbound_event};
 use roomkit_tui_protocol::{ActorId, Event, Item, MessageId, RunId, RunOutcome};
 
 use crate::{ConversationChannel, projection};
 
 impl Channel for ConversationChannel {
-    fn declaration(&self) -> ChannelDeclaration {
-        self.declared().clone()
+    fn channel_id(&self) -> ChannelId {
+        self.id().clone()
+    }
+
+    fn channel_type(&self) -> ChannelType {
+        ChannelType::WEBSOCKET
+    }
+
+    fn supports_streaming_delivery(&self) -> bool {
+        self.streams()
+    }
+
+    async fn handle_inbound(
+        &self,
+        message: InboundMessage,
+        context: RoomContext,
+    ) -> Result<RoomEvent, ChannelError> {
+        Ok(default_inbound_event(self, &message, &context))
     }
 
     async fn deliver(
@@ -25,17 +43,20 @@ impl Channel for ConversationChannel {
     async fn deliver_stream(
         &self,
         mut stream: DeliveryStream,
+        response: RoomEvent,
         binding: ChannelBinding,
         context: RoomContext,
     ) -> Result<ChannelOutput, ChannelError> {
         let room = binding.room_id.to_string();
-        let run = projection::run_id(stream.responder(), stream.answers());
+        // The response is RoomKit's placeholder: from the agent, answering
+        // the event that started the turn. It always names that event; its
+        // own id is only a fallback.
+        let responder = &response.source.channel_id;
+        let answers = response.responds_to.as_ref().unwrap_or(&response.id);
+        let run = projection::run_id(responder, answers);
         let active = self.activity.enter(&room);
         // The stream's trigger is already committed and visible to this channel.
-        let trigger = context
-            .recent_events
-            .iter()
-            .find(|r| &r.id == stream.answers());
+        let trigger = context.recent_events.iter().find(|r| &r.id == answers);
         if let Some(trigger) = trigger {
             self.row(trigger);
         }
@@ -48,7 +69,7 @@ impl Channel for ConversationChannel {
         // once the run exists, and a terminal clears its notice on RunStarted.
         self.publish(&room, started);
         let requester = trigger.and_then(|row| self.requester(row));
-        let agent = stream.responder().as_str().to_owned();
+        let agent = responder.as_str().to_owned();
         let approvals = self.approvals.start(&room, &agent, run.clone(), requester);
         let mut reader = Reader::new(self, &room, &run, agent.as_str().into());
         while let Some(next) = stream.next().await {

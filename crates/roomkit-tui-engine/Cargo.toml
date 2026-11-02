@@ -14,6 +14,7 @@ include = ["src/**", "Cargo.toml", "README.md", "LICENSE"]
 
 [dependencies]
 roomkit.workspace = true
+roomkit-core.workspace = true
 roomkit-tui-protocol.workspace = true
 roomkit-tui-transport.workspace = true
 tokio.workspace = true

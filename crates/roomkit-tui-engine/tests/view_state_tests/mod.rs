@@ -122,13 +122,17 @@ async fn a_rename_while_busy_is_published_at_once_and_kept_by_a_later_snapshot()
     let rounds = vec![ScriptedRound::answering("Done")];
     let channel = prepare(&kit, ScriptedProvider::new(rounds), Arc::default(), false).await;
     let (open, gate) = watch::channel(false);
-    kit.before_broadcast("hold", move |_, _| {
-        let mut gate = gate.clone();
-        async move {
-            let _ = gate.wait_for(|open| *open).await;
-            Ok(HookResult::allow(Default::default()))
-        }
-    })
+    kit.hook(
+        roomkit::HookTrigger::BeforeBroadcast,
+        move |_: roomkit::model::RoomEvent, _| {
+            let mut gate = gate.clone();
+            async move {
+                let _ = gate.wait_for(|open| *open).await;
+                Ok(HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("hold"),
+    )
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session = LocalSession::new(kit.clone(), channel, view());

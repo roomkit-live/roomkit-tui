@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The engine follows roomkit-rs 93e757c, whose channel, hook and AI APIs
+  follow Python's. Tool approvals are asked from a `BEFORE_TOOL_USE` hook
+  registered with `kit.hook`, and `roomkit-openai` reports its provider as
+  `OpenAIAIProvider`, the name a view's `ModelInfo` must carry for its
+  context and token usage to show.
+- `ConversationChannel::ask_tool_permission` refuses a call made outside a
+  room: no view can answer it.
+
 ## [0.1.0] - 2026-11-01
 
 Initial public release.
