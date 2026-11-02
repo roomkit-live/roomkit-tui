@@ -2,7 +2,10 @@
 
 use super::*;
 use roomkit::model::{HookResult, RoomEvent};
-use roomkit_tui_engine::{CommandExecution, CommandHandler, CommandResult};
+use roomkit_tui_engine::{
+    CommandExecution, CommandHandler, CommandResult, LifecycleFuture, SessionLifecycle, TurnOutcome,
+};
+use std::sync::Mutex;
 use tokio::sync::{Notify, watch};
 
 /// An agent that steers its room's turns, answering `rounds`, beside a
@@ -294,4 +297,92 @@ async fn a_message_during_host_work_is_busy() {
 
 async fn channel_idle(kit: &RoomKit) {
     kit.close().await.unwrap();
+}
+
+/// A host that admits only the first message it is asked about, and records
+/// the outcomes it is told.
+#[derive(Debug, Default)]
+struct AdmitsOnce {
+    asked: AtomicUsize,
+    finished: Mutex<Vec<TurnOutcome>>,
+}
+
+impl SessionLifecycle for AdmitsOnce {
+    fn admit<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        _: &'a OperationId,
+        _: &'a roomkit::model::EventContent,
+    ) -> LifecycleFuture<'a, Result<(), Rejection>> {
+        let first = self.asked.fetch_add(1, Ordering::SeqCst) == 0;
+        Box::pin(async move {
+            if first {
+                Ok(())
+            } else {
+                Err(Rejection::refused("Messages are paused for this room"))
+            }
+        })
+    }
+
+    fn finished<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        _: &'a OperationId,
+        outcome: TurnOutcome,
+    ) -> LifecycleFuture<'a, ()> {
+        self.finished.lock().unwrap().push(outcome);
+        Box::pin(async {})
+    }
+}
+
+/// The security review of 5374eb1: a message for the running turn skipped
+/// the host's admission, which every message passes before entering the
+/// room's history.
+#[tokio::test]
+async fn a_message_for_the_running_turn_passes_the_host_s_admission() {
+    let kit = RoomKit::new(Default::default());
+    let rounds = vec![
+        ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
+        ScriptedRound::answering("Done"),
+    ];
+    let (channel, provider) = steering_room(&kit, rounds).await;
+    let (open, gate) = watch::channel(false);
+    let entered = Arc::new(Notify::new());
+    hold_tools(&kit, gate, entered.clone());
+    let lifecycle = Arc::new(AdmitsOnce::default());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session =
+        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+    let task = tokio::spawn(session.run(host));
+    next(&client).await;
+    client
+        .try_send(submit(1, "one", "Look up record 42"))
+        .unwrap();
+    entered.notified().await;
+    client.try_send(submit(2, "two", "Paused words")).unwrap();
+    let refusal = loop {
+        match next(&client).await {
+            Event::Notice { text, .. } => break text,
+            Event::MessageSteered { .. } => panic!("A refused message was handed over"),
+            _ => {}
+        }
+    };
+    assert!(refusal.contains("Messages are paused"), "{refusal}");
+    open.send_replace(true);
+    collect_operation(&client).await;
+    assert!(!asked_with(&provider, 1, "Paused words"));
+    let rows = kit
+        .get_timeline(&config().room, GetTimelineOptions::default())
+        .await
+        .unwrap();
+    assert!(
+        !rows
+            .iter()
+            .any(|row| roomkit_core::rules::transcoding::text_of(&row.content) == "Paused words"),
+        "A refused message never enters the history"
+    );
+    assert_eq!(lifecycle.asked.load(Ordering::SeqCst), 2);
+    drop(client);
+    task.await.unwrap().unwrap();
+    channel_idle(&kit).await;
 }

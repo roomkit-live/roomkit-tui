@@ -4,24 +4,22 @@
 //! a turn of its own after. Either way no second turn runs beside the first,
 //! and the view starts no operation of its own.
 
-use roomkit::model::{InboundMessage, TextContent};
+use std::sync::Arc;
+
+use roomkit::model::{EventContent, InboundMessage, TextContent};
 use roomkit::{ConversationStore, InboundResult, ProcessInboundOptions, RoomKit};
-use roomkit_tui_protocol::{Command, Event, MessageId, Request};
+use roomkit_tui_protocol::{Command, Event, MessageId, OperationId, Rejection, Request};
 
 use super::serve::View;
 use super::{AdapterError, CommandHandler, SessionConfig};
-use crate::ConversationChannel;
+use crate::{ConversationChannel, SessionLifecycle, TurnOutcome};
 
 impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
-    /// Whether `request`, refused a reservation because the room is busy,
-    /// may go to the agent's running turn: a message, for an agent that
-    /// steers its room's turns, while no work of the application's holds
-    /// the room.
+    /// Whether `request`, refused a reservation because a turn holds the
+    /// room, may go to that turn: a message, for an agent that steers its
+    /// room's turns.
     pub(super) fn steers(&self, request: &Request) -> bool {
-        let config = &self.session.config;
-        matches!(request.command, Command::Submit { .. })
-            && config.can_steer
-            && !self.session.channel.hosting(config.conversation())
+        matches!(request.command, Command::Submit { .. }) && self.session.config.can_steer
     }
 
     /// Accept the validated message and hand it to the room's running turn.
@@ -34,7 +32,8 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
             kit: self.session.kit.clone(),
             channel: self.session.channel.clone(),
             config: self.session.config.clone(),
-            operation: request.operation.to_string(),
+            lifecycle: self.session.lifecycle.clone(),
+            operation: request.operation.clone(),
         };
         tokio::spawn(steer.run(text.clone()));
         Ok(())
@@ -45,19 +44,53 @@ struct Steer<S: ConversationStore> {
     kit: RoomKit<S>,
     channel: ConversationChannel,
     config: SessionConfig,
-    operation: String,
+    lifecycle: Option<Arc<dyn SessionLifecycle>>,
+    operation: OperationId,
 }
 
 impl<S: ConversationStore> Steer<S> {
+    /// Admit the message as the host admits every message, deliver it, and
+    /// tell the host how it ended. It starts no turn: no `started`.
     async fn run(self, text: String) {
-        let room = self.config.conversation();
         // `idle` waits for the message's delivery, its own turn included.
-        let _active = self.channel.activity.enter(room);
+        let _active = self.channel.activity.enter(self.config.conversation());
+        let content = EventContent::from(TextContent::new(text));
+        let outcome = match self.admit(&content).await {
+            Ok(()) => self.deliver(content).await,
+            Err(refusal) => {
+                self.notice(&refusal.message);
+                TurnOutcome::Blocked
+            }
+        };
+        if let Some(lifecycle) = &self.lifecycle {
+            lifecycle
+                .finished(&self.config, &self.operation, outcome)
+                .await;
+        }
+    }
+
+    async fn admit(&self, content: &EventContent) -> Result<(), Rejection> {
+        match &self.lifecycle {
+            Some(lifecycle) => {
+                lifecycle
+                    .admit(&self.config, &self.operation, content)
+                    .await
+            }
+            None => Ok(()),
+        }
+    }
+
+    async fn deliver(&self, content: EventContent) -> TurnOutcome {
         let (channel, config) = (&self.channel, &self.config);
-        let mut message =
-            InboundMessage::new(channel.id().clone(), &config.sender, TextContent::new(text));
+        let room = config.conversation();
+        let mut message = InboundMessage::new(channel.id().clone(), &config.sender, content);
         message.addressed_to = Some(vec![config.agent.clone()]);
-        let key = [room, channel.id().as_str(), &config.sender, &self.operation];
+        let key = [
+            room,
+            channel.id().as_str(),
+            &config.sender,
+            self.operation.as_str(),
+        ];
         message.idempotency_key = Some(serde_json::json!(key).to_string());
         let options = ProcessInboundOptions {
             room_id: Some(config.room.clone()),
@@ -66,16 +99,19 @@ impl<S: ConversationStore> Steer<S> {
         };
         match self.kit.process_inbound(message, options).await {
             Ok(admitted) => self.settle(admitted).await,
-            Err(error) => self.notice(crate::diagnostics::explain(&error.to_string())),
+            Err(error) => {
+                self.notice(crate::diagnostics::explain(&error.to_string()));
+                TurnOutcome::Failed
+            }
         }
     }
 
     /// Show the committed message, say which run it went to, and report a
     /// delivery that failed.
-    async fn settle(&self, admitted: InboundResult) {
+    async fn settle(&self, admitted: InboundResult) -> TurnOutcome {
         if admitted.blocked {
             self.notice("The engine blocked this message. Check the room state and host policy.");
-            return;
+            return TurnOutcome::Blocked;
         }
         let room = self.config.conversation();
         if let Some(row) = &admitted.event {
@@ -94,14 +130,18 @@ impl<S: ConversationStore> Steer<S> {
             }
         }
         let Some(delivery) = admitted.delivery else {
-            return;
+            return TurnOutcome::Completed;
         };
         let failure = match delivery.wait().await {
             Ok(done) => done.error.map(|error| error.message),
             Err(error) => Some(error.to_string()),
         };
-        if let Some(failure) = failure {
-            self.notice(crate::diagnostics::explain(&failure));
+        match failure {
+            Some(failure) => {
+                self.notice(crate::diagnostics::explain(&failure));
+                TurnOutcome::Failed
+            }
+            None => TurnOutcome::Completed,
         }
     }
 

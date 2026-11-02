@@ -140,16 +140,20 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         if let Err(error) = super::turn::validate(&request, &self.session.config) {
             return self.reply(&request, Some(error)).map(|()| None);
         }
-        let Some(reserved) = self
+        let reserved = match self
             .session
             .channel
             .reserve(self.session.config.conversation(), Work::Turn)
-        else {
-            if self.steers(&request) {
+        {
+            Ok(reserved) => reserved,
+            // A turn holds the room: the message may go to it.
+            Err(held) if !held.hosting && self.steers(&request) => {
                 return self.steer(&request).map(|()| None);
             }
-            let error = Rejection::busy("A request is still executing");
-            return self.reply(&request, Some(error)).map(|()| None);
+            Err(_) => {
+                let error = Rejection::busy("A request is still executing");
+                return self.reply(&request, Some(error)).map(|()| None);
+            }
         };
         let message = match &request.command {
             Command::SubmitImages { message, .. } => message.clone(),
@@ -233,7 +237,7 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         if let Some(error) = execution.refusal(last.as_ref()) {
             return self.reply(&request, Some(error)).map(|()| None);
         }
-        let Some(reserved) = self.session.channel.reserve(room, Work::Host) else {
+        let Ok(reserved) = self.session.channel.reserve(room, Work::Host) else {
             let error = Rejection::busy("Cannot start another execution while busy");
             return self.reply(&request, Some(error)).map(|()| None);
         };

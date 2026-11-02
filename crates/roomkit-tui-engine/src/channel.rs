@@ -5,7 +5,7 @@ use roomkit::model::{ChannelId, RoomEvent, RoomId};
 use roomkit_tui_protocol::{Decision, Event, Item, RunId};
 use tokio::sync::broadcast;
 
-use crate::activity::{Active, Activity, Stopping, Work};
+use crate::activity::{Active, Activity, Held, Stopping, Work};
 use crate::approvals::{Approvals, Details};
 use crate::{PermissionRequest, projection};
 
@@ -149,13 +149,8 @@ impl ConversationChannel {
         self.activity.busy(room)
     }
 
-    pub(crate) fn reserve(&self, room: &str, work: Work) -> Option<Active> {
+    pub(crate) fn reserve(&self, room: &str, work: Work) -> Result<Active, Held> {
         self.activity.reserve(room, work)
-    }
-
-    /// Whether the application's own work holds `room`.
-    pub(crate) fn hosting(&self, room: &str) -> bool {
-        self.activity.hosting(room)
     }
 
     /// Publish a committed row: measurements, then its item. A cancelled

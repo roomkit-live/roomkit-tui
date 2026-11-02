@@ -63,8 +63,9 @@ The conversation stays busy throughout admission and finalization; wait for
 An agent registered with `AiChannelOptions::steer_room_turns` takes a message
 sent while its turn runs. Set `SessionConfig::can_steer` for it, and only for
 it: another agent's turns would run side by side. A message submitted while
-the room is busy with a turn is then committed at once, without an operation
-of its own, and RoomKit hands it to the running turn, which reads it at its
+the room is busy with a turn passes the host's `SessionLifecycle::admit`, is
+committed at once, without an operation of its own (and without `started`),
+and RoomKit hands it to the running turn, which reads it at its
 next step; `Event::MessageSteered` names that turn's run. When the turn no
 longer reads its queue, the message waits a turn of its own, whose
 `RunStarted` names it in `answers`. While application work started by a

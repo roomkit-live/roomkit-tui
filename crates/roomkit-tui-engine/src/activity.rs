@@ -1,7 +1,7 @@
 //! Which rooms are executing. A view reserves a room atomically before it
 //! starts work there, so two views can never start two operations at once.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use roomkit_tui_protocol::{MessageId, RunId, RunOutcome};
@@ -16,12 +16,25 @@ pub(crate) enum Work {
     Host,
 }
 
+/// A room's active work: how many operations and deliveries, and whether
+/// its reservation is the application's own work.
+#[derive(Debug, Default)]
+struct Room {
+    count: usize,
+    hosting: bool,
+}
+
+/// Why a room could not be reserved: work is active there, and whether the
+/// application's own work holds it, as seen when the reservation was refused.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Held {
+    pub hosting: bool,
+}
+
 /// Active operations and deliveries per room, plus their total for waiters.
 #[derive(Clone, Debug)]
 pub(crate) struct Activity {
-    rooms: Arc<Mutex<BTreeMap<String, usize>>>,
-    /// Rooms whose reservation is the application's own work.
-    hosting: Arc<Mutex<BTreeSet<String>>>,
+    rooms: Arc<Mutex<BTreeMap<String, Room>>>,
     total: watch::Sender<usize>,
 }
 
@@ -29,7 +42,6 @@ impl Default for Activity {
     fn default() -> Self {
         Self {
             rooms: Arc::default(),
-            hosting: Arc::default(),
             total: watch::channel(0).0,
         }
     }
@@ -40,36 +52,35 @@ impl Activity {
         self.lock().contains_key(room)
     }
 
-    /// Reserve an idle room for `work`; `None` when anything is active there.
-    pub fn reserve(&self, room: &str, work: Work) -> Option<Active> {
+    /// Reserve an idle room for `work`; refused, with what holds it, when
+    /// anything is active there. Both are decided under one lock.
+    pub fn reserve(&self, room: &str, work: Work) -> Result<Active, Held> {
         let mut rooms = self.lock();
-        if rooms.contains_key(room) {
-            return None;
+        if let Some(held) = rooms.get(room) {
+            return Err(Held {
+                hosting: held.hosting,
+            });
         }
-        rooms.insert(room.to_owned(), 1);
+        let hosting = work == Work::Host;
+        rooms.insert(room.to_owned(), Room { count: 1, hosting });
         self.total.send_modify(|total| *total += 1);
         drop(rooms);
-        let hosting = work == Work::Host;
-        if hosting {
-            self.hosts().insert(room.to_owned());
-        }
-        Some(Active {
+        Ok(Active {
             activity: self.clone(),
             room: room.to_owned(),
             hosting,
         })
     }
 
-    /// Whether the application's own work holds `room`.
-    pub fn hosting(&self, room: &str) -> bool {
-        self.hosts().contains(room)
-    }
-
     /// Mark engine-owned work active, whatever else runs in the room.
     pub fn enter(&self, room: &str) -> Active {
-        *self.lock().entry(room.to_owned()).or_default() += 1;
+        self.lock().entry(room.to_owned()).or_default().count += 1;
         self.total.send_modify(|total| *total += 1);
-        self.active(room)
+        Active {
+            activity: self.clone(),
+            room: room.to_owned(),
+            hosting: false,
+        }
     }
 
     /// Wait until nothing is active in any room.
@@ -79,20 +90,8 @@ impl Activity {
         let _ = total.wait_for(|total| *total == 0).await;
     }
 
-    fn active(&self, room: &str) -> Active {
-        Active {
-            activity: self.clone(),
-            room: room.to_owned(),
-            hosting: false,
-        }
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, usize>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, Room>> {
         self.rooms.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn hosts(&self) -> std::sync::MutexGuard<'_, BTreeSet<String>> {
-        self.hosting.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -107,13 +106,13 @@ pub(crate) struct Active {
 
 impl Drop for Active {
     fn drop(&mut self) {
-        if self.hosting {
-            self.activity.hosts().remove(&self.room);
-        }
         let mut rooms = self.activity.lock();
-        if let Some(count) = rooms.get_mut(&self.room) {
-            *count -= 1;
-            if *count == 0 {
+        if let Some(held) = rooms.get_mut(&self.room) {
+            held.count -= 1;
+            if self.hosting {
+                held.hosting = false;
+            }
+            if held.count == 0 {
                 rooms.remove(&self.room);
             }
         }
@@ -221,19 +220,22 @@ mod tests {
     async fn a_room_is_reserved_once_and_idle_waits_for_every_release() {
         let activity = Activity::default();
         let first = activity.reserve("room", Work::Host).expect("an idle room");
-        assert!(
-            activity.reserve("room", Work::Turn).is_none(),
-            "One reservation at a time"
-        );
-        assert!(activity.hosting("room"));
+        let held = activity.reserve("room", Work::Turn);
+        assert!(held.expect_err("One reservation at a time").hosting);
         let stream = activity.enter("room");
         let other = activity
             .reserve("other", Work::Turn)
             .expect("rooms are independent");
-        assert!(!activity.hosting("other"));
+        assert!(
+            !activity
+                .reserve("other", Work::Turn)
+                .expect_err("held")
+                .hosting
+        );
         drop(first);
-        assert!(!activity.hosting("room"), "The host work ended");
-        assert!(activity.busy("room"), "The delivery still runs");
+        let held = activity.reserve("room", Work::Turn);
+        let held = held.expect_err("The delivery still runs");
+        assert!(!held.hosting, "The host work ended");
         drop((stream, other));
         assert!(!activity.busy("room"));
         tokio::time::timeout(std::time::Duration::from_secs(1), activity.idle())
