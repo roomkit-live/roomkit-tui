@@ -49,20 +49,41 @@ impl Session {
         {
             return;
         }
-        if self.steered.len() >= MAX_STEERED {
-            self.steered.remove(0);
-        }
-        self.steered.push((message, Steering::Handed));
+        // Its own turn may have started before the host said where it went.
+        let steering = if self.answered.contains(&message) {
+            Steering::OwnTurn
+        } else {
+            Steering::Handed
+        };
+        remember(&mut self.steered, (message, steering));
     }
 
     /// A run started for `message`: if it was handed to a turn, that turn
     /// did not read it.
     pub(super) fn on_answered(&mut self, conversation: &ConversationId, message: &MessageId) {
-        if !self.is_current(conversation) {
+        if !self.is_current(conversation) || message.as_str().len() > MAX_LABEL_BYTES {
             return;
         }
-        if let Some((_, steering)) = self.steered.iter_mut().find(|(id, _)| id == message) {
-            *steering = Steering::OwnTurn;
+        match self.steered.iter_mut().find(|(id, _)| id == message) {
+            Some((_, steering)) => *steering = Steering::OwnTurn,
+            None if !self.answered.contains(message) => {
+                remember(&mut self.answered, message.clone());
+            }
+            None => {}
         }
     }
+
+    /// Forget where messages went, as a conversation switch does.
+    pub(super) fn forget_steering(&mut self) {
+        self.steered.clear();
+        self.answered.clear();
+    }
+}
+
+/// Keep `entry`, forgetting the oldest beyond the bound.
+fn remember<T>(entries: &mut Vec<T>, entry: T) {
+    if entries.len() >= MAX_STEERED {
+        entries.remove(0);
+    }
+    entries.push(entry);
 }

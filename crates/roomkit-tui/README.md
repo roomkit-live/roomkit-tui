@@ -101,7 +101,8 @@ of a live run, or of the last run started, is ignored.
 
 A host that hands messages to the running turn sets `Snapshot::can_steer`.
 The composer then sends a message while a run is live instead of refusing it
-as busy; images still wait. `Session::steering` tells where a message went:
+as busy, unless an interruption is pending; images still wait, and the host
+may still refuse it as busy. `Session::steering` tells where a message went:
 `Steering::Handed` after `Event::MessageSteered`, then `Steering::OwnTurn`
 once a `RunStarted` names it in `answers`, because the turn no longer read
 it. The timeline shows it under the message, and a replayed hand-over never

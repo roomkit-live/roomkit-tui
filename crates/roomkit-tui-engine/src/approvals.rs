@@ -241,11 +241,38 @@ impl Approvals {
         state.last_runs.insert(room.to_owned(), run.clone());
     }
 
-    /// The run started last, and not finished yet, in `(room, agent)`.
+    /// The run started last, not finished and not interrupted, in
+    /// `(room, agent)`.
     pub(crate) fn live_run(&self, room: &str, agent: &str) -> Option<RunId> {
         let scope: Scope = (room.into(), agent.into());
         let state = self.lock();
-        state.runs.get(&scope)?.last().map(|run| run.id.clone())
+        let runs = state.runs.get(&scope)?;
+        runs.iter()
+            .rev()
+            .find(|run| !run.stopped)
+            .map(|run| run.id.clone())
+    }
+
+    /// The person interrupted the turn `run` in `room`: it may ask nothing
+    /// more, and no message goes to it.
+    pub(crate) fn stop_turn(&self, room: &str, run: &RunId) {
+        let mut state = self.lock();
+        let starts: Vec<(Scope, u64)> = state
+            .runs
+            .iter()
+            .filter(|(scope, _)| scope.0 == room)
+            .flat_map(|(scope, runs)| {
+                runs.iter()
+                    .filter(|record| &record.id == run)
+                    .map(|record| (scope.clone(), record.token))
+            })
+            .collect();
+        for (scope, token) in starts {
+            if let Some(record) = state.run_mut(&scope, token) {
+                record.stopped = true;
+            }
+            self.withdraw(&mut state, &scope, Some(token));
+        }
     }
 
     /// The last run announced in `room`, while a view watches it.

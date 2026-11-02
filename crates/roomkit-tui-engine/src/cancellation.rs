@@ -19,6 +19,11 @@ pub(crate) fn connection() -> (Control, Receiver) {
 }
 
 impl Control {
+    /// Whether the work it controls has ended.
+    pub fn is_closed(&self) -> bool {
+        self.0.is_closed()
+    }
+
     pub async fn interrupt(&self, run: RunId) -> Answer {
         let (answer, received) = oneshot::channel();
         self.0
@@ -75,6 +80,7 @@ pub(crate) async fn wait(
                     let guard = channel.stopping.register(room, &run);
                     if delivery.request_cancel() {
                         stopping = Some(guard);
+                        channel.approvals.stop_turn(room, &run);
                         Ok(())
                     } else {
                         // The stream may have ended, deferring its end, just

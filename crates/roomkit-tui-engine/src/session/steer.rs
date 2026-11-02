@@ -1,32 +1,61 @@
 //! A message sent while the agent's turn runs (RMK-1161). The agent steers
 //! its room's turns, so RoomKit hands the message to that turn, which reads
-//! it at its next step; when the turn no longer reads it, the message waits
-//! a turn of its own after. Either way no second turn runs beside the first,
-//! and the view starts no operation of its own.
+//! it at its next step. Should the turn no longer read its queue, the
+//! message waits a turn of its own after it, which this view can stop. Only
+//! a turn of this view's agent, streamed to this console and not being
+//! interrupted, takes a message this way; anything else in the room keeps
+//! the message busy, as before.
 
 use std::sync::Arc;
 
 use roomkit::model::{EventContent, InboundMessage, TextContent};
 use roomkit::{ConversationStore, InboundResult, ProcessInboundOptions, RoomKit};
-use roomkit_tui_protocol::{Command, Event, MessageId, OperationId, Rejection, Request};
+use roomkit_tui_protocol::{Command, Event, MessageId, OperationId, Rejection, Request, RunId};
 
 use super::serve::View;
 use super::{AdapterError, CommandHandler, SessionConfig};
-use crate::{ConversationChannel, SessionLifecycle, TurnOutcome};
+use crate::activity::Active;
+use crate::cancellation::{self, Receiver};
+use crate::execution::Interrupter;
+use crate::{ConversationChannel, SessionLifecycle, TurnOutcome, projection};
+
+/// The turns of steered messages this view can stop at once: each lasts
+/// until its message's delivery ends.
+const MAX_STEERING: usize = 16;
 
 impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
-    /// Whether `request`, refused a reservation because a turn holds the
-    /// room, may go to that turn: a message, for an agent that steers its
-    /// room's turns.
-    pub(super) fn steers(&self, request: &Request) -> bool {
-        matches!(request.command, Command::Submit { .. }) && self.session.config.can_steer
+    /// The turn `request` may go to, refused a reservation because a turn
+    /// holds the room: for a message to an agent that steers its room's
+    /// turns, that agent's run streamed to this console, unless it is being
+    /// interrupted.
+    pub(super) fn steering_target(&self, request: &Request) -> Option<RunId> {
+        let (channel, config) = (&self.session.channel, &self.session.config);
+        if !matches!(request.command, Command::Submit { .. }) || !config.can_steer {
+            return None;
+        }
+        let room = config.conversation();
+        let run = channel.approvals.live_run(room, config.agent.as_str())?;
+        // Being stopped, it reads nothing more.
+        (!channel.stopping.contains(room, &run)).then_some(run)
     }
 
-    /// Accept the validated message and hand it to the room's running turn.
-    pub(super) fn steer(&mut self, request: &Request) -> Result<(), AdapterError> {
+    /// Accept the validated message for the turn `run`.
+    pub(super) fn steer(&mut self, request: &Request, run: RunId) -> Result<(), AdapterError> {
         let Command::Submit { text, .. } = &request.command else {
             return Ok(());
         };
+        // Held before the reply: `idle` waits for the message from then on.
+        let active = self
+            .session
+            .channel
+            .activity
+            .enter(self.session.config.conversation());
+        let (control, controls) = cancellation::connection();
+        self.steering.retain(Interrupter::is_live);
+        if self.steering.len() >= MAX_STEERING {
+            self.steering.remove(0);
+        }
+        self.steering.push(Interrupter::Engine(control));
         self.reply(request, None)?;
         let steer = Steer {
             kit: self.session.kit.clone(),
@@ -34,6 +63,9 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
             config: self.session.config.clone(),
             lifecycle: self.session.lifecycle.clone(),
             operation: request.operation.clone(),
+            turn: run,
+            controls,
+            _active: active,
         };
         tokio::spawn(steer.run(text.clone()));
         Ok(())
@@ -46,14 +78,17 @@ struct Steer<S: ConversationStore> {
     config: SessionConfig,
     lifecycle: Option<Arc<dyn SessionLifecycle>>,
     operation: OperationId,
+    /// The turn the message is handed to.
+    turn: RunId,
+    /// Interruptions of the message's own turn, should it get one.
+    controls: Receiver,
+    _active: Active,
 }
 
 impl<S: ConversationStore> Steer<S> {
     /// Admit the message as the host admits every message, deliver it, and
     /// tell the host how it ended. It starts no turn: no `started`.
-    async fn run(self, text: String) {
-        // `idle` waits for the message's delivery, its own turn included.
-        let _active = self.channel.activity.enter(self.config.conversation());
+    async fn run(mut self, text: String) {
         let content = EventContent::from(TextContent::new(text));
         let outcome = match self.admit(&content).await {
             Ok(()) => self.deliver(content).await,
@@ -80,7 +115,7 @@ impl<S: ConversationStore> Steer<S> {
         }
     }
 
-    async fn deliver(&self, content: EventContent) -> TurnOutcome {
+    async fn deliver(&mut self, content: EventContent) -> TurnOutcome {
         let (channel, config) = (&self.channel, &self.config);
         let room = config.conversation();
         let mut message = InboundMessage::new(channel.id().clone(), &config.sender, content);
@@ -97,42 +132,48 @@ impl<S: ConversationStore> Steer<S> {
             organization_id: config.organization.clone(),
             defer_delivery: true,
         };
-        match self.kit.process_inbound(message, options).await {
+        let outcome = match self.kit.process_inbound(message, options).await {
             Ok(admitted) => self.settle(admitted).await,
             Err(error) => {
                 self.notice(crate::diagnostics::explain(&error.to_string()));
                 TurnOutcome::Failed
             }
+        };
+        // Decisions taken in the message's own turn are kept, as a turn's.
+        let stored = crate::approval_history::persist(&self.kit, &self.channel, &self.config);
+        if stored.await.is_err() {
+            self.notice("Decision accepted, but its history could not be saved. This does not change tool execution.");
         }
+        outcome
     }
 
-    /// Show the committed message, say which run it went to, and report a
-    /// delivery that failed.
-    async fn settle(&self, admitted: InboundResult) -> TurnOutcome {
+    /// Show the committed message, say which turn it went to, and wait for
+    /// its delivery, which a turn of its own may extend.
+    async fn settle(&mut self, admitted: InboundResult) -> TurnOutcome {
         if admitted.blocked {
             self.notice("The engine blocked this message. Check the room state and host policy.");
             return TurnOutcome::Blocked;
         }
+        let Some(row) = &admitted.event else {
+            return TurnOutcome::Completed;
+        };
+        self.channel.row(row);
         let room = self.config.conversation();
-        if let Some(row) = &admitted.event {
-            self.channel.row(row);
-            // The run under way is the agent's turn: no work of the
-            // application's held the room. Should that turn no longer read
-            // the message, its own turn's start names it.
-            let agent = self.config.agent.as_str();
-            if let Some(run) = self.channel.approvals.live_run(room, agent) {
-                let event = Event::MessageSteered {
-                    conversation: room.into(),
-                    message: MessageId::new(row.id.to_string()),
-                    run,
-                };
-                self.channel.publish(room, event);
-            }
-        }
+        let event = Event::MessageSteered {
+            conversation: room.into(),
+            message: MessageId::new(row.id.to_string()),
+            run: self.turn.clone(),
+        };
+        self.channel.publish(room, event);
         let Some(delivery) = admitted.delivery else {
             return TurnOutcome::Completed;
         };
-        let failure = match delivery.wait().await {
+        // The run a turn of its own would be, which Esc may stop.
+        let own = projection::run_id(&self.config.agent, &row.id);
+        let room = room.to_owned();
+        let (done, interrupted) =
+            cancellation::wait(delivery, own, &room, &self.channel, &mut self.controls).await;
+        let failure = match done {
             Ok(done) => done.error.map(|error| error.message),
             Err(error) => Some(error.to_string()),
         };
@@ -141,6 +182,7 @@ impl<S: ConversationStore> Steer<S> {
                 self.notice(crate::diagnostics::explain(&failure));
                 TurnOutcome::Failed
             }
+            None if interrupted => TurnOutcome::Interrupted,
             None => TurnOutcome::Completed,
         }
     }

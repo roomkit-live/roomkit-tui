@@ -62,14 +62,18 @@ The conversation stays busy throughout admission and finalization; wait for
 
 An agent registered with `AiChannelOptions::steer_room_turns` takes a message
 sent while its turn runs. Set `SessionConfig::can_steer` for it, and only for
-it: another agent's turns would run side by side. A message submitted while
-the room is busy with a turn passes the host's `SessionLifecycle::admit`, is
-committed at once, without an operation of its own (and without `started`),
-and RoomKit hands it to the running turn, which reads it at its
-next step; `Event::MessageSteered` names that turn's run. When the turn no
-longer reads its queue, the message waits a turn of its own, whose
-`RunStarted` names it in `answers`. While application work started by a
-command holds the room, a message is still refused as busy, as are images.
+it: another agent's turns would run side by side. The view then accepts a
+message while that agent's run streams to this console and is not being
+interrupted. The message passes the host's `SessionLifecycle::admit` and is
+committed at once, without an operation of its own and without `started`;
+RoomKit hands it to the running turn, which reads it at its next step, and
+`Event::MessageSteered` names that turn's run. Should the turn no longer read
+its queue, as when it is already writing its last answer, the message gets a
+turn of its own, whose `RunStarted` names it in `answers`; the view can
+interrupt that turn and its decisions are stored. Anything else holding the
+room keeps a message busy: the host preparing a turn, work started by a
+command, a turn being interrupted, another agent's stream, images. A buffered
+console never steers, and its snapshot says so.
 
 Applications can set `SessionConfig::commands` and use `run_with_commands` with
 their own `CommandHandler`. Commands are never sent to the model and default to

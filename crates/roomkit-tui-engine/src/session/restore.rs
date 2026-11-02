@@ -69,7 +69,10 @@ pub(crate) async fn snapshot<S: ConversationStore>(
             .entry(id.into())
             .or_insert_with(|| id.to_owned());
     }
-    Ok(history.into_snapshot(config))
+    let mut snapshot = history.into_snapshot(config);
+    // Only a streaming console follows the turn a message goes to.
+    snapshot.can_steer &= channel.streams();
+    Ok(snapshot)
 }
 
 /// The projection of visible rows: items, actor names and the latest usage.

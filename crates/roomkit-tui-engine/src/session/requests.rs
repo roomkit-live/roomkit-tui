@@ -99,13 +99,30 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         request: &Request,
         run: roomkit_tui_protocol::RunId,
     ) -> Result<(), AdapterError> {
-        let Some(work) = self.work.clone() else {
+        // The view's own work first, then the turns of its steered messages.
+        let works: Vec<_> = self
+            .work
+            .iter()
+            .chain(self.steering.iter().filter(|work| work.is_live()))
+            .cloned()
+            .collect();
+        if works.is_empty() {
             let error = Rejection::unavailable("This attachment has no active execution");
             return self.reply(request, Some(error));
-        };
+        }
         let (host, id) = (self.host.clone(), request.id);
         tokio::spawn(async move {
-            let error = work.interrupt(run).await.err().map(Rejection::unavailable);
+            let mut refusal = None;
+            for work in works {
+                match work.interrupt(run.clone()).await {
+                    Ok(()) => {
+                        refusal = None;
+                        break;
+                    }
+                    Err(error) => refusal = refusal.or(Some(error)),
+                }
+            }
+            let error = refusal.map(Rejection::unavailable);
             let _ = send(&host, Event::Reply { request: id, error });
         });
         Ok(())
@@ -146,11 +163,14 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
             .reserve(self.session.config.conversation(), Work::Turn)
         {
             Ok(reserved) => reserved,
-            // A turn holds the room: the message may go to it.
-            Err(held) if !held.hosting && self.steers(&request) => {
-                return self.steer(&request).map(|()| None);
-            }
-            Err(_) => {
+            Err(held) => {
+                // A turn holds the room: the message may go to it.
+                let target = (!held.hosting)
+                    .then(|| self.steering_target(&request))
+                    .flatten();
+                if let Some(run) = target {
+                    return self.steer(&request, run).map(|()| None);
+                }
                 let error = Rejection::busy("A request is still executing");
                 return self.reply(&request, Some(error)).map(|()| None);
             }

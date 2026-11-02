@@ -35,6 +35,9 @@ pub(super) struct View<'h, S: ConversationStore, H> {
     pub host: HostEvents,
     pub handler: &'h H,
     pub work: Option<Interrupter>,
+    /// Turns of messages sent while another turn ran, should RoomKit give
+    /// them one: this view may stop them too.
+    pub steering: Vec<Interrupter>,
     pub approvals: approvals::View,
     /// Calls in flight, shown running or waiting for a decision.
     progress: ToolProgress,
@@ -63,6 +66,7 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
         host,
         handler,
         work: None,
+        steering: Vec::new(),
         approvals,
         progress: ToolProgress::default(),
         switching: false,

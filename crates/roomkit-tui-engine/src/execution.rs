@@ -302,4 +302,12 @@ impl Interrupter {
             Self::Command { .. } => Err("This execution is no longer active in this attachment"),
         }
     }
+
+    /// Whether the work may still be interrupted: it has not ended.
+    pub fn is_live(&self) -> bool {
+        match self {
+            Self::Engine(control) => !control.is_closed(),
+            Self::Command { stop, .. } => !stop.is_closed(),
+        }
+    }
 }

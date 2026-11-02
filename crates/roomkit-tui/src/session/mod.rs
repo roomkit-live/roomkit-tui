@@ -126,6 +126,9 @@ pub struct Session {
     held_outcome: Option<RunOutcome>,
     /// Messages sent while a turn ran, oldest first, and where they went.
     steered: Vec<(MessageId, Steering)>,
+    /// Messages a run was started for, oldest first: one handed to a turn
+    /// whose own run started before the host said so went to that run.
+    answered: Vec<MessageId>,
     interrupting: Option<RunId>,
     deciding: BTreeSet<PermissionId>,
     expanded_tools: BTreeSet<ToolKey>,
@@ -175,6 +178,7 @@ impl Session {
             live_runs: Vec::new(),
             held_outcome: None,
             steered: Vec::new(),
+            answered: Vec::new(),
             interrupting: None,
             deciding: BTreeSet::new(),
             expanded_tools: BTreeSet::new(),

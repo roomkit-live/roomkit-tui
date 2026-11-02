@@ -146,6 +146,11 @@ impl Stopping {
         }
     }
 
+    /// Whether the interruption of `run` was accepted and it is stopping.
+    pub fn contains(&self, room: &str, run: &RunId) -> bool {
+        self.lock().contains_key(&(room.to_owned(), run.clone()))
+    }
+
     /// Called by a stream as it ends. Returns whether its terminal event is
     /// deferred to the interruption, recording its outcome and draft.
     pub fn defer(&self, room: &str, run: &RunId, outcome: RunOutcome, draft: MessageId) -> bool {

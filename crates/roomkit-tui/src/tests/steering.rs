@@ -97,3 +97,69 @@ fn steering_of_another_conversation_is_ignored() {
     });
     assert_eq!(session.steering(&"m2".into()), None);
 }
+
+/// The review of 5374eb1: when a message's own turn started before the host
+/// said where it went, the late hand-over showed it sent to the running turn.
+#[test]
+fn a_hand_over_after_its_own_turn_started_shows_its_own_turn() {
+    let mut session = steering_session();
+    let message = MessageId::new("m2");
+    session.apply(Event::RunStarted {
+        conversation: "room-a".into(),
+        run: "agent:m2".into(),
+        answers: Some(message.clone()),
+    });
+    assert_eq!(
+        session.steering(&message),
+        None,
+        "A plain turn shows nothing"
+    );
+    session.apply(Event::MessageSteered {
+        conversation: "room-a".into(),
+        message: message.clone(),
+        run: "agent:m1".into(),
+    });
+    assert_eq!(session.steering(&message), Some(Steering::OwnTurn));
+}
+
+#[test]
+fn another_conversation_forgets_where_messages_went() {
+    let mut session = steering_session();
+    session.apply(Event::MessageSteered {
+        conversation: "room-a".into(),
+        message: "m2".into(),
+        run: "agent:m1".into(),
+    });
+    let mut other = snapshot();
+    other.conversation = "room-b".into();
+    session.apply(Event::Snapshot(other));
+    assert_eq!(session.steering(&"m2".into()), None);
+}
+
+#[test]
+fn identities_beyond_the_bound_are_ignored() {
+    let mut session = steering_session();
+    let long = MessageId::new("m".repeat(300));
+    session.apply(Event::MessageSteered {
+        conversation: "room-a".into(),
+        message: long.clone(),
+        run: "agent:m1".into(),
+    });
+    assert_eq!(session.steering(&long), None);
+}
+
+/// The review of 5374eb1: a message sent while the turn was being stopped
+/// was neither read nor answered.
+#[test]
+fn a_message_while_the_turn_stops_waits() {
+    let mut session = steering_session();
+    started(&mut session, "agent:m1");
+    let stop = session
+        .request(Command::Interrupt {
+            run: "agent:m1".into(),
+        })
+        .unwrap();
+    session.sent(&stop);
+    session.set_draft("Too late");
+    assert_eq!(session.input_command(), Err(SessionError::Busy));
+}

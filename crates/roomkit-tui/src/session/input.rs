@@ -151,7 +151,7 @@ impl Session {
             return self.invocation(command);
         }
         // During a turn, only a message the host hands to that turn.
-        let steering = self.can_steer() && self.images.is_empty();
+        let steering = self.can_steer() && self.images.is_empty() && self.interrupting.is_none();
         if (self.is_executing() && !steering) || self.message_pending() {
             return Err(SessionError::Busy);
         }

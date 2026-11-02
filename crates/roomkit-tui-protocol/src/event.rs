@@ -188,7 +188,7 @@ pub enum Event {
         /// The message the execution answers, when it answers one. A message
         /// handed to a running turn gets a turn of its own when that turn no
         /// longer reads it. Older hosts send none.
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         answers: Option<MessageId>,
     },
     /// An execution has actually stopped.
