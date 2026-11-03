@@ -202,7 +202,7 @@ impl Session {
             .unwrap_or(text)
     }
 
-    fn message_pending(&self) -> bool {
+    pub(super) fn message_pending(&self) -> bool {
         self.pending
             .values()
             .any(|c| matches!(c, Command::Submit { .. } | Command::SubmitImages { .. }))

@@ -134,7 +134,7 @@ pub struct Session {
     /// The draft that leaves once the interrupted turn stops (Ctrl+S).
     waiting: Option<send_now::Waiting>,
     /// The waited draft's request, until the host answers it.
-    waited_send: Option<(RequestId, String)>,
+    waited_send: Option<(RequestId, send_now::Waiting)>,
     deciding: BTreeSet<PermissionId>,
     expanded_tools: BTreeSet<ToolKey>,
     focused_tool: Option<ToolKey>,

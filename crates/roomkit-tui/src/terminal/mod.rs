@@ -130,8 +130,8 @@ impl View {
             if let Some(reason) = self.drain_events()? {
                 return Ok(reason);
             }
-            self.redraw.dirty |= composer::send_waiting(&mut self.session, &self.client);
             let now = self.now();
+            self.redraw.dirty |= composer::send_waiting(&mut self.session, &self.client, now);
             self.redraw.dirty |= self.clipboard.poll(&mut self.session, now);
             self.redraw.dirty |= self.session.expire_quit_hint(now);
             self.redraw.dirty |= self.scroll_at_edge(now);

@@ -139,7 +139,8 @@ fn send_now(session: &mut Session, client: &Client) {
     }
     match session.send_after_interruption() {
         Ok(()) => {
-            send_waiting(session, client);
+            // Work is under way, so nothing leaves yet: this cuts the run.
+            send_waiting(session, client, Duration::ZERO);
         }
         Err(error) => session.notice = error.to_string(),
     }
@@ -147,19 +148,18 @@ fn send_now(session: &mut Session, client: &Client) {
 
 /// Move the waiting draft on: cut a run that started since, or send the
 /// draft once nothing runs any more. Whether it acted.
-pub(super) fn send_waiting(session: &mut Session, client: &Client) -> bool {
+pub(super) fn send_waiting(session: &mut Session, client: &Client, now: Duration) -> bool {
     if let Some(run) = session.run_to_cut() {
         interrupt_run(session, client, run);
         return true;
     }
-    if !session.take_ready_draft() {
+    let Some(waiting) = session.take_ready_draft(now) else {
         return false;
-    }
-    let draft = session.draft().to_owned();
+    };
     match session.input_command() {
         Ok(command) => {
             if let Some(id) = send_tracked(session, client, command, true) {
-                session.sent_waited(id, draft);
+                session.sent_waited(id, waiting);
             }
         }
         Err(error) => session.notice = error.to_string(),

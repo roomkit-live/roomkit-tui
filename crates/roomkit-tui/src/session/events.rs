@@ -90,7 +90,7 @@ impl Session {
                 choices,
             } => self.on_choices(&conversation, command, title, choices),
             Event::Form { conversation, form } => self.on_form(&conversation, form),
-            Event::Reply { request, error } => self.on_reply(request, error),
+            Event::Reply { request, error } => self.on_reply(request, error, at),
             Event::Notice { conversation, text } => {
                 if self.is_current(&conversation) {
                     self.notice = bounded(&text, self.limits.text_bytes.get());
@@ -289,11 +289,11 @@ impl Session {
         }
     }
 
-    fn on_reply(&mut self, request: RequestId, error: Option<Rejection>) {
+    fn on_reply(&mut self, request: RequestId, error: Option<Rejection>, at: Option<Duration>) {
         let Some(command) = self.pending.remove(&request) else {
             return;
         };
-        self.answered_waited(request, error.is_some());
+        let waits_again = self.answered_waited(request, error.as_ref(), at);
         let Some(error) = error else {
             self.on_accepted(&command);
             return;
@@ -309,7 +309,9 @@ impl Session {
             }
             _ => {}
         }
-        self.notice = bounded(&error.message, self.limits.text_bytes.get());
+        if !waits_again {
+            self.notice = bounded(&error.message, self.limits.text_bytes.get());
+        }
     }
 
     fn on_accepted(&mut self, command: &Command) {

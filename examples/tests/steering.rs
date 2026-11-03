@@ -349,3 +349,84 @@ async fn a_message_the_turn_no_longer_reads_gets_a_turn_the_host_hears_start() {
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }
+
+/// RMK-1303: Ctrl+S cuts everything, a message's own turn included. That
+/// message stays in the conversation: the next turn reads it with its own.
+#[tokio::test]
+async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([
+        ScriptedRound::answering("First answer"),
+        ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
+        ScriptedRound::answering("Both questions answered"),
+    ]);
+    let (_tools, tools_gate) = watch::channel(false);
+    let (console, view) = room(&kit, provider.clone(), tools_gate).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_first_answer(&kit, gate, held.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session = LocalSession::new(kit.clone(), console, view);
+    let task = tokio::spawn(session.run(host));
+    let mut ui = Session::default();
+    until(&client, &mut ui, "the conversation", |ui| {
+        ui.snapshot().is_some()
+    })
+    .await;
+
+    write(&client, &mut ui, "First question");
+    held.notified().await;
+    until(&client, &mut ui, "the turn writing its answer", |ui| {
+        ui.active_run().is_some()
+    })
+    .await;
+    let steered = write(&client, &mut ui, "Second question");
+    assert_eq!(replied(&client, &mut ui, &steered).await, None);
+    open.send(true).unwrap();
+
+    // Its own turn runs, and waits at its tool call.
+    let tool = |item: &Item| matches!(item, Item::Tool { .. });
+    until(&client, &mut ui, "the own turn's call", |ui| {
+        ui.snapshot().is_some_and(|s| s.items.iter().any(tool))
+    })
+    .await;
+    let own = ui.active_run().cloned().expect("The own turn runs");
+    let interrupt = ui.request(Command::Interrupt { run: own }).unwrap();
+    client.try_send(interrupt.clone()).unwrap();
+    ui.sent(&interrupt);
+    until(&client, &mut ui, "the own turn stopped", |ui| {
+        ui.active_run().is_none()
+    })
+    .await;
+
+    // The host may hold the room a moment longer: the view tries again.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let third = write(&client, &mut ui, "Third question");
+        match replied(&client, &mut ui, &third).await {
+            None => break,
+            Some(refusal) => assert_eq!(refusal.code, ErrorCode::Busy, "{refusal:?}"),
+        }
+        assert!(Instant::now() < deadline, "The host stayed busy");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    until(&client, &mut ui, "the next turn's answer", |ui| {
+        message(ui, "Both questions answered").is_some()
+    })
+    .await;
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 3, "One request for each turn");
+    for question in ["Second question", "Third question"] {
+        assert!(
+            requests[2]
+                .messages
+                .iter()
+                .any(|m| m.text().contains(question)),
+            "The next turn did not read {question:?}"
+        );
+    }
+
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
