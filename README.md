@@ -21,9 +21,9 @@ terminal itself is engine-agnostic: any host that speaks its typed protocol can
 drive it.
 
 > [!NOTE]
-> **Early development (0.1).** The crates are not published on crates.io yet
-> and their APIs will change before 1.0. Feedback and contributions are
-> welcome.
+> **Early development (0.2).** The library crates are on crates.io, except the
+> RoomKit adapter, which is taken through Git. Their APIs will change before
+> 1.0. Feedback and contributions are welcome.
 
 ## Features
 
@@ -158,8 +158,17 @@ throughout:
 
 ## Use it in your application
 
-The crates are not on crates.io yet. Depend on them through Git, pinned to a
-commit:
+`roomkit-tui`, `roomkit-tui-protocol` and `roomkit-tui-transport` are on
+crates.io, for a host that speaks the protocol itself:
+
+```toml
+[dependencies]
+roomkit-tui = "0.2"
+```
+
+`roomkit-tui-engine`, the RoomKit adapter, is not: it depends on the RoomKit
+Rust engine by Git. Take it through Git, pinned to a commit, with `roomkit-tui`
+from the same commit so that both share the protocol's types:
 
 ```toml
 [dependencies]
@@ -395,7 +404,6 @@ Rust version is 1.92 and is tested in CI.
 
 ## Roadmap
 
-- Publication of the crates on crates.io.
 - Windows support and testing.
 - Configurable keybindings, richer engine controls and model capabilities.
 - Automatic reconnection, durable event cursors and a remote transport to a

@@ -1493,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "roomkit-tui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "base64",
@@ -1512,7 +1512,7 @@ dependencies = [
 
 [[package]]
 name = "roomkit-tui-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "roomkit",
  "roomkit-ai",
@@ -1528,7 +1528,7 @@ dependencies = [
 
 [[package]]
 name = "roomkit-tui-examples"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "roomkit",
@@ -1546,7 +1546,7 @@ dependencies = [
 
 [[package]]
 name = "roomkit-tui-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1554,7 +1554,7 @@ dependencies = [
 
 [[package]]
 name = "roomkit-tui-transport"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "roomkit-tui-protocol",
 ]

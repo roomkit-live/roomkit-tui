@@ -51,4 +51,4 @@ refused (`SnapshotError`, with the position of the refused entry),
 `ModeState::fits` covers a mode change and `Permission::fits` an approval
 request.
 
-This is an unpublished 0.1 prototype; the contract can change before 1.0.
+This is an early release; the contract can change before 1.0.

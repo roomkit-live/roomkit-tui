@@ -3,15 +3,15 @@ resolver = "3"
 members = ["crates/roomkit-tui-protocol", "crates/roomkit-tui", "crates/roomkit-tui-transport", "crates/roomkit-tui-engine", "examples"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.92"
 license = "MIT"
 repository = "https://github.com/roomkit-live/roomkit-tui"
 
 [workspace.dependencies]
-roomkit-tui-transport = { path = "crates/roomkit-tui-transport", version = "0.1.0" }
-roomkit-tui-engine = { path = "crates/roomkit-tui-engine", version = "0.1.0" }
+roomkit-tui-transport = { path = "crates/roomkit-tui-transport", version = "0.2.0" }
+roomkit-tui-engine = { path = "crates/roomkit-tui-engine", version = "0.2.0" }
 # One validated main commit for all engine crates; never depend on a sibling checkout.
 roomkit = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "9830bc4c1b10a2c9e1413c34750eb7d2600d0b2c" }
 roomkit-core = { version = "0.1.0", git = "https://github.com/roomkit-live/roomkit-rs", rev = "9830bc4c1b10a2c9e1413c34750eb7d2600d0b2c" }
@@ -21,8 +21,8 @@ roomkit-sqlite = { version = "0.1.0", git = "https://github.com/roomkit-live/roo
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
-roomkit-tui-protocol = { path = "crates/roomkit-tui-protocol", version = "0.1.0" }
-roomkit-tui = { path = "crates/roomkit-tui", version = "0.1.0" }
+roomkit-tui-protocol = { path = "crates/roomkit-tui-protocol", version = "0.2.0" }
+roomkit-tui = { path = "crates/roomkit-tui", version = "0.2.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.23"

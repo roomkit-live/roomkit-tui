@@ -7,7 +7,7 @@ The application owns execution and cleanup. Closing a terminal disconnects its
 view and does not itself promise that a shared engine or an external operation
 has stopped. The terminal never executes providers, tools or slash commands.
 
-This is an unpublished 0.1 release. The API may change before 1.0.
+This is an early release. The API may change before 1.0.
 
 ## Getting started
 
