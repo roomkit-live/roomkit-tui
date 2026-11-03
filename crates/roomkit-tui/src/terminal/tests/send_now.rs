@@ -456,15 +456,19 @@ fn escape_while_the_draft_is_on_its_way_ends_the_wait() {
     assert!(host.try_recv().is_err(), "The kept draft left");
 }
 
-/// Esc can come too late: the person is told, or Enter sends a second copy.
+/// Light review of 9a3f306: Esc can come too late. The message left, and a
+/// copy left behind would be sent twice: a notice saying so did not outlive
+/// the turn's start, so the composer empties as for any message taken.
 #[test]
-fn escape_too_late_says_the_message_left() {
+fn escape_too_late_leaves_no_copy_behind() {
     let (mut session, client, host) = waiting_idle();
     let sent = left(&mut session, &client, &host, NOW);
     press(&mut session, &client, escape(), NOW);
     taken(&mut session, &sent, NOW);
-    assert_eq!(session.draft(), DRAFT);
-    assert_eq!(session.notice(), "This message was already sent");
+    assert!(session.draft().is_empty(), "A copy stayed to be sent again");
+    assert!(!session.sends_after_interruption());
+    assert!(!pass(&mut session, &client, LATER));
+    assert!(host.try_recv().is_err());
 }
 
 /// A dropped draft silences being busy, not another refusal.

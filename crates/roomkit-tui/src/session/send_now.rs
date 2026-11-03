@@ -21,9 +21,6 @@ const RETRY_EVERY: Duration = Duration::from_millis(200);
 /// before it stays in the composer: long enough for a turn's closing hooks.
 const RETRY_FOR: Duration = Duration::from_secs(30);
 
-/// What the person reads when Esc comes after the host took the draft.
-const ALREADY_LEFT: &str = "This message was already sent";
-
 /// The draft kept for once the work under way stops, as it was when the
 /// person asked: an edited draft, a command among them, never leaves unseen.
 #[derive(Debug)]
@@ -172,17 +169,11 @@ impl Session {
     }
 
     /// The host took the draft `text`: it leaves the composer, unless the
-    /// person kept or edited it meanwhile. Images leave as any image message.
+    /// person edited it meanwhile. Esc that came too late changes nothing: the
+    /// message left and shows in the conversation, and a copy left behind
+    /// would be sent twice. Images leave as any image message.
     fn waited_draft_left(&mut self, text: &str) {
-        let Some(waiting) = self.waiting.as_ref() else {
-            // Esc came too late to keep it from leaving: sent again by mistake
-            // otherwise.
-            if self.editor.text() == text {
-                self.notice = ALREADY_LEFT.into();
-            }
-            return;
-        };
-        if waiting.text != text {
+        if self.waiting.as_ref().is_some_and(|w| w.text != text) {
             return;
         }
         self.waiting = None;
