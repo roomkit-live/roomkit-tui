@@ -691,28 +691,42 @@ fn screen(session: &Session) -> String {
 }
 
 #[test]
-fn the_row_under_the_composer_names_the_wait_and_not_the_key() {
+fn the_row_under_the_composer_names_the_key_only_for_what_is_typed() {
     let (mut session, client, _host) = fixture(true);
     assert!(!screen(&session).contains("Ctrl+S"));
     session.insert("Now");
+    assert!(screen(&session).contains("Ctrl+S send now"));
     ctrl_s(&mut session, &client);
     assert!(screen(&session).contains("Sends once the work stops"));
 }
 
-/// A view with `run` live, and the message "handed" handed to it.
+/// A view on a host that answers, with `run` live and "handed" handed to it.
 fn handed() -> (Session, Client, Host) {
-    let (mut session, client, host) = working();
+    let (mut session, client, host) = fixture(false);
+    let mut snapshot = Snapshot::new("room", "Example", Actor::new("agent", "Agent"));
+    snapshot.can_interrupt = true;
+    snapshot.can_steer = true;
+    snapshot.can_answer = true;
+    session.apply(Event::Snapshot(snapshot));
+    session.apply(Event::OperationStarted {
+        conversation: "room".into(),
+        operation: "op".into(),
+    });
     started(&mut session);
+    hand(&mut session, "handed");
+    (session, client, host)
+}
+
+fn hand(session: &mut Session, id: &str) {
     session.apply(Event::Item {
         conversation: "room".into(),
-        item: Item::Message(Message::new("handed", "person:local", "Stop and do this")),
+        item: Item::Message(Message::new(id, "person:local", "Stop and do this")),
     });
     session.apply(Event::MessageSteered {
         conversation: "room".into(),
-        message: "handed".into(),
+        message: id.into(),
         run: "run".into(),
     });
-    (session, client, host)
 }
 
 fn answer() -> Command {
@@ -768,6 +782,23 @@ fn ctrl_s_on_an_empty_composer_cuts_the_turn_and_answers_the_message() {
     assert!(host.try_recv().is_err(), "Asked twice");
 }
 
+/// An answer on its way counts as a message awaiting its reply: Enter would
+/// send another past it.
+#[test]
+fn enter_waits_for_an_answer_on_its_way() {
+    let (mut session, client, host) = handed();
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(pass(&mut session, &client, NOW));
+    assert_eq!(host.try_recv().unwrap().command, answer());
+    session.insert("Another thought");
+    press(&mut session, &client, key(KeyCode::Enter), NOW);
+    assert!(host.try_recv().is_err(), "Sent past the answer on its way");
+    assert_eq!(session.draft(), "Another thought");
+}
+
 #[test]
 fn escape_or_typing_keeps_the_handed_message_from_being_answered_now() {
     let (mut session, client, host) = handed();
@@ -802,6 +833,91 @@ fn a_draft_goes_before_the_handed_message() {
     stopped(&mut session);
     finished(&mut session);
     left(&mut session, &client, &host, NOW);
+}
+
+/// Review of aa33d7c: RoomKit may give the message its own turn instead of
+/// handing it over. That turn is the answer: the wait must not cut it.
+#[test]
+fn a_turn_of_its_own_for_the_message_ends_the_wait() {
+    let (mut session, client, host) = handed();
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    stopped(&mut session);
+    session.apply(Event::RunStarted {
+        conversation: "room".into(),
+        run: "own".into(),
+        answers: Some("handed".into()),
+    });
+    assert!(!session.sends_after_interruption());
+    assert!(!pass(&mut session, &client, NOW));
+    assert!(host.try_recv().is_err(), "The message's own turn was cut");
+}
+
+/// Review of aa33d7c: a turn that ends by itself read what it was handed:
+/// answering again would answer twice, and tell the model it was cut.
+#[test]
+fn a_turn_that_completes_ends_the_wait() {
+    let (mut session, client, host) = handed();
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    session.apply(Event::RunFinished {
+        conversation: "room".into(),
+        run: "run".into(),
+        outcome: RunOutcome::Completed,
+    });
+    finished(&mut session);
+    assert!(!pass(&mut session, &client, NOW));
+    assert!(host.try_recv().is_err(), "Answered a turn that read it");
+}
+
+/// Review of aa33d7c: every message handed to the cut turn is answered, and
+/// says so, not only the last.
+#[test]
+fn every_message_handed_to_the_cut_turn_is_answered() {
+    let (mut session, client, host) = handed();
+    hand(&mut session, "also");
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(pass(&mut session, &client, NOW));
+    let sent = host.try_recv().unwrap();
+    taken(&mut session, &sent, NOW);
+    for message in ["handed", "also"] {
+        assert_eq!(session.steering(&message.into()), Some(Steering::OwnTurn));
+    }
+}
+
+/// Review of aa33d7c: typing ends a wait to answer, even if the composer then
+/// empties again: its text was sent, or dropped.
+#[test]
+fn typing_ends_a_wait_to_answer_for_good() {
+    let (mut session, client, host) = handed();
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    session.set_draft("foo");
+    assert!(!pass(&mut session, &client, NOW));
+    session.set_draft("");
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(!pass(&mut session, &client, NOW));
+    assert!(host.try_recv().is_err(), "The ended wait came back");
+}
+
+/// Review of aa33d7c: a host that cannot answer offers nothing to cut for: the
+/// turn would be cut, and nothing would answer.
+#[test]
+fn a_host_that_cannot_answer_offers_no_cut() {
+    let (mut session, client, host) = handed();
+    let mut snapshot = Snapshot::new("room", "Example", Actor::new("agent", "Agent"));
+    snapshot.can_interrupt = true;
+    snapshot.can_steer = true;
+    snapshot.active_run = Some("run".into());
+    session.apply(Event::Snapshot(snapshot));
+    assert!(!screen(&session).contains("Ctrl+S"));
+    ctrl_s(&mut session, &client);
+    assert!(host.try_recv().is_err(), "The turn was cut for nothing");
+    assert_eq!(session.notice(), "Enter a message");
 }
 
 #[test]

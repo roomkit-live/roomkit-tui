@@ -16,9 +16,7 @@
 
 use std::time::Duration;
 
-use roomkit_tui_protocol::{
-    Command, ErrorCode, ImageUpload, MessageId, Rejection, RequestId, RunId,
-};
+use roomkit_tui_protocol::{Command, ErrorCode, ImageUpload, Rejection, RequestId, RunId};
 
 use super::{Session, SessionError};
 
@@ -34,9 +32,9 @@ const RETRY_FOR: Duration = Duration::from_secs(30);
 pub(super) struct Waiting {
     text: String,
     images: Vec<ImageUpload>,
-    /// With an empty composer: the message handed to the turn being cut, which
-    /// a turn of its own then answers.
-    answers: Option<MessageId>,
+    /// With an empty composer: a turn of its own answers what the turn being
+    /// cut was handed, rather than a draft leaving.
+    answers: bool,
     /// The run last asked to stop for it: a run started since is cut too.
     cut: Option<RunId>,
     /// Not sent before then: the host has just refused it as busy.
@@ -64,9 +62,8 @@ impl Session {
         if self.sends_after_interruption() {
             return Ok(());
         }
-        let empty = self.editor.text().trim().is_empty() && self.images.is_empty();
-        let answers = self.handed_to_a_live_turn().filter(|_| empty).cloned();
-        if empty && answers.is_none() {
+        let answers = self.editor.text().trim().is_empty() && self.images.is_empty();
+        if answers && self.handed_to_a_live_turn().is_none() {
             return Err(SessionError::EmptyMessage);
         }
         if self.is_executing() && !snapshot.can_interrupt {
@@ -88,6 +85,20 @@ impl Session {
         self.waiting = None;
     }
 
+    /// Whether the wait is to answer what the cut turn was handed, no draft
+    /// leaving, as long as the composer stays empty.
+    pub(crate) fn answers_after_interruption(&self) -> bool {
+        self.sends_after_interruption() && self.waiting.as_ref().is_some_and(|w| w.answers)
+    }
+
+    /// A wait to answer has nothing to ask for any more: what it was for got an
+    /// answer of its own, or the turn it was to cut read it to its end.
+    pub(super) fn keep_answer_waiting_out(&mut self) {
+        if self.waiting.as_ref().is_some_and(|w| w.answers) {
+            self.waiting = None;
+        }
+    }
+
     /// The host's answer to a waited draft is lost, as a new snapshot loses
     /// every pending request: it may have left, so it is not sent again.
     pub(super) fn forget_waited_send(&mut self) {
@@ -101,9 +112,15 @@ impl Session {
     /// interruption is not asked again; the draft then waits for the end.
     pub(crate) fn run_to_cut(&mut self) -> Option<RunId> {
         let executing = self.is_executing();
+        let holds = self.sends_after_interruption();
         let waiting = self.waiting.as_mut()?;
         if executing {
             waiting.give_up = None;
+        }
+        // Typing ends a wait to answer, even if the composer empties again.
+        if waiting.answers && !holds {
+            self.waiting = None;
+            return None;
         }
         // A run seen while the draft is on its way may be the one it started.
         let can_interrupt = self.snapshot.as_ref().is_some_and(|s| s.can_interrupt);
@@ -148,7 +165,7 @@ impl Session {
     /// What the wait sends: the draft, or the request that answers the message
     /// handed to the cut turn.
     pub(crate) fn waited_command(&self) -> Result<Command, SessionError> {
-        if self.waiting.as_ref().is_none_or(|w| w.answers.is_none()) {
+        if !self.answers_after_interruption() {
             return self.input_command();
         }
         let snapshot = self.snapshot.as_ref().ok_or(SessionError::WaitingForHost)?;
@@ -201,8 +218,8 @@ impl Session {
         if self.waiting.as_ref().is_some_and(|w| w.text != text) {
             return;
         }
-        if let Some(message) = self.waiting.take().and_then(|w| w.answers) {
-            self.answered_by_a_turn_of_its_own(&message);
+        if self.waiting.take().is_some_and(|w| w.answers) {
+            self.handed_answered_by_their_own_turn();
         }
         self.notice.clear();
         if self.editor.text() == text && self.images.is_empty() {

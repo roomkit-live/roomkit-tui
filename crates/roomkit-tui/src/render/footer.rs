@@ -47,7 +47,7 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
         " ↑↓ choose · Enter/Tab insert · Esc close · Enter again to send"
     } else if let Some(hint) = action_hint.as_deref() {
         hint
-    } else if session.sends_after_interruption() && session.draft().is_empty() {
+    } else if session.answers_after_interruption() {
         " Answers once the work stops · Esc cancel"
     } else if session.sends_after_interruption() {
         " Sends once the work stops · Esc keep in composer"
@@ -57,7 +57,13 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
         .is_some_and(|snapshot| snapshot.active_run.is_some() && snapshot.can_interrupt)
         && !session.interrupting()
     {
-        " Esc interrupt · Enter send · Alt+Enter newline · F2 details"
+        if session.draft().is_empty() {
+            " Esc interrupt · Enter send · Alt+Enter newline · F2 details"
+        } else if cols >= 80 {
+            " Esc interrupt · Enter send · Ctrl+S send now · Alt+Enter newline · F2 details"
+        } else {
+            " Esc interrupt · Enter send · Ctrl+S send now"
+        }
     } else if session
         .snapshot
         .as_ref()

@@ -120,3 +120,76 @@ async fn only_the_requester_answers_beside_an_agent_declaring_no_window() {
     bob_task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }
+
+/// RMK-1311, review of aa33d7c: a turn that answers what the conversation holds
+/// starts from an instruction, never stored, so its stream finds no trigger:
+/// Bob could approve the requests of the turn Alice asked for.
+#[tokio::test]
+async fn only_the_requester_answers_in_an_answer_turn() {
+    let kit = RoomKit::new(Default::default());
+    let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
+    kit.register_channel(agent_declaring_no_window(&channel))
+        .unwrap();
+    kit.register_channel(channel.clone()).unwrap();
+    let room = config().room;
+    kit.create_room(CreateRoomOptions {
+        room_id: Some(room.clone()),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    for id in [channel.id().clone(), config().agent] {
+        kit.attach_channel(&room, &id, Default::default())
+            .await
+            .unwrap();
+    }
+    let (alice, alice_task) = view(&kit, &channel, "alice").await;
+    let (bob, bob_task) = view(&kit, &channel, "bob").await;
+
+    let asked = Request::new(
+        RequestId::new(1),
+        "answer",
+        "room",
+        Command::Answer {
+            agent: config().agent.as_str().into(),
+        },
+    );
+    alice.try_send(asked).unwrap();
+    let permission = loop {
+        if let Event::PermissionRequested { permission, .. } = next(&bob).await {
+            break permission;
+        }
+    };
+    let decide = |decision| Command::Decide {
+        permission: permission.id.clone(),
+        decision,
+    };
+    bob.try_send(Request::new(
+        RequestId::new(2),
+        "bob",
+        "room",
+        decide(Decision::Allow),
+    ))
+    .unwrap();
+    let refused = loop {
+        if let Event::Reply { request, error } = next(&bob).await
+            && request == RequestId::new(2)
+        {
+            break error.map(|rejection| rejection.code);
+        }
+    };
+    assert_eq!(refused, Some(ErrorCode::Refused), "Only Alice may answer");
+    alice
+        .try_send(Request::new(
+            RequestId::new(3),
+            "alice",
+            "room",
+            decide(Decision::Deny),
+        ))
+        .unwrap();
+    while !matches!(next(&alice).await, Event::OperationFinished { .. }) {}
+    drop((alice, bob));
+    alice_task.await.unwrap().unwrap();
+    bob_task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}

@@ -303,3 +303,48 @@ async fn a_resent_message_s_own_turn_is_still_started() {
     task.await.unwrap().unwrap();
     channel_idle(&kit).await;
 }
+
+/// A host that refuses every turn, and counts the admissions it was asked for.
+#[derive(Debug, Default)]
+struct Closed {
+    asked: Mutex<Vec<String>>,
+}
+
+impl SessionLifecycle for Closed {
+    fn admit<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        operation: &'a OperationId,
+        _: &'a roomkit::model::EventContent,
+    ) -> LifecycleFuture<'a, Result<(), Rejection>> {
+        self.asked
+            .lock()
+            .unwrap()
+            .push(operation.as_str().to_owned());
+        Box::pin(async { Err(Rejection::refused("Application is closing")) })
+    }
+}
+
+/// RMK-1311, security review: a turn with no new message still passes the
+/// host's gate. Nothing reaches the model when the host refuses.
+#[tokio::test]
+async fn an_answer_passes_the_host_s_gate() {
+    let kit = RoomKit::new(Default::default());
+    let (channel, provider) = steering_room(&kit, vec![ScriptedRound::answering("Done")]).await;
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let lifecycle = Arc::new(Closed::default());
+    let session =
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
+    let task = tokio::spawn(session.run(host));
+    next(&client).await;
+
+    client
+        .try_send(answer(1, "one", config().agent.as_str()))
+        .unwrap();
+    collect_operation(&client).await;
+    assert_eq!(*lifecycle.asked.lock().unwrap(), ["one"]);
+    assert!(provider.requests().is_empty(), "The refused turn ran");
+    drop(client);
+    task.await.unwrap().unwrap();
+    channel_idle(&kit).await;
+}

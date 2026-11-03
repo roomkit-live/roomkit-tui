@@ -6,6 +6,19 @@ use roomkit_tui_protocol::{ActorId, ConversationId, Item, Message, MessageId, Ru
 use super::bounds::{bound_in_place, bound_item, bound_labels, bounded, trim_items};
 use super::{ObservedRun, Session};
 
+/// Blank so far, as what a model streams before a tool call, a draft takes no
+/// room on screen: its text starts at the end, below what came since, and a
+/// finished answer takes its draft's place.
+fn blank_draft_to_the_end(items: &mut Vec<Item>, message: &MessageId, actor: &ActorId) {
+    let blank = items.iter().rposition(|item| {
+        matches!(item, Item::Message(m) if m.id == *message && m.actor == *actor && m.text.trim().is_empty())
+    });
+    if let Some(at) = blank {
+        let draft = items.remove(at);
+        items.push(draft);
+    }
+}
+
 impl Session {
     pub(super) fn on_snapshot(&mut self, mut snapshot: Snapshot) {
         if let Err(error) = snapshot.validate() {
@@ -90,18 +103,7 @@ impl Session {
         let Some(snapshot) = &mut self.snapshot else {
             return;
         };
-        // Blank so far, as what a model streams before a tool call, a draft
-        // takes no room on screen: its text starts here, below what came since,
-        // and a finished answer takes its draft's place.
-        let is_draft =
-            |item: &Item| matches!(item, Item::Message(m) if m.id == message && m.actor == actor);
-        if let Some(at) = snapshot.items.iter().rposition(is_draft) {
-            let blank = matches!(&snapshot.items[at], Item::Message(m) if m.text.trim().is_empty());
-            if blank {
-                let draft = snapshot.items.remove(at);
-                snapshot.items.push(draft);
-            }
-        }
+        blank_draft_to_the_end(&mut snapshot.items, &message, &actor);
         // The streamed message is almost always the newest item.
         let existing = snapshot.items.iter_mut().rev().find_map(|item| match item {
             Item::Message(m) if m.id == message && m.actor == actor => Some(m),

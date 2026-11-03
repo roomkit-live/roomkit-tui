@@ -243,6 +243,11 @@ pub struct Snapshot {
     /// to that turn rather than refused. Older hosts advertise none.
     #[serde(default)]
     pub can_steer: bool,
+    /// Whether the host starts a turn for what the conversation holds
+    /// (`Command::Answer`). Older hosts advertise none: the view then never cuts
+    /// a turn for a message handed to it.
+    #[serde(default)]
+    pub can_answer: bool,
     /// Optional interaction mode, changed only after host confirmation.
     #[serde(default)]
     pub mode: Option<ModeState>,
@@ -278,6 +283,7 @@ impl Snapshot {
             input_actions: Vec::new(),
             can_attach_images: false,
             can_steer: false,
+            can_answer: false,
             mode: None,
             items: Vec::new(),
             active_run: None,

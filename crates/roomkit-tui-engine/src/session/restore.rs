@@ -72,6 +72,7 @@ pub(crate) async fn snapshot<S: ConversationStore>(
     let mut snapshot = history.into_snapshot(config);
     // Only a streaming console follows the turn a message goes to.
     snapshot.can_steer = channel.streams() && steer::agent_steers(kit, config);
+    snapshot.can_answer = snapshot.can_steer;
     Ok(snapshot)
 }
 

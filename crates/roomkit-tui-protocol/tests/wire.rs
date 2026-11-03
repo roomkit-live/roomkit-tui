@@ -44,6 +44,12 @@ fn every_command_round_trips_with_its_conversation_and_correlation() {
             "submit_images",
         ),
         (
+            Command::Answer {
+                agent: "agent".into(),
+            },
+            "answer",
+        ),
+        (
             Command::Invoke {
                 name: "model".into(),
                 arguments: "fast".into(),

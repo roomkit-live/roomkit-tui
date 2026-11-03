@@ -22,7 +22,7 @@ use crate::{ConversationChannel, SessionLifecycle, TurnOutcome, cancellation, pr
 /// What a turn started without a new message is told. It is an instruction:
 /// never stored, and never shown as anyone's words.
 const ANSWER_NOW: &str = "The person cut the turn that was running to get an answer now. \
-Answer their latest message in this conversation.";
+Answer the messages they sent during that turn.";
 
 /// Validate a submission against this view's agent and transport bounds.
 pub(super) fn validate(request: &Request, config: &SessionConfig) -> Result<(), Rejection> {
@@ -70,8 +70,8 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
     }
 
     /// Start a turn in the reserved room for what the conversation holds: the
-    /// agent reads it there. The host admitted those messages already, so it
-    /// hears the turn start and end, and no new prompt.
+    /// agent reads it there. The host's gate holds as for any turn
+    /// (`SessionLifecycle::admit_answer`).
     pub fn start_answer(
         &mut self,
         request: &Request,
@@ -158,7 +158,7 @@ impl<S: ConversationStore> Turn<S> {
                 lifecycle.as_ref(),
                 &self.config,
                 &self.operation,
-                (!self.answer).then_some(&content),
+                (&content, self.answer),
                 &self.channel,
                 &mut self.controls,
             );
@@ -205,6 +205,9 @@ impl<S: ConversationStore> Turn<S> {
         let (config, channel) = (&self.config, &self.channel);
         let mut message = InboundMessage::new(channel.id().clone(), &config.sender, content);
         message.addressed_to = Some(vec![config.agent.clone()]);
+        let _requested = self
+            .answer
+            .then(|| channel.answer_requested_by(config.conversation(), &config.sender));
         if self.answer {
             // Never stored, it holds no key to replay under: RoomKit refuses one.
             message.event_type = EventType::Instruction;

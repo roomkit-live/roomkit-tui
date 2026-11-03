@@ -131,8 +131,8 @@ pub struct Session {
     /// whose own run started before the host said so went to that run.
     answered: Vec<MessageId>,
     interrupting: Option<RunId>,
-    /// The message last handed to a turn, and that turn's run.
-    handed: Option<(MessageId, RunId)>,
+    /// What was handed to the turn under way, which Ctrl+S may cut.
+    handed: Option<steering::Handed>,
     /// The draft that leaves once the interrupted turn stops (Ctrl+S).
     waiting: Option<send_now::Waiting>,
     /// The waited draft's request and text, until the host answers it.

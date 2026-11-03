@@ -506,7 +506,7 @@ async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
 /// RMK-1311: a message handed to a turn waits for that turn's next step, which
 /// may be far. The turn is cut, and a turn of its own reads the message where
 /// it is, in the conversation: it is not written twice, nothing else is shown,
-/// and the host, which admitted it already, hears only the turn.
+/// and the host's gate holds as for any turn.
 #[tokio::test]
 async fn a_message_handed_to_a_cut_turn_is_answered_by_a_turn_of_its_own() {
     let kit = RoomKit::new(Default::default());
@@ -577,6 +577,11 @@ async fn a_message_handed_to_a_cut_turn_is_answered_by_a_turn_of_its_own() {
         .filter(|m| m.text() == "Use the second ledger")
         .count();
     assert_eq!(read, 1, "The message was read once");
+    let told = requests[1]
+        .messages
+        .iter()
+        .any(|m| m.text().contains("cut the turn"));
+    assert!(told, "The model was not told why the turn was cut");
     let shown = ui.snapshot().unwrap().items.iter().filter(|item| {
         matches!(item, Item::Message(m) if m.text == "Use the second ledger" || m.text.contains("cut the turn"))
     }).count();
@@ -587,8 +592,8 @@ async fn a_message_handed_to_a_cut_turn_is_answered_by_a_turn_of_its_own() {
     let told = lifecycle.told(answered.operation.as_str()).await;
     assert_eq!(
         told,
-        ["started", "finished"],
-        "The host heard the turn only"
+        ["admit", "started", "finished"],
+        "Admitted as any turn"
     );
 
     drop(client);

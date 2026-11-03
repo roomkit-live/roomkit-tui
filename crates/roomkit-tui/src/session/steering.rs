@@ -10,6 +10,13 @@ use super::Session;
 /// host that steers without end must not grow the view.
 const MAX_STEERED: usize = 64;
 
+/// The messages handed to the turn under way (RMK-1311), oldest first.
+#[derive(Debug)]
+pub(super) struct Handed {
+    run: RunId,
+    messages: Vec<MessageId>,
+}
+
 /// Where a message sent during a turn went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -30,12 +37,18 @@ impl Session {
     }
 
     /// The message last handed to a turn that still runs and can be cut: Ctrl+S
-    /// on an empty composer cuts that turn to answer it. Whether the turn has
-    /// read it already, nothing says.
+    /// on an empty composer cuts that turn to answer what it was handed, on a
+    /// host that can. Whether the turn has read it already, nothing says.
     pub(crate) fn handed_to_a_live_turn(&self) -> Option<&MessageId> {
-        let (message, run) = self.handed.as_ref()?;
-        let can_interrupt = self.snapshot.as_ref().is_some_and(|s| s.can_interrupt);
-        (can_interrupt && self.is_live(run)).then_some(message)
+        let handed = self.handed.as_ref()?;
+        let can_cut = self
+            .snapshot
+            .as_ref()
+            .is_some_and(|s| s.can_interrupt && s.can_answer);
+        if !can_cut || !self.is_live(&handed.run) {
+            return None;
+        }
+        handed.messages.last()
     }
 
     /// Whether a message may be sent while the agent's turn runs: the host
@@ -65,7 +78,18 @@ impl Session {
             Steering::Handed
         };
         if steering == Steering::Handed {
-            self.handed = Some((message.clone(), run.clone()));
+            let handed = self
+                .handed
+                .take()
+                .filter(|handed| handed.run == *run)
+                .unwrap_or_else(|| Handed {
+                    run: run.clone(),
+                    messages: Vec::new(),
+                });
+            self.handed = Some(handed);
+            if let Some(handed) = &mut self.handed {
+                remember(&mut handed.messages, message.clone());
+            }
         }
         remember(&mut self.steered, (message, steering));
     }
@@ -76,9 +100,7 @@ impl Session {
         if !self.is_current(conversation) || message.as_str().len() > MAX_LABEL_BYTES {
             return;
         }
-        if self.handed.as_ref().is_some_and(|(id, _)| id == message) {
-            self.handed = None;
-        }
+        self.own_turn_for_handed(message);
         match self.steered.iter_mut().find(|(id, _)| id == message) {
             Some((_, steering)) => *steering = Steering::OwnTurn,
             None if !self.answered.contains(message) => {
@@ -88,11 +110,28 @@ impl Session {
         }
     }
 
-    /// A turn now answers `message`, which the turn it was handed to never did.
-    pub(super) fn answered_by_a_turn_of_its_own(&mut self, message: &MessageId) {
-        self.handed = None;
-        if let Some((_, steering)) = self.steered.iter_mut().find(|(id, _)| id == message) {
-            *steering = Steering::OwnTurn;
+    /// A run started for `message`: handed to a turn that no longer read it, it
+    /// gets the answer a wait was to ask for, which no longer cuts anything.
+    fn own_turn_for_handed(&mut self, message: &MessageId) {
+        let Some(handed) = &mut self.handed else {
+            return;
+        };
+        let before = handed.messages.len();
+        handed.messages.retain(|id| id != message);
+        if handed.messages.len() != before {
+            self.keep_answer_waiting_out();
+        }
+    }
+
+    /// A turn now answers what the cut turn was handed, which it never did.
+    pub(super) fn handed_answered_by_their_own_turn(&mut self) {
+        let Some(handed) = self.handed.take() else {
+            return;
+        };
+        for (id, steering) in &mut self.steered {
+            if handed.messages.contains(id) {
+                *steering = Steering::OwnTurn;
+            }
         }
     }
 

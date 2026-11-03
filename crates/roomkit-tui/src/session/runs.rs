@@ -122,6 +122,9 @@ impl Session {
         };
         self.live_runs.remove(index);
         self.forget(run);
+        if outcome == RunOutcome::Completed {
+            self.keep_answer_waiting_out();
+        }
         if !self.live_runs.is_empty() {
             // Each run keeps its own outcome; `execution_outcome` reports the
             // most severe of the runs since the room was idle.

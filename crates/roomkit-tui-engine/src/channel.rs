@@ -1,5 +1,8 @@
 //! The RoomKit transport channel shared by local views of a room.
 
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
 use roomkit::ToolCallEvent;
 use roomkit::model::{ChannelId, RoomEvent, RoomId};
 use roomkit_tui_protocol::{Decision, Event, Item, RunId};
@@ -31,9 +34,43 @@ pub struct ConversationChannel {
     pub(crate) live_streams: Streams,
     pub(crate) approvals: Approvals,
     pub(crate) own_turns: OwnTurns,
+    /// Who asked for the answer turn under way in a room: its trigger is never
+    /// stored, so its stream cannot read them from the room.
+    answers: Arc<Mutex<BTreeMap<String, String>>>,
+}
+
+/// The answer turn of a room being delivered; dropping it forgets who asked.
+pub(crate) struct AnswerRequest {
+    answers: Arc<Mutex<BTreeMap<String, String>>>,
+    room: String,
+}
+
+impl Drop for AnswerRequest {
+    fn drop(&mut self) {
+        lock(&self.answers).remove(&self.room);
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl ConversationChannel {
+    /// `sender` asks for an answer turn in `room`, which they alone may approve
+    /// the tools of, until the returned guard drops.
+    pub(crate) fn answer_requested_by(&self, room: &str, sender: &str) -> AnswerRequest {
+        lock(&self.answers).insert(room.to_owned(), sender.to_owned());
+        AnswerRequest {
+            answers: self.answers.clone(),
+            room: room.to_owned(),
+        }
+    }
+
+    /// Who asked for the answer turn under way in `room`.
+    pub(crate) fn answer_requester(&self, room: &str) -> Option<String> {
+        lock(&self.answers).get(room).cloned()
+    }
+
     /// Create a streaming transport, without registering it or starting tasks.
     pub fn new(id: ChannelId) -> Self {
         Self::with_streaming(id, true)
@@ -56,6 +93,7 @@ impl ConversationChannel {
             stopping: Stopping::default(),
             live_streams: Streams::default(),
             own_turns: OwnTurns::default(),
+            answers: Arc::default(),
         }
     }
 

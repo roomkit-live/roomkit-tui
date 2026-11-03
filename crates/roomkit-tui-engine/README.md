@@ -81,9 +81,10 @@ steers, and its snapshot says so.
 `Command::Answer` starts a turn for what the conversation already holds, as for
 a message handed to a turn that was cut before reading it. The agent is told so
 by an instruction, which is never stored or shown, and reads the message where
-it is. The host hears `started` and `finished`, not `admit`: it admitted the
-message already. While anything holds the room it is refused as busy, before
-any host call, and never handed to the running turn.
+it is. The host's gate holds as for any turn: `SessionLifecycle::admit_answer`,
+which is `admit` unless the host refines it, then `started` and `finished`. While
+anything holds the room it is refused as busy, before any host call, and never
+handed to the running turn.
 
 Applications can set `SessionConfig::commands` and use `run_with_commands` with
 their own `CommandHandler`. Commands are never sent to the model and default to

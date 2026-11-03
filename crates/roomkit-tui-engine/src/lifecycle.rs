@@ -46,6 +46,20 @@ pub trait SessionLifecycle: Debug + Send + Sync {
         Box::pin(async { Ok(()) })
     }
 
+    /// Check a turn that answers what the conversation holds, with no new
+    /// input (`Command::Answer`). `content` is what the agent is told, never
+    /// stored or shown. By default it goes through [`Self::admit`], so a host's
+    /// gate holds for every turn; a host that tells a person's words apart from
+    /// a turn can refine it, and must still refuse what it would not run.
+    fn admit_answer<'a>(
+        &'a self,
+        session: &'a SessionConfig,
+        operation: &'a OperationId,
+        content: &'a EventContent,
+    ) -> LifecycleFuture<'a, Result<(), roomkit_tui_protocol::Rejection>> {
+        self.admit(session, operation, content)
+    }
+
     /// Once per admitted logical turn, before engine processing. A matching
     /// `finished` follows on normal completion, failure or explicit interruption.
     /// A message handed to the running turn of an agent that steers its
@@ -84,7 +98,7 @@ pub(crate) async fn prepare(
     lifecycle: &dyn SessionLifecycle,
     session: &SessionConfig,
     operation: &OperationId,
-    content: Option<&EventContent>,
+    (content, answer): (&EventContent, bool),
     channel: &crate::ConversationChannel,
     controls: &mut crate::cancellation::Receiver,
 ) -> Option<roomkit_tui_protocol::RunOutcome> {
@@ -93,7 +107,9 @@ pub(crate) async fn prepare(
     let mut announced = false;
     let result = {
         let future = async {
-            if let Some(content) = content {
+            if answer {
+                lifecycle.admit_answer(session, operation, content).await?;
+            } else {
                 lifecycle.admit(session, operation, content).await?;
             }
             lifecycle.started(session, operation).await;
