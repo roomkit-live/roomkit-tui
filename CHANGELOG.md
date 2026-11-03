@@ -36,6 +36,7 @@ by Git; a host using it takes `roomkit-tui` from the same commit.
   turn of its own, which the view shows, can interrupt, and whose decisions
   are stored. The host hears that turn start through
   `SessionLifecycle::started`, before its loop asks the model (RMK-1232).
+  A message written while the answer streams stays below what it had written.
   Host preparation, command work, another agent's stream, images and
   buffered consoles stay busy. `roomkit-chat` enables it, and
   `scripts/check-steering.py` drives it on a real pseudo-terminal.

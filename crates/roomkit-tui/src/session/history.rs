@@ -90,6 +90,18 @@ impl Session {
         let Some(snapshot) = &mut self.snapshot else {
             return;
         };
+        // Blank so far, as what a model streams before a tool call, a draft
+        // takes no room on screen: its text starts here, below what came since,
+        // and a finished answer takes its draft's place.
+        let is_draft =
+            |item: &Item| matches!(item, Item::Message(m) if m.id == message && m.actor == actor);
+        if let Some(at) = snapshot.items.iter().rposition(is_draft) {
+            let blank = matches!(&snapshot.items[at], Item::Message(m) if m.text.trim().is_empty());
+            if blank {
+                let draft = snapshot.items.remove(at);
+                snapshot.items.push(draft);
+            }
+        }
         // The streamed message is almost always the newest item.
         let existing = snapshot.items.iter_mut().rev().find_map(|item| match item {
             Item::Message(m) if m.id == message && m.actor == actor => Some(m),
@@ -121,12 +133,34 @@ impl Session {
         if !self.is_current(conversation) {
             return;
         }
+        let limit = self.limits.text_bytes.get();
+        let mut item = Item::Message(message);
         if let Some(snapshot) = &mut self.snapshot {
-            snapshot.items.retain(
-                |item| !matches!(item, Item::Message(m) if m.id == *draft && m.actor == message.actor),
-            );
+            let is_draft = |old: &Item| {
+                matches!((old, &item), (Item::Message(o), Item::Message(m))
+                    if o.id == *draft && o.actor == m.actor)
+            };
+            let at = snapshot.items.iter().rposition(is_draft);
+            let known = snapshot
+                .items
+                .iter()
+                .enumerate()
+                .any(|(index, old)| Some(index) != at && old.same_identity(&item));
+            match at {
+                // In its draft's place: a message written during the answer
+                // already follows it.
+                Some(at) if !known => {
+                    bound_item(&mut item, limit);
+                    snapshot.items[at] = item;
+                    return;
+                }
+                Some(at) => {
+                    snapshot.items.remove(at);
+                }
+                None => {}
+            }
         }
-        self.on_item(conversation, Item::Message(message));
+        self.on_item(conversation, item);
     }
 
     pub(super) fn on_item(&mut self, conversation: &ConversationId, mut item: Item) {

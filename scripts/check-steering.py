@@ -83,7 +83,8 @@ def chat(port, directory):
         "ROOMKIT_API_KEY": "",
     }
     args = [binary("roomkit-chat"), "--database", Path(directory) / "chat.db", "--no-animation"]
-    terminal = Terminal(args, env=env)
+    # Tall enough to keep the whole conversation in view.
+    terminal = Terminal(args, rows=60, env=env)
     terminal.wait_for(b"fixture")
     # The kitty keyboard protocol is asked for, so Ctrl+Enter is told apart.
     terminal.wait_for(b"\x1b[>1u")
@@ -98,6 +99,9 @@ def handed_to_the_running_turn(port, directory):
         terminal.wait_for("↳ sent to the running turn".encode())
         Fixture.release.set()
         terminal.wait_for(b"Record 42 is in the second ledger.")
+        written, message = terminal.screen.row_of(b"Checking the record."), terminal.screen.row_of(STEERED.encode())
+        require(written and message and written < message,
+                f"The message (row {message}) is not below what the answer had written (row {written})")
         require(len(Fixture.requests) == 2, f"{len(Fixture.requests)} model requests, not 2")
         require(said(Fixture.requests[1], STEERED), "The turn's next step did not read the message")
         require(not terminal.screen.ever(b"An execution is active"), "The message was refused")
