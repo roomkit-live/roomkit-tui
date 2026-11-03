@@ -1,0 +1,4 @@
+# AdapterError::Engine carries roomkit-rs's RoomKitError, which is 128 bytes
+# since its maps keep their members' order, as Python's dict does
+# (roomkit-rs RMK-1198). roomkit-rs raised its own threshold to 136 for it.
+large-error-threshold = 136
