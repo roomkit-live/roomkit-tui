@@ -122,7 +122,9 @@ impl Session {
         };
         self.live_runs.remove(index);
         self.forget(run);
-        if outcome == RunOutcome::Completed {
+        // The turn handed the message read it to its end. Another run's end
+        // says nothing of it.
+        if outcome == RunOutcome::Completed && self.was_handed_to(run) {
             self.keep_answer_waiting_out();
         }
         if !self.live_runs.is_empty() {

@@ -110,6 +110,13 @@ impl Session {
         }
     }
 
+    /// Whether messages were handed to `run`.
+    pub(super) fn was_handed_to(&self, run: &RunId) -> bool {
+        self.handed
+            .as_ref()
+            .is_some_and(|handed| handed.run == *run)
+    }
+
     /// A run started for `message`: handed to a turn that no longer read it, it
     /// gets the answer a wait was to ask for, which no longer cuts anything.
     fn own_turn_for_handed(&mut self, message: &MessageId) {

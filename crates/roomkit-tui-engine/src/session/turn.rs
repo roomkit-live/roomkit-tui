@@ -22,7 +22,7 @@ use crate::{ConversationChannel, SessionLifecycle, TurnOutcome, cancellation, pr
 /// What a turn started without a new message is told. It is an instruction:
 /// never stored, and never shown as anyone's words.
 const ANSWER_NOW: &str = "The person cut the turn that was running to get an answer now. \
-Answer the messages they sent during that turn.";
+Answer the messages they sent during that turn that you have not answered yet.";
 
 /// Validate a submission against this view's agent and transport bounds.
 pub(super) fn validate(request: &Request, config: &SessionConfig) -> Result<(), Rejection> {

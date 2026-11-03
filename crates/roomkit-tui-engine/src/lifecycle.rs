@@ -50,7 +50,8 @@ pub trait SessionLifecycle: Debug + Send + Sync {
     /// input (`Command::Answer`). `content` is what the agent is told, never
     /// stored or shown. By default it goes through [`Self::admit`], so a host's
     /// gate holds for every turn; a host that tells a person's words apart from
-    /// a turn can refine it, and must still refuse what it would not run.
+    /// a turn can refine it, and must still refuse what it would not run, and do
+    /// what its `admit` prepares for `started` and `finished`.
     fn admit_answer<'a>(
         &'a self,
         session: &'a SessionConfig,

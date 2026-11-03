@@ -870,6 +870,26 @@ fn a_turn_that_completes_ends_the_wait() {
     assert!(host.try_recv().is_err(), "Answered a turn that read it");
 }
 
+/// Light review of 6194726: another run's end says nothing of the message: the
+/// wait goes on, and a turn of its own still answers it.
+#[test]
+fn another_run_that_completes_leaves_the_wait() {
+    let (mut session, client, host) = handed();
+    run_started(&mut session, "another");
+    ctrl_s(&mut session, &client);
+    assert_eq!(host.try_recv().unwrap().command, interrupt());
+    session.apply(Event::RunFinished {
+        conversation: "room".into(),
+        run: "another".into(),
+        outcome: RunOutcome::Completed,
+    });
+    assert!(session.sends_after_interruption());
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(pass(&mut session, &client, NOW));
+    assert_eq!(host.try_recv().unwrap().command, answer());
+}
+
 /// Review of aa33d7c: every message handed to the cut turn is answered, and
 /// says so, not only the last.
 #[test]

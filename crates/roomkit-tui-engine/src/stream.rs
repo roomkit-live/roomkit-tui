@@ -90,9 +90,12 @@ impl Channel for ConversationChannel {
         // Announce the run before the broker records it: a refusal is told
         // once the run exists, and a terminal clears its notice on RunStarted.
         self.publish(&room, started);
-        let requester = trigger
-            .and_then(|row| self.requester(row))
-            .or_else(|| self.answer_requester(&room));
+        // A trigger from elsewhere has no one here to answer for it; only a turn
+        // with no trigger may be an answer turn, whose instruction is never stored.
+        let requester = match trigger {
+            Some(row) => self.requester(row),
+            None => self.answer_requester(&room),
+        };
         let agent = responder.as_str().to_owned();
         let approvals = self.approvals.start(&room, &agent, run.clone(), requester);
         let mut reader = Reader::new(self, &room, &run, agent.as_str().into());
