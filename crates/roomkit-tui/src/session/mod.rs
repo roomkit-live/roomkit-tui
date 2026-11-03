@@ -133,8 +133,8 @@ pub struct Session {
     interrupting: Option<RunId>,
     /// The draft that leaves once the interrupted turn stops (Ctrl+S).
     waiting: Option<send_now::Waiting>,
-    /// The waited draft's request, until the host answers it.
-    waited_send: Option<(RequestId, send_now::Waiting)>,
+    /// The waited draft's request and text, until the host answers it.
+    flight: Option<(RequestId, String)>,
     deciding: BTreeSet<PermissionId>,
     expanded_tools: BTreeSet<ToolKey>,
     focused_tool: Option<ToolKey>,
@@ -186,7 +186,7 @@ impl Session {
             answered: Vec::new(),
             interrupting: None,
             waiting: None,
-            waited_send: None,
+            flight: None,
             deciding: BTreeSet::new(),
             expanded_tools: BTreeSet::new(),
             focused_tool: None,

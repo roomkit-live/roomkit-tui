@@ -5,7 +5,7 @@ use std::time::Duration;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::keys::{Outcome, is_cancel, is_ctrl};
-use super::requests::send_tracked;
+use super::requests::try_request;
 use super::{QUIT_TIMEOUT, interrupt, interrupt_run, send};
 use crate::{Client, Session};
 
@@ -124,22 +124,21 @@ fn composer_editing(session: &mut Session, client: &Client, key: KeyEvent) {
     }
 }
 
-/// Ctrl+S, or Ctrl+Enter where the terminal tells it from Enter: Enter,
-/// except that a message written during the turn cuts it, as Esc does, and
-/// leaves once it has stopped ([`send_waiting`]).
+/// Ctrl+S, or Ctrl+Enter where the terminal tells it from Enter: Enter for a
+/// command. A message cuts whatever runs, as Esc does, and leaves once
+/// nothing runs any more, however the host holds the room ([`send_waiting`]).
 fn send_now(session: &mut Session, client: &Client) {
     let command = session
         .draft()
         .trim_start()
         .starts_with(session.command_prefix)
         || session.input_action().is_some();
-    if !session.is_executing() || command {
+    if command {
         submit(session, client);
         return;
     }
     match session.send_after_interruption() {
         Ok(()) => {
-            // Work is under way, so nothing leaves yet: this cuts the run.
             send_waiting(session, client, Duration::ZERO);
         }
         Err(error) => session.notice = error.to_string(),
@@ -147,22 +146,25 @@ fn send_now(session: &mut Session, client: &Client) {
 }
 
 /// Move the waiting draft on: cut a run that started since, or send the
-/// draft once nothing runs any more. Whether it acted.
+/// draft once nothing runs any more. It stays in the composer until the host
+/// takes it. Whether it acted.
 pub(super) fn send_waiting(session: &mut Session, client: &Client, now: Duration) -> bool {
     if let Some(run) = session.run_to_cut() {
         interrupt_run(session, client, run);
         return true;
     }
-    let Some(waiting) = session.take_ready_draft(now) else {
+    if !session.draft_may_leave(now) {
         return false;
-    };
+    }
     match session.input_command() {
-        Ok(command) => {
-            if let Some(id) = send_tracked(session, client, command, true) {
-                session.sent_waited(id, waiting);
-            }
+        Ok(command) => match try_request(session, client, command) {
+            Some(id) => session.sent_waited(id),
+            None => session.keep_draft(),
+        },
+        Err(error) => {
+            session.notice = error.to_string();
+            session.keep_draft();
         }
-        Err(error) => session.notice = error.to_string(),
     }
     true
 }
@@ -170,6 +172,10 @@ pub(super) fn send_waiting(session: &mut Session, client: &Client, now: Duration
 /// Enter sends the draft. With completions open, an exact command without
 /// choices is sent; anything else accepts the highlighted completion.
 fn submit(session: &mut Session, client: &Client) {
+    // This draft already leaves as soon as it can.
+    if session.sends_after_interruption() {
+        return;
+    }
     if session.menu.visible && !session.menu.entries.is_empty() {
         match session
             .input_command()

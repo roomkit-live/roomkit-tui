@@ -48,7 +48,7 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
     } else if let Some(hint) = action_hint.as_deref() {
         hint
     } else if session.sends_after_interruption() {
-        " Sends once the turn stops · Esc keep in composer"
+        " Sends once the work stops · Esc keep in composer"
     } else if session
         .snapshot
         .as_ref()

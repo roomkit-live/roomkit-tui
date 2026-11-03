@@ -8,16 +8,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Send a message now (RMK-1285): Ctrl+S, or Ctrl+Enter where the terminal
-  reports it, interrupts the run and sends the draft once nothing runs any
-  more, in a turn of its own. A run that starts meanwhile is interrupted too.
-  Only the unedited draft leaves; Esc keeps it. A draft the host refuses as
-  busy goes on waiting and is sent again for up to 30 seconds, cutting the own
-  turn of a message sent earlier, which the next turn then reads (RMK-1303);
-  any other refusal brings it back to the composer. The terminal asks for the kitty keyboard
-  protocol's `DISAMBIGUATE_ESCAPE_CODES` and removes it once on exit or on a
-  panic. In terminals with the protocol, Shift+Enter inserts a line break, and
-  Ctrl+[, Ctrl+M and Ctrl+I no longer stand for Esc, Enter and Tab.
+- Send a message now (RMK-1285, RMK-1303): Ctrl+S, or Ctrl+Enter where the
+  terminal reports it, interrupts whatever runs, a message's own turn included,
+  and sends the draft once nothing runs any more, in a turn of its own. A
+  message whose turn is cut stays in the conversation, and that next turn reads
+  it. The draft stays in the composer until the host takes it, and only unedited;
+  Esc keeps it, and a host that refuses it as busy is asked again for up to 30
+  seconds without a run. The terminal asks for the kitty keyboard protocol's
+  `DISAMBIGUATE_ESCAPE_CODES` and removes it once on exit or on a panic. In
+  terminals with the protocol, Shift+Enter inserts a line break, and Ctrl+[,
+  Ctrl+M and Ctrl+I no longer stand for Esc, Enter and Tab.
 - Write to the model while it works (RMK-1161). For an agent registered with
   `AiChannelOptions::steer_room_turns`, a streaming console advertises
   `Snapshot::can_steer`: the engine reads it from the agent's registered

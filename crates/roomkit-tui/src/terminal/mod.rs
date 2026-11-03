@@ -45,8 +45,8 @@ pub enum ExitReason {
 /// This function blocks the calling thread. Run the host independently and
 /// retain its cleanup handle. `Esc` dismisses an overlay or requests interruption.
 /// `Ctrl+S` (or `Ctrl+Enter` where the terminal reports it) sends the draft
-/// now: while work runs it requests interruption of each run and sends the
-/// draft once nothing runs any more. `Ctrl+C` clears the draft and requests interruption; pressing it again within
+/// now: it requests interruption of each run and sends the draft once nothing
+/// runs any more, asking again while the host answers busy. `Ctrl+C` clears the draft and requests interruption; pressing it again within
 /// two seconds exits. `Ctrl+D` detaches at once, or after a second press when
 /// the host has sent an exit warning (for example running processes).
 /// Detaching never promises execution cancellation. Errors and panics restore raw mode and the

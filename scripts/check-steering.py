@@ -8,10 +8,12 @@ person types:
   so, and the model reads it at its next step;
 - Ctrl+S, or Ctrl+Enter as a terminal with the kitty keyboard protocol
   reports it (RMK-1285): the turn is interrupted, and the message leaves
-  once it stopped, in a turn of its own.
+  once it stopped, in a turn of its own. The terminal's loop tries again
+  while the host holds the room (RMK-1303, against a scripted host).
 """
 
 import json
+import re
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -118,6 +120,24 @@ def sent_now(port, directory, key):
         terminal.exited()
 
 
+def tried_again_while_the_host_holds_the_room():
+    """RMK-1303, against a scripted host: it refuses the message twice with no
+    run to show. The terminal's own loop sends it again, and the draft stays in
+    the composer until the host takes it."""
+    with Terminal([binary("busy-host")]) as terminal:
+        terminal.wait_for(b"Enter send")
+        terminal.send(STEERED.encode() + CTRL_S)
+        terminal.wait_for(b"Sends once the work stops")
+        require(terminal.screen.shows(STEERED.encode()), "The draft left the composer")
+        terminal.wait_for(re.compile(rb"Taken after 2 refusals, \d+ ms apart"))
+        waited = int(re.search(r"refusals, (\d+) ms", terminal.screen.text()).group(1))
+        require(waited >= 190, f"Tried again after {waited} ms, sooner than the 200 ms apart it should")
+        terminal.wait_until(lambda: not terminal.screen.shows(STEERED.encode()),
+                            "the composer emptied once the host took the draft")
+        terminal.send(b"\x04")
+        terminal.exited()
+
+
 server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 try:
@@ -129,8 +149,10 @@ try:
         with tempfile.TemporaryDirectory() as directory:
             check(server.server_port, directory)
         Fixture.release.set()
+    tried_again_while_the_host_holds_the_room()
 finally:
     Fixture.release.set()
     server.shutdown()
 print("Steering checks passed: Enter hands a message to the running turn, which reads it at its next "
-      "step; Ctrl+S and Ctrl+Enter cut the turn and send the message once it stopped.")
+      "step; Ctrl+S and Ctrl+Enter cut the turn and send the message once it stopped, trying again "
+      "while the host holds the room.")

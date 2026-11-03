@@ -99,24 +99,29 @@ engine does. Each run keeps its own outcome, and `execution_outcome` reports
 the most severe of the runs since the room was idle. A replayed `RunStarted`
 of a live run, or of the last run started, is ignored.
 
-Ctrl+S sends a message now: during a run, it interrupts the run as Esc does
-and keeps the draft, which leaves as any message once nothing runs any more
+Ctrl+S sends a message now. It interrupts whatever runs, as Esc does, and keeps
+the draft, which leaves as any message once nothing runs any more
 (`Session::sends_after_interruption`). A message handed to a turn being
-cancelled would never be read, so it waits for the turn to stop. A run that
-starts while the draft waits is interrupted too; a refused interruption is not
-asked again, and the draft then leaves when the run ends. Only the draft as it
-was when Ctrl+S was pressed leaves: edited, a command among them, it stays in
-the composer, as it does after Esc; Ctrl+C clears it. The host may hold the
-room with no run to show, as for the own turn of a message sent earlier: a
-draft it refuses as busy comes back to an empty composer, goes on waiting, and
-is sent again every 200 ms for 30 seconds, and that own turn is interrupted
-too. The message whose turn was cut stays in the conversation, and the next
-turn reads it. Any other refusal, or a host still busy after that, leaves the
-draft in the composer. Without a run, or for a command, Ctrl+S is Enter. The
-terminal asks for the kitty keyboard protocol (`DISAMBIGUATE_ESCAPE_CODES`)
-and removes it on exit, so terminals that support it report Ctrl+Enter, which
-does the same, and Shift+Enter, which inserts a line break. Windows reports
-both too; other terminals send Ctrl+Enter as Enter or as Ctrl+J.
+cancelled would never be read, so the draft waits for the turn to stop. A run
+that starts while it waits is interrupted too; a refused interruption is not
+asked again, and the draft then leaves when the run ends.
+
+The draft stays in the composer until the host takes it, and only as it was
+when Ctrl+S was pressed: edited, a command among them, it stays there, as it does
+after Esc; Ctrl+C clears it. The host may hold the room with no run to show, as
+for the own turn of a message sent earlier. A draft it refuses as busy goes on
+waiting and is sent again every 200 ms, for up to 30 seconds without a run; a
+refusal runs no host hook. That own turn is interrupted too, unless it had just
+started when the draft arrived: it is then handed the draft, and reads both. A
+message whose turn was cut stays in the conversation, and the next turn reads
+it. Any other refusal leaves the draft in the composer. For a command, Ctrl+S
+is Enter.
+
+The terminal asks for the kitty keyboard protocol
+(`DISAMBIGUATE_ESCAPE_CODES`) and removes it on exit, so terminals that support
+it report Ctrl+Enter, which does the same, and Shift+Enter, which inserts a line
+break. Windows reports both too; other terminals send Ctrl+Enter as Enter or as
+Ctrl+J.
 
 A host that hands messages to the running turn sets `Snapshot::can_steer`.
 The composer then sends a message while a run is live instead of refusing it

@@ -350,8 +350,55 @@ async fn a_message_the_turn_no_longer_reads_gets_a_turn_the_host_hears_start() {
     kit.close().await.unwrap();
 }
 
-/// RMK-1303: Ctrl+S cuts everything, a message's own turn included. That
-/// message stays in the conversation: the next turn reads it with its own.
+/// A host that closes one message slowly, once told which: until `gate`
+/// opens, the engine holds the room with no run to show.
+#[derive(Debug)]
+struct SlowClose {
+    host: Host,
+    held: Mutex<Option<String>>,
+    gate: watch::Receiver<bool>,
+}
+
+impl SessionLifecycle for SlowClose {
+    fn admit<'a>(
+        &'a self,
+        session: &'a SessionConfig,
+        operation: &'a OperationId,
+        content: &'a roomkit::model::EventContent,
+    ) -> LifecycleFuture<'a, Result<(), Rejection>> {
+        self.host.admit(session, operation, content)
+    }
+
+    fn started<'a>(
+        &'a self,
+        session: &'a SessionConfig,
+        operation: &'a OperationId,
+    ) -> LifecycleFuture<'a, ()> {
+        self.host.started(session, operation)
+    }
+
+    fn finished<'a>(
+        &'a self,
+        session: &'a SessionConfig,
+        operation: &'a OperationId,
+        outcome: TurnOutcome,
+    ) -> LifecycleFuture<'a, ()> {
+        let held = self.held.lock().unwrap().as_deref() == Some(operation.as_str());
+        let mut gate = self.gate.clone();
+        Box::pin(async move {
+            if held {
+                let _ = gate.wait_for(|open| *open).await;
+            }
+            self.host.finished(session, operation, outcome).await;
+        })
+    }
+}
+
+/// RMK-1303: Ctrl+S cuts everything, a message's own turn included. The host
+/// then holds the room while it closes that turn, with no run to show: the
+/// next message is refused as busy, before any host hook, and taken once the
+/// room is free. The cut message stays in the conversation: the next turn
+/// reads it with its own.
 #[tokio::test]
 async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
     let kit = RoomKit::new(Default::default());
@@ -365,8 +412,14 @@ async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
     let (open, gate) = watch::channel(false);
     let held = Arc::new(Notify::new());
     hold_first_answer(&kit, gate, held.clone());
+    let (close, closing) = watch::channel(false);
+    let lifecycle = Arc::new(SlowClose {
+        host: Host::default(),
+        held: Mutex::new(None),
+        gate: closing,
+    });
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let session = LocalSession::new(kit.clone(), console, view);
+    let session = LocalSession::new(kit.clone(), console, view).with_lifecycle(lifecycle.clone());
     let task = tokio::spawn(session.run(host));
     let mut ui = Session::default();
     until(&client, &mut ui, "the conversation", |ui| {
@@ -381,6 +434,7 @@ async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
     })
     .await;
     let steered = write(&client, &mut ui, "Second question");
+    *lifecycle.held.lock().unwrap() = Some(steered.operation.as_str().to_owned());
     assert_eq!(replied(&client, &mut ui, &steered).await, None);
     open.send(true).unwrap();
 
@@ -391,6 +445,8 @@ async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
     })
     .await;
     let own = ui.active_run().cloned().expect("The own turn runs");
+    let sent = message(&ui, "Second question").unwrap();
+    assert_eq!(ui.steering(&sent.id), Some(Steering::OwnTurn));
     let interrupt = ui.request(Command::Interrupt { run: own }).unwrap();
     client.try_send(interrupt.clone()).unwrap();
     ui.sent(&interrupt);
@@ -399,7 +455,23 @@ async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
     })
     .await;
 
-    // The host may hold the room a moment longer: the view tries again.
+    // The view shows nothing running, and the host still holds the room.
+    let refused = write(&client, &mut ui, "Third question");
+    let refusal = replied(&client, &mut ui, &refused).await.unwrap();
+    assert_eq!(refusal.code, ErrorCode::Busy, "{refusal:?}");
+    assert!(
+        lifecycle
+            .host
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(operation, _)| operation != refused.operation.as_str()),
+        "A refused message reached the host's hooks"
+    );
+
+    // The room comes free with no event to say so: the view tries again.
+    close.send(true).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let third = write(&client, &mut ui, "Third question");

@@ -5,6 +5,9 @@
 //! for the own turn of a message sent earlier: a draft it refuses as busy
 //! goes on waiting, and a run that starts meanwhile is cut too. A message
 //! whose turn is cut stays in the conversation, and the next turn reads it.
+//!
+//! The draft stays in the composer until the host takes it: a refusal then
+//! changes nothing on screen, and the person can still edit or drop it.
 
 use std::time::Duration;
 
@@ -14,22 +17,22 @@ use super::{Session, SessionError};
 
 /// How long after a busy refusal the draft is tried again.
 const RETRY_EVERY: Duration = Duration::from_millis(200);
-/// How long a host may keep refusing a draft as busy before it stays in the
-/// composer: long enough for a turn's closing hooks.
+/// How long a host that shows no run may keep refusing the draft as busy
+/// before it stays in the composer: long enough for a turn's closing hooks.
 const RETRY_FOR: Duration = Duration::from_secs(30);
 
 /// The draft kept for once the work under way stops, as it was when the
 /// person asked: an edited draft, a command among them, never leaves unseen.
 #[derive(Debug)]
-pub(crate) struct Waiting {
+pub(super) struct Waiting {
     text: String,
     images: Vec<ImageUpload>,
     /// The run last asked to stop for it: a run started since is cut too.
     cut: Option<RunId>,
     /// Not sent before then: the host has just refused it as busy.
     not_before: Duration,
-    /// When a host that keeps refusing it stops being asked; set by the
-    /// first busy refusal.
+    /// When a host that keeps refusing it stops being asked: set by a busy
+    /// refusal, and forgotten while a run shows why the host is busy.
     give_up: Option<Duration>,
 }
 
@@ -44,37 +47,52 @@ impl Session {
         waiting.text == self.editor.text() && waiting.images == self.images
     }
 
-    /// Keep the draft for once the work under way stops.
+    /// Keep the draft for once nothing runs. Pressed again for the same
+    /// draft, nothing changes.
     pub(crate) fn send_after_interruption(&mut self) -> Result<(), SessionError> {
         let snapshot = self.snapshot.as_ref().ok_or(SessionError::WaitingForHost)?;
         if self.editor.text().trim().is_empty() && self.images.is_empty() {
             return Err(SessionError::EmptyMessage);
         }
-        if !snapshot.can_interrupt {
+        if self.is_executing() && !snapshot.can_interrupt {
             return Err(SessionError::NotInterruptible);
         }
-        self.waiting = Some(Waiting {
-            text: self.editor.text().to_owned(),
-            images: self.images.clone(),
-            cut: None,
-            not_before: Duration::ZERO,
-            give_up: None,
-        });
+        if !self.sends_after_interruption() {
+            self.waiting = Some(Waiting {
+                text: self.editor.text().to_owned(),
+                images: self.images.clone(),
+                cut: None,
+                not_before: Duration::ZERO,
+                give_up: None,
+            });
+        }
         Ok(())
     }
 
-    /// Send nothing after the interruption; the draft stays. A draft on its
-    /// way no longer comes back either.
+    /// Send nothing after the interruption; the draft stays.
     pub(crate) fn keep_draft(&mut self) {
         self.waiting = None;
-        self.waited_send = None;
+    }
+
+    /// The host's answer to a waited draft is lost, as a new snapshot loses
+    /// every pending request: it may have left, so it is not sent again.
+    pub(super) fn forget_waited_send(&mut self) {
+        if self.flight.take().is_some() {
+            self.waiting = None;
+        }
     }
 
     /// The run to stop for the waiting draft: the one under way, unless it
     /// was asked already or an interruption is on its way. A refused
     /// interruption is not asked again; the draft then waits for the end.
     pub(crate) fn run_to_cut(&mut self) -> Option<RunId> {
-        if !self.sends_after_interruption() || self.interrupting.is_some() {
+        let executing = self.is_executing();
+        let waiting = self.waiting.as_mut()?;
+        if executing {
+            waiting.give_up = None;
+        }
+        let can_interrupt = self.snapshot.as_ref().is_some_and(|s| s.can_interrupt);
+        if !self.sends_after_interruption() || self.interrupting.is_some() || !can_interrupt {
             return None;
         }
         let run = self.active_run().cloned()?;
@@ -86,62 +104,74 @@ impl Session {
         Some(run)
     }
 
-    /// The waited-for draft, once it may leave at `now`: nothing runs any
+    /// Whether the waited-for draft may leave at `now`: nothing runs any
     /// more and no message awaits its reply. An edited draft ends the wait
     /// and stays in the composer.
-    pub(crate) fn take_ready_draft(&mut self, now: Duration) -> Option<Waiting> {
-        let waiting = self.waiting.as_ref()?;
+    pub(crate) fn draft_may_leave(&mut self, now: Duration) -> bool {
+        let Some(waiting) = self.waiting.as_ref() else {
+            return false;
+        };
         if self.is_executing()
             || self.interrupting.is_some()
             || self.message_pending()
             || now < waiting.not_before
         {
-            return None;
+            return false;
         }
-        let unedited = self.holds(waiting);
-        let waiting = self.waiting.take()?;
-        unedited.then_some(waiting)
+        if !self.holds(waiting) {
+            self.waiting = None;
+            return false;
+        }
+        true
     }
 
     /// The waited draft left as request `id`.
-    pub(crate) fn sent_waited(&mut self, id: RequestId, waiting: Waiting) {
-        self.waited_send = Some((id, waiting));
+    pub(crate) fn sent_waited(&mut self, id: RequestId) {
+        self.flight = Some((id, self.editor.text().to_owned()));
     }
 
-    /// Request `id` was answered at `at`. A refused waited draft comes back
-    /// to an empty composer, and a busy refusal keeps it waiting, until
-    /// [`RETRY_FOR`] has passed. Whether it waits again.
+    /// Request `id` was answered at `at`. Accepted, the waited draft leaves
+    /// the composer. Refused as busy, it waits again, until [`RETRY_FOR`]
+    /// has passed. Whether the refusal has nothing to tell the person.
     pub(super) fn answered_waited(
         &mut self,
         id: RequestId,
         refusal: Option<&Rejection>,
         at: Option<Duration>,
     ) -> bool {
-        if self
-            .waited_send
-            .as_ref()
-            .is_none_or(|(sent, _)| *sent != id)
-        {
-            return false;
-        }
-        let Some((_, mut waiting)) = self.waited_send.take() else {
+        let Some((_, text)) = self.flight.take_if(|(sent, _)| *sent == id) else {
             return false;
         };
         let Some(refusal) = refusal else {
+            self.waited_draft_left(&text);
             return false;
         };
-        if self.editor.text().is_empty() {
-            self.editor.set(waiting.text.clone());
-            self.refresh_menu();
-        }
+        // Dropped meanwhile, or replaced by an edited draft sent next.
+        let Some(waiting) = self.waiting.as_mut().filter(|w| w.text == text) else {
+            return true;
+        };
         let now = at.unwrap_or_default();
         let give_up = *waiting.give_up.get_or_insert(now.saturating_add(RETRY_FOR));
-        if refusal.code != ErrorCode::Busy || now >= give_up || !self.holds(&waiting) {
+        if refusal.code != ErrorCode::Busy || now >= give_up {
+            self.waiting = None;
             return false;
         }
         waiting.not_before = now.saturating_add(RETRY_EVERY);
-        waiting.cut = None;
-        self.waiting = Some(waiting);
         true
+    }
+
+    /// The host took the draft `text`: it leaves the composer, unless the
+    /// person kept or edited it meanwhile. Images leave as any image message.
+    fn waited_draft_left(&mut self, text: &str) {
+        if self.waiting.as_ref().is_none_or(|w| w.text != text) {
+            return;
+        }
+        self.waiting = None;
+        if self.editor.text() == text && self.images.is_empty() {
+            self.editor.submitted();
+            self.draft_epoch = self.draft_epoch.wrapping_add(1);
+            self.scroll_to_bottom();
+            self.refresh_menu();
+        }
     }
 }

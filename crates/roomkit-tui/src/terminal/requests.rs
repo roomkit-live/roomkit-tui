@@ -55,17 +55,24 @@ pub(super) fn interrupt_run(session: &mut Session, client: &Client, run: RunId) 
 }
 
 pub(super) fn send(session: &mut Session, client: &Client, command: Command, clear_input: bool) {
-    send_tracked(session, client, command, clear_input);
+    let keep_images = matches!(&command, Command::SubmitImages { .. });
+    if try_request(session, client, command).is_none() {
+        return;
+    }
+    if clear_input && !keep_images {
+        session.editor.submitted();
+        session.draft_epoch = session.draft_epoch.wrapping_add(1);
+        session.scroll_to_bottom();
+    }
+    session.notice.clear();
 }
 
-/// Send `command`; the request's id once the connection took it.
-pub(super) fn send_tracked(
+/// Send `command`, the view as it is: its id once the connection took it.
+pub(super) fn try_request(
     session: &mut Session,
     client: &Client,
     command: Command,
-    clear_input: bool,
 ) -> Option<RequestId> {
-    let keep_images = matches!(&command, Command::SubmitImages { .. });
     let request = match session.request(command) {
         Ok(request) => request,
         Err(error) => {
@@ -76,12 +83,6 @@ pub(super) fn send_tracked(
     match client.try_send(request.clone()) {
         Ok(()) => {
             session.sent(&request);
-            if clear_input && !keep_images {
-                session.editor.submitted();
-                session.draft_epoch = session.draft_epoch.wrapping_add(1);
-                session.scroll_to_bottom();
-            }
-            session.notice.clear();
             Some(request.id)
         }
         Err(TrySendError::Full(_)) => {
