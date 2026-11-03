@@ -332,10 +332,10 @@ terminal status, session observation) in detail.
 | --- | --- |
 | Enter | Send the message or the command |
 | Ctrl+S, Ctrl+Enter | During a run, interrupt it and send the message once it stopped; otherwise as Enter |
-| Alt+Enter, Ctrl+J | Insert a newline |
+| Alt+Enter, Ctrl+J, Shift+Enter | Insert a newline (Shift+Enter where the terminal reports it) |
 | `/` (configurable) | Open the host's commands; type to filter |
 | Tab, Enter in a menu | Insert the highlighted choice; Enter again sends it |
-| Esc | Close the current menu or panel, otherwise interrupt the run |
+| Esc | Close the current menu or panel, keep a message waiting to be sent, otherwise interrupt the run |
 | Ctrl+Y, Ctrl+N | Allow once or deny the pending permission |
 | ↑↓ or 1, 2, then Enter | Choose and confirm an answer on the permission card |
 | Up, Down | Move between lines, or browse input history |

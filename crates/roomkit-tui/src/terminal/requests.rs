@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::TrySendError;
 
-use roomkit_tui_protocol::{Command, RunId};
+use roomkit_tui_protocol::{Command, RequestId, RunId};
 
 use crate::session::Focus;
 use crate::{Client, Session};
@@ -55,12 +55,22 @@ pub(super) fn interrupt_run(session: &mut Session, client: &Client, run: RunId) 
 }
 
 pub(super) fn send(session: &mut Session, client: &Client, command: Command, clear_input: bool) {
+    send_tracked(session, client, command, clear_input);
+}
+
+/// Send `command`; the request's id once the connection took it.
+pub(super) fn send_tracked(
+    session: &mut Session,
+    client: &Client,
+    command: Command,
+    clear_input: bool,
+) -> Option<RequestId> {
     let keep_images = matches!(&command, Command::SubmitImages { .. });
     let request = match session.request(command) {
         Ok(request) => request,
         Err(error) => {
             session.notice = error.to_string();
-            return;
+            return None;
         }
     };
     match client.try_send(request.clone()) {
@@ -72,12 +82,15 @@ pub(super) fn send(session: &mut Session, client: &Client, command: Command, cle
                 session.scroll_to_bottom();
             }
             session.notice.clear();
+            Some(request.id)
         }
         Err(TrySendError::Full(_)) => {
             session.notice = "Host is busy; input preserved, retry shortly".into();
+            None
         }
         Err(TrySendError::Disconnected(_)) => {
             session.notice = "Host disconnected; input preserved".into();
+            None
         }
     }
 }

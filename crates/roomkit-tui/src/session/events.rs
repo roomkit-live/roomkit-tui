@@ -293,6 +293,7 @@ impl Session {
         let Some(command) = self.pending.remove(&request) else {
             return;
         };
+        self.answered_waited(request, error.is_some());
         let Some(error) = error else {
             self.on_accepted(&command);
             return;
@@ -301,11 +302,7 @@ impl Session {
             Command::Decide { permission, .. } => {
                 self.deciding.remove(&permission);
             }
-            Command::Interrupt { .. } => {
-                self.interrupting = None;
-                // The turn goes on: the draft waits for nothing.
-                self.keep_draft();
-            }
+            Command::Interrupt { .. } => self.interrupting = None,
             _ => {}
         }
         self.notice = bounded(&error.message, self.limits.text_bytes.get());

@@ -102,12 +102,16 @@ of a live run, or of the last run started, is ignored.
 Ctrl+S sends a message now: during a run, it interrupts the run as Esc does
 and keeps the draft, which leaves as any message once nothing runs any more
 (`Session::sends_after_interruption`). A message handed to a turn being
-cancelled would never be read, so it waits for the turn to stop. Esc while it
-waits keeps the draft instead; a refused interruption sends nothing. Without a
-run, or for a command, Ctrl+S is Enter. The terminal asks for the kitty
-keyboard protocol (`DISAMBIGUATE_ESCAPE_CODES`) and removes it on exit, so
-terminals that support it report Ctrl+Enter, which does the same; elsewhere
-Ctrl+Enter reads as Enter.
+cancelled would never be read, so it waits for the turn to stop. A run that
+starts while the draft waits is interrupted too; a refused interruption is not
+asked again, and the draft then leaves when the run ends. Only the draft as it
+was when Ctrl+S was pressed leaves: edited, a command among them, it stays in
+the composer, as it does after Esc or Ctrl+C. Refused as busy, it comes back
+to an empty composer. Without a run, or for a command, Ctrl+S is Enter. The
+terminal asks for the kitty keyboard protocol (`DISAMBIGUATE_ESCAPE_CODES`)
+and removes it on exit, so terminals that support it report Ctrl+Enter, which
+does the same, and Shift+Enter, which inserts a line break. Windows reports
+both too; other terminals send Ctrl+Enter as Enter or as Ctrl+J.
 
 A host that hands messages to the running turn sets `Snapshot::can_steer`.
 The composer then sends a message while a run is live instead of refusing it

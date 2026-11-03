@@ -138,9 +138,12 @@ class Terminal:
         while select.select([self.master], [], [], 0)[0]:
             self.output.extend(os.read(self.master, 65536))
         require(termios.tcgetattr(self.slave) == self.original, "Terminal modes were not restored")
-        pushed = self.output.rfind(b"\x1b[>1u")
-        require(pushed < 0 or self.output.rfind(b"\x1b[<1u") > pushed,
-                "The keyboard protocol was left pushed")
+        # The keyboard protocol is the alternate screen's: removed once, before
+        # leaving it.
+        pushed, popped = self.output.count(b"\x1b[>1u"), self.output.count(b"\x1b[<1u")
+        require(pushed == popped, f"The keyboard protocol was pushed {pushed} and removed {popped} times")
+        require(pushed == 0 or self.output.rfind(b"\x1b[<1u") < self.output.rfind(b"\x1b[?1049l"),
+                "The keyboard protocol was removed after leaving the alternate screen")
 
     def close(self):
         if self.process is not None and self.process.poll() is None:

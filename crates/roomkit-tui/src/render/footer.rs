@@ -55,7 +55,11 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
         .is_some_and(|snapshot| snapshot.active_run.is_some() && snapshot.can_interrupt)
         && !session.interrupting()
     {
-        " Esc interrupt · Enter send · Ctrl+S send now · Alt+Enter newline · F2 details"
+        if cols >= 80 {
+            " Esc interrupt · Enter send · Ctrl+S send now · Alt+Enter newline · F2 details"
+        } else {
+            " Esc interrupt · Enter send · Ctrl+S send now"
+        }
     } else if session
         .snapshot
         .as_ref()

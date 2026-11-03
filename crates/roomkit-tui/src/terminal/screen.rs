@@ -3,6 +3,7 @@
 
 use std::io::{self, Write};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, ThreadId};
 
 use crossterm::{cursor, event, execute, queue, style, terminal};
@@ -20,6 +21,9 @@ pub(super) struct Terminal {
     clear: bool,
     previous_colors_disabled: bool,
     previous_hook: Option<Arc<PanicHook>>,
+    /// Whether the keyboard protocol is pushed: removed once, by the panic
+    /// hook or the drop that follows it, never twice.
+    keyboard: Arc<AtomicBool>,
 }
 
 impl Terminal {
@@ -32,6 +36,7 @@ impl Terminal {
         let previous_colors_disabled = style::Colored::ansi_color_disabled_memoized();
         style::force_color_output(colors);
         let mouse = options.selection == SelectionMode::CopyOnSelect;
+        let keyboard = Arc::new(AtomicBool::new(false));
         let mut terminal = Self {
             status: options
                 .terminal_status
@@ -43,7 +48,8 @@ impl Terminal {
             clear: false,
             options,
             previous_colors_disabled,
-            previous_hook: Some(install_panic_hook(mouse)),
+            previous_hook: Some(install_panic_hook(mouse, keyboard.clone())),
+            keyboard,
         };
         execute!(
             terminal.stdout,
@@ -56,12 +62,13 @@ impl Terminal {
         // protocol; the others ignore the request. Asking whether it is
         // supported would wait for an answer, up to two seconds where none
         // comes. Pushed on the alternate screen, which keeps its own flags.
-        let _ = execute!(
+        let pushed = execute!(
             terminal.stdout,
             event::PushKeyboardEnhancementFlags(
                 event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
             )
         );
+        terminal.keyboard.store(pushed.is_ok(), Ordering::Release);
         if mouse {
             execute!(terminal.stdout, event::EnableMouseCapture)?;
         }
@@ -205,26 +212,28 @@ fn foreground(tone: Tone, theme: &crate::Theme) -> crate::Color {
 /// Leave raw mode and the alternate screen before the panic message is
 /// printed, so that it stays readable. Panics on other threads, including
 /// ones the application catches, leave the terminal alone.
-fn install_panic_hook(mouse: bool) -> Arc<PanicHook> {
+fn install_panic_hook(mouse: bool, keyboard: Arc<AtomicBool>) -> Arc<PanicHook> {
     let previous: Arc<PanicHook> = Arc::from(std::panic::take_hook());
     let chained = previous.clone();
     let owner: ThreadId = thread::current().id();
     std::panic::set_hook(Box::new(move |info| {
         if thread::current().id() == owner {
-            restore(&mut io::stdout(), mouse);
+            restore(&mut io::stdout(), mouse, &keyboard);
         }
         chained(info);
     }));
     previous
 }
 
-fn restore(stdout: &mut io::Stdout, mouse: bool) {
+fn restore(stdout: &mut io::Stdout, mouse: bool, keyboard: &AtomicBool) {
     if mouse {
         let _ = execute!(stdout, event::DisableMouseCapture);
     }
     // Before leaving the alternate screen, whose flags these are; on its own,
     // as platforms without the protocol refuse it.
-    let _ = execute!(stdout, event::PopKeyboardEnhancementFlags);
+    if keyboard.swap(false, Ordering::AcqRel) {
+        let _ = execute!(stdout, event::PopKeyboardEnhancementFlags);
+    }
     let _ = execute!(
         stdout,
         style::ResetColor,
@@ -243,6 +252,7 @@ impl Drop for Terminal {
         restore(
             &mut self.stdout,
             self.options.selection == SelectionMode::CopyOnSelect,
+            &self.keyboard,
         );
         style::Colored::set_ansi_color_disabled(self.previous_colors_disabled);
         // Replacing a hook while unwinding would abort; the installed hook

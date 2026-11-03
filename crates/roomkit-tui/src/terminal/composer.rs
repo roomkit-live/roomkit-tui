@@ -5,6 +5,7 @@ use std::time::Duration;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::keys::{Outcome, is_cancel, is_ctrl};
+use super::requests::send_tracked;
 use super::{QUIT_TIMEOUT, interrupt, interrupt_run, send};
 use crate::{Client, Session};
 
@@ -137,19 +138,30 @@ fn send_now(session: &mut Session, client: &Client) {
         return;
     }
     match session.send_after_interruption() {
-        Ok(Some(run)) => interrupt_run(session, client, run),
-        Ok(None) => {}
+        Ok(()) => {
+            send_waiting(session, client);
+        }
         Err(error) => session.notice = error.to_string(),
     }
 }
 
-/// Send the draft that waited for the interrupted turn, once it stopped.
+/// Move the waiting draft on: cut a run that started since, or send the
+/// draft once nothing runs any more. Whether it acted.
 pub(super) fn send_waiting(session: &mut Session, client: &Client) -> bool {
+    if let Some(run) = session.run_to_cut() {
+        interrupt_run(session, client, run);
+        return true;
+    }
     if !session.take_ready_draft() {
         return false;
     }
+    let draft = session.draft().to_owned();
     match session.input_command() {
-        Ok(command) => send(session, client, command, true),
+        Ok(command) => {
+            if let Some(id) = send_tracked(session, client, command, true) {
+                session.sent_waited(id, draft);
+            }
+        }
         Err(error) => session.notice = error.to_string(),
     }
     true
