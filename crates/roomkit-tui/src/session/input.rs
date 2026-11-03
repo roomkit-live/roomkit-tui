@@ -109,6 +109,7 @@ impl Session {
     }
 
     pub(crate) fn clear_composer(&mut self) {
+        self.keep_draft();
         self.editor.clear();
         self.images.clear();
         self.draft_epoch = self.draft_epoch.wrapping_add(1);

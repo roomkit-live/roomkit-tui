@@ -138,6 +138,9 @@ class Terminal:
         while select.select([self.master], [], [], 0)[0]:
             self.output.extend(os.read(self.master, 65536))
         require(termios.tcgetattr(self.slave) == self.original, "Terminal modes were not restored")
+        pushed = self.output.rfind(b"\x1b[>1u")
+        require(pushed < 0 or self.output.rfind(b"\x1b[<1u") > pushed,
+                "The keyboard protocol was left pushed")
 
     def close(self):
         if self.process is not None and self.process.poll() is None:

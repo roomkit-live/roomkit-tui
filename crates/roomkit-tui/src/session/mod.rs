@@ -10,6 +10,7 @@ mod input;
 mod labels;
 mod measures;
 mod runs;
+mod send_now;
 mod steering;
 mod tools;
 
@@ -130,6 +131,8 @@ pub struct Session {
     /// whose own run started before the host said so went to that run.
     answered: Vec<MessageId>,
     interrupting: Option<RunId>,
+    /// The draft leaves once the interrupted turn stops (Ctrl+S).
+    send_after_interruption: bool,
     deciding: BTreeSet<PermissionId>,
     expanded_tools: BTreeSet<ToolKey>,
     focused_tool: Option<ToolKey>,
@@ -180,6 +183,7 @@ impl Session {
             steered: Vec::new(),
             answered: Vec::new(),
             interrupting: None,
+            send_after_interruption: false,
             deciding: BTreeSet::new(),
             expanded_tools: BTreeSet::new(),
             focused_tool: None,

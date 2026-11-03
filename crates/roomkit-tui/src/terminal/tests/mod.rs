@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "Test fixtures fail on invalid state")]
 mod exit;
 mod keys;
+mod send_now;
 
 use super::keys::{Outcome, handle_key};
 use super::*;

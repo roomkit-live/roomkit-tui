@@ -8,6 +8,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Send a message now (RMK-1285): Ctrl+S, or Ctrl+Enter in a terminal with the
+  kitty keyboard protocol, interrupts the run and sends the draft once it
+  stopped, in a turn of its own; Esc while it waits keeps the draft. The
+  terminal asks for the protocol's `DISAMBIGUATE_ESCAPE_CODES` and removes it
+  on exit and on a panic.
 - Write to the model while it works (RMK-1161). For an agent registered with
   `AiChannelOptions::steer_room_turns`, a streaming console advertises
   `Snapshot::can_steer`: the engine reads it from the agent's registered

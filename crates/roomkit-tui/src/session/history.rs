@@ -19,6 +19,7 @@ impl Session {
         {
             self.images.clear();
             self.forget_steering();
+            self.keep_draft();
             self.draft_epoch = self.draft_epoch.wrapping_add(1);
         }
         bound_labels(&mut snapshot);

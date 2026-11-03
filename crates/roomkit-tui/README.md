@@ -99,6 +99,16 @@ engine does. Each run keeps its own outcome, and `execution_outcome` reports
 the most severe of the runs since the room was idle. A replayed `RunStarted`
 of a live run, or of the last run started, is ignored.
 
+Ctrl+S sends a message now: during a run, it interrupts the run as Esc does
+and keeps the draft, which leaves as any message once nothing runs any more
+(`Session::sends_after_interruption`). A message handed to a turn being
+cancelled would never be read, so it waits for the turn to stop. Esc while it
+waits keeps the draft instead; a refused interruption sends nothing. Without a
+run, or for a command, Ctrl+S is Enter. The terminal asks for the kitty
+keyboard protocol (`DISAMBIGUATE_ESCAPE_CODES`) and removes it on exit, so
+terminals that support it report Ctrl+Enter, which does the same; elsewhere
+Ctrl+Enter reads as Enter.
+
 A host that hands messages to the running turn sets `Snapshot::can_steer`.
 The composer then sends a message while a run is live instead of refusing it
 as busy, unless an interruption is pending; images still wait, and the host

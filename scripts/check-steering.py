@@ -1,9 +1,14 @@
-"""Write to the model while it works (RMK-1161), on a real pseudo-terminal.
+"""Write to the model while it works, on a real pseudo-terminal.
 
 roomkit-chat runs the real engine against a local Chat Completions fixture.
 The fixture holds the model's first answer, a tool call, open while the
-person types: the message goes to the running turn, the terminal says so,
-and the model reads it at its next step.
+person types:
+
+- Enter (RMK-1161): the message goes to the running turn, the terminal says
+  so, and the model reads it at its next step;
+- Ctrl+S, or Ctrl+Enter as a terminal with the kitty keyboard protocol
+  reports it (RMK-1285): the turn is interrupted, and the message leaves
+  once it stopped, in a turn of its own.
 """
 
 import json
@@ -15,6 +20,8 @@ from pathlib import Path
 from terminal_pty import DEADLINE, Terminal, binary, require
 
 STEERED = "Use the second ledger"
+CTRL_S = b"\x13"
+CTRL_ENTER = b"\x1b[13;5u"
 
 
 class Fixture(BaseHTTPRequestHandler):
@@ -39,6 +46,12 @@ class Fixture(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
+        try:
+            self.answer(first)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # An interrupted turn stopped reading its answer.
+
+    def answer(self, first):
         if first:
             self.chunk({"content": "Checking the record. "})
             Fixture.release.wait(DEADLINE)
@@ -58,30 +71,66 @@ def said(request, text):
     return any(text in json.dumps(message) for message in request["messages"])
 
 
+def chat(port, directory):
+    """roomkit-chat against the fixture, its turn holding its first answer."""
+    Fixture.requests = []
+    Fixture.release = threading.Event()
+    env = {
+        "ROOMKIT_BASE_URL": f"http://127.0.0.1:{port}/v1",
+        "ROOMKIT_MODEL": "fixture",
+        "ROOMKIT_API_KEY": "",
+    }
+    args = [binary("roomkit-chat"), "--database", Path(directory) / "chat.db", "--no-animation"]
+    terminal = Terminal(args, env=env)
+    terminal.wait_for(b"fixture")
+    # The kitty keyboard protocol is asked for, so Ctrl+Enter is told apart.
+    terminal.wait_for(b"\x1b[>1u")
+    terminal.send(b"Look up record 42\r")
+    terminal.wait_for(b"Checking the record.")
+    return terminal
+
+
+def handed_to_the_running_turn(port, directory):
+    with chat(port, directory) as terminal:
+        terminal.send(STEERED.encode() + b"\r")
+        terminal.wait_for("↳ sent to the running turn".encode())
+        Fixture.release.set()
+        terminal.wait_for(b"Record 42 is in the second ledger.")
+        require(len(Fixture.requests) == 2, f"{len(Fixture.requests)} model requests, not 2")
+        require(said(Fixture.requests[1], STEERED), "The turn's next step did not read the message")
+        require(not terminal.screen.ever(b"An execution is active"), "The message was refused")
+        terminal.send(b"\x04")
+        terminal.exited()
+
+
+def sent_now(port, directory, key):
+    with chat(port, directory) as terminal:
+        terminal.send(STEERED.encode() + key)
+        terminal.wait_for(b"Execution Interrupted")
+        terminal.wait_for(b"Record 42 is in the second ledger.")
+        require(len(Fixture.requests) == 2, f"{len(Fixture.requests)} model requests, not 2")
+        asked = Fixture.requests[1]
+        require(said(asked, STEERED), "The message did not reach the model")
+        require(not said(asked, "lookup-1"), "The interrupted turn went on to its call")
+        require(not terminal.screen.ever("↳ sent to the running turn".encode()),
+                "The message was handed to the turn it should have cut")
+        terminal.send(b"\x04")
+        terminal.exited()
+
+
 server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 try:
-    with tempfile.TemporaryDirectory() as directory:
-        env = {
-            "ROOMKIT_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1",
-            "ROOMKIT_MODEL": "fixture",
-            "ROOMKIT_API_KEY": "",
-        }
-        args = [binary("roomkit-chat"), "--database", Path(directory) / "chat.db", "--no-animation"]
-        with Terminal(args, env=env) as terminal:
-            terminal.wait_for(b"fixture")
-            terminal.send(b"Look up record 42\r")
-            terminal.wait_for(b"Checking the record.")
-            terminal.send(STEERED.encode() + b"\r")
-            terminal.wait_for("↳ sent to the running turn".encode())
-            Fixture.release.set()
-            terminal.wait_for(b"Record 42 is in the second ledger.")
-            require(len(Fixture.requests) == 2, f"{len(Fixture.requests)} model requests, not 2")
-            require(said(Fixture.requests[1], STEERED), "The turn's next step did not read the message")
-            require(not terminal.screen.ever(b"An execution is active"), "The message was refused")
-            terminal.send(b"\x04")
-            terminal.exited()
+    for check in (
+        handed_to_the_running_turn,
+        lambda port, directory: sent_now(port, directory, CTRL_S),
+        lambda port, directory: sent_now(port, directory, CTRL_ENTER),
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            check(server.server_port, directory)
+        Fixture.release.set()
 finally:
     Fixture.release.set()
     server.shutdown()
-print("Steering checks passed: a message typed during a tool round goes to the running turn, which reads it at its next step.")
+print("Steering checks passed: Enter hands a message to the running turn, which reads it at its next "
+      "step; Ctrl+S and Ctrl+Enter cut the turn and send the message once it stopped.")

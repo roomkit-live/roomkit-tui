@@ -301,7 +301,11 @@ impl Session {
             Command::Decide { permission, .. } => {
                 self.deciding.remove(&permission);
             }
-            Command::Interrupt { .. } => self.interrupting = None,
+            Command::Interrupt { .. } => {
+                self.interrupting = None;
+                // The turn goes on: the draft waits for nothing.
+                self.keep_draft();
+            }
             _ => {}
         }
         self.notice = bounded(&error.message, self.limits.text_bytes.get());

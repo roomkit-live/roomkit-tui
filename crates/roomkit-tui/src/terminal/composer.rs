@@ -5,7 +5,7 @@ use std::time::Duration;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::keys::{Outcome, is_cancel, is_ctrl};
-use super::{QUIT_TIMEOUT, interrupt, send};
+use super::{QUIT_TIMEOUT, interrupt, interrupt_run, send};
 use crate::{Client, Session};
 
 const MAX_INPUT_BYTES: usize = roomkit_tui_protocol::limits::MAX_TEXT_BYTES;
@@ -69,6 +69,7 @@ fn composer_navigation(
         KeyCode::Char('n') if control => session.editor.history_next(),
         KeyCode::Tab => session.complete(),
         KeyCode::Esc if menu => session.menu.dismiss(),
+        KeyCode::Esc if session.sends_after_interruption() => session.keep_draft(),
         KeyCode::Esc => interrupt(session, client),
         KeyCode::End if control => session.scroll_to_bottom(),
         KeyCode::PageUp => session.scroll_back(PAGE),
@@ -100,6 +101,7 @@ fn composer_editing(session: &mut Session, client: &Client, key: KeyEvent) {
                 session.editor.insert("\n");
             }
         }
+        KeyCode::Enter | KeyCode::Char('s') if control => send_now(session, client),
         KeyCode::Enter => submit(session, client),
         KeyCode::Char(c) if !control && !alt => {
             if room(c.len_utf8()) {
@@ -119,6 +121,38 @@ fn composer_editing(session: &mut Session, client: &Client, key: KeyEvent) {
         KeyCode::End => session.editor.end(),
         _ => {}
     }
+}
+
+/// Ctrl+S, or Ctrl+Enter where the terminal tells it from Enter: Enter,
+/// except that a message written during the turn cuts it, as Esc does, and
+/// leaves once it has stopped ([`send_waiting`]).
+fn send_now(session: &mut Session, client: &Client) {
+    let command = session
+        .draft()
+        .trim_start()
+        .starts_with(session.command_prefix)
+        || session.input_action().is_some();
+    if !session.is_executing() || command {
+        submit(session, client);
+        return;
+    }
+    match session.send_after_interruption() {
+        Ok(Some(run)) => interrupt_run(session, client, run),
+        Ok(None) => {}
+        Err(error) => session.notice = error.to_string(),
+    }
+}
+
+/// Send the draft that waited for the interrupted turn, once it stopped.
+pub(super) fn send_waiting(session: &mut Session, client: &Client) -> bool {
+    if !session.take_ready_draft() {
+        return false;
+    }
+    match session.input_command() {
+        Ok(command) => send(session, client, command, true),
+        Err(error) => session.notice = error.to_string(),
+    }
+    true
 }
 
 /// Enter sends the draft. With completions open, an exact command without

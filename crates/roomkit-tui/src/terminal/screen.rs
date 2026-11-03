@@ -51,6 +51,17 @@ impl Terminal {
             event::EnableBracketedPaste,
             cursor::Hide
         )?;
+        // Keys the legacy encoding cannot tell apart, such as Ctrl+Enter from
+        // Enter, are reported apart by terminals with the kitty keyboard
+        // protocol; the others ignore the request. Asking whether it is
+        // supported would wait for an answer, up to two seconds where none
+        // comes. Pushed on the alternate screen, which keeps its own flags.
+        let _ = execute!(
+            terminal.stdout,
+            event::PushKeyboardEnhancementFlags(
+                event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+            )
+        );
         if mouse {
             execute!(terminal.stdout, event::EnableMouseCapture)?;
         }
@@ -211,6 +222,9 @@ fn restore(stdout: &mut io::Stdout, mouse: bool) {
     if mouse {
         let _ = execute!(stdout, event::DisableMouseCapture);
     }
+    // Before leaving the alternate screen, whose flags these are; on its own,
+    // as platforms without the protocol refuse it.
+    let _ = execute!(stdout, event::PopKeyboardEnhancementFlags);
     let _ = execute!(
         stdout,
         style::ResetColor,
