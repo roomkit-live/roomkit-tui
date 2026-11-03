@@ -4,7 +4,9 @@
 
 #![allow(clippy::unwrap_used, reason = "Test fixtures fail on invalid state")]
 use super::*;
-use roomkit_tui_protocol::{InputAction, Rejection, Request};
+use roomkit_tui_protocol::{InputAction, Message, Rejection, Request};
+
+use crate::Steering;
 
 const DRAFT: &str = "Use the second ledger";
 const NOW: Duration = Duration::ZERO;
@@ -680,20 +682,132 @@ fn ctrl_s_never_waits_on_a_turn_it_cannot_cut_or_with_nothing_to_send() {
     );
 }
 
+fn screen(session: &Session) -> String {
+    let options = UiOptions::default();
+    let renderers = Renderers::default();
+    render::screen_with_options(session, 120, 30, &renderers, &options, NOW)
+        .lines
+        .join("\n")
+}
+
 #[test]
-fn the_hint_names_the_key_and_the_wait() {
+fn the_row_under_the_composer_names_the_wait_and_not_the_key() {
     let (mut session, client, _host) = fixture(true);
-    let hints = |session: &Session, cols| {
-        let options = UiOptions::default();
-        let renderers = Renderers::default();
-        render::screen_with_options(session, cols, 30, &renderers, &options, NOW)
-            .lines
-            .join("\n")
-    };
-    assert!(hints(&session, 120).contains("Ctrl+S send now"));
-    let narrow = hints(&session, 60);
-    assert!(narrow.contains("Ctrl+S send now") && !narrow.contains("Alt+Enter"));
+    assert!(!screen(&session).contains("Ctrl+S"));
     session.insert("Now");
     ctrl_s(&mut session, &client);
-    assert!(hints(&session, 120).contains("Sends once the work stops"));
+    assert!(screen(&session).contains("Sends once the work stops"));
+}
+
+/// A view with `run` live, and the message "handed" handed to it.
+fn handed() -> (Session, Client, Host) {
+    let (mut session, client, host) = working();
+    started(&mut session);
+    session.apply(Event::Item {
+        conversation: "room".into(),
+        item: Item::Message(Message::new("handed", "person:local", "Stop and do this")),
+    });
+    session.apply(Event::MessageSteered {
+        conversation: "room".into(),
+        message: "handed".into(),
+        run: "run".into(),
+    });
+    (session, client, host)
+}
+
+fn answer() -> Command {
+    Command::Answer {
+        agent: "agent".into(),
+    }
+}
+
+/// RMK-1311: a message handed to a turn waits for that turn's next step, which
+/// may be far. Its line says Ctrl+S cuts the turn, as long as the turn runs.
+#[test]
+fn the_line_of_a_handed_message_names_the_key_while_its_turn_runs() {
+    let (mut session, _client, _host) = handed();
+    assert!(screen(&session).contains("↳ sent to the running turn · Ctrl+S to cut it now"));
+    stopped(&mut session);
+    let drawn = screen(&session);
+    assert!(drawn.contains("↳ sent to the running turn"));
+    assert!(!drawn.contains("Ctrl+S"), "The turn it would cut is over");
+}
+
+/// RMK-1311: with an empty composer, Ctrl+S cuts the turn, and asks for a turn
+/// that answers the message: nothing new is written, and nothing is duplicated.
+#[test]
+fn ctrl_s_on_an_empty_composer_cuts_the_turn_and_answers_the_message() {
+    let (mut session, client, host) = handed();
+    ctrl_s(&mut session, &client);
+    assert_eq!(host.try_recv().unwrap().command, interrupt());
+    assert!(session.sends_after_interruption());
+    assert!(screen(&session).contains("Answers once the work stops"));
+
+    stopped(&mut session);
+    assert!(
+        !pass(&mut session, &client, NOW),
+        "Its operation still runs"
+    );
+    finished(&mut session);
+    assert!(pass(&mut session, &client, NOW));
+    let sent = host.try_recv().unwrap();
+    assert_eq!(sent.command, answer());
+
+    // Refused as busy, it is asked again, as a draft is.
+    refused(&mut session, &sent, busy(), LATER);
+    assert!(session.notice().is_empty());
+    let retry = LATER + Duration::from_millis(200);
+    assert!(pass(&mut session, &client, retry));
+    let again = host.try_recv().unwrap();
+    assert_eq!(again.command, answer());
+    taken(&mut session, &again, retry);
+    assert!(!session.sends_after_interruption());
+    assert_eq!(session.steering(&"handed".into()), Some(Steering::OwnTurn));
+    assert!(!screen(&session).contains("Ctrl+S"));
+    assert!(!pass(&mut session, &client, retry * 2));
+    assert!(host.try_recv().is_err(), "Asked twice");
+}
+
+#[test]
+fn escape_or_typing_keeps_the_handed_message_from_being_answered_now() {
+    let (mut session, client, host) = handed();
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    press(&mut session, &client, escape(), NOW);
+    assert!(!session.sends_after_interruption());
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(!pass(&mut session, &client, NOW));
+    assert!(host.try_recv().is_err(), "Esc did not cancel");
+
+    let (mut session, client, host) = handed();
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    session.set_draft("Another thought");
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(!pass(&mut session, &client, NOW));
+    assert!(host.try_recv().is_err(), "The typed text was overtaken");
+    assert_eq!(session.draft(), "Another thought");
+}
+
+/// A draft in the composer takes the key: it leaves, and the next turn reads
+/// the handed message with it.
+#[test]
+fn a_draft_goes_before_the_handed_message() {
+    let (mut session, client, host) = handed();
+    session.insert(DRAFT);
+    ctrl_s(&mut session, &client);
+    assert_eq!(host.try_recv().unwrap().command, interrupt());
+    stopped(&mut session);
+    finished(&mut session);
+    left(&mut session, &client, &host, NOW);
+}
+
+#[test]
+fn an_empty_composer_with_nothing_handed_has_nothing_to_send() {
+    let (mut session, client, host) = fixture(true);
+    ctrl_s(&mut session, &client);
+    assert!(host.try_recv().is_err());
+    assert_eq!(session.notice(), "Enter a message");
 }

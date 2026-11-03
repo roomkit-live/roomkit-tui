@@ -127,6 +127,7 @@ fn composer_editing(session: &mut Session, client: &Client, key: KeyEvent) {
 /// Ctrl+S, or Ctrl+Enter where the terminal tells it from Enter: Enter for a
 /// command. A message cuts whatever runs, as Esc does, and leaves once
 /// nothing runs any more, however the host holds the room ([`send_waiting`]).
+/// With an empty composer, it does so for the message handed to the turn.
 fn send_now(session: &mut Session, client: &Client) {
     let command = session
         .draft()
@@ -156,7 +157,7 @@ pub(super) fn send_waiting(session: &mut Session, client: &Client, now: Duration
     if !session.draft_may_leave(now) {
         return false;
     }
-    match session.input_command() {
+    match session.waited_command() {
         Ok(command) => match try_request(session, client, command) {
             Some(id) => session.sent_waited(id),
             None => session.keep_draft(),

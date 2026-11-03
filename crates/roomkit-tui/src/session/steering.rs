@@ -29,6 +29,15 @@ impl Session {
             .map(|(_, steering)| *steering)
     }
 
+    /// The message last handed to a turn that still runs and can be cut: Ctrl+S
+    /// on an empty composer cuts that turn to answer it. Whether the turn has
+    /// read it already, nothing says.
+    pub(crate) fn handed_to_a_live_turn(&self) -> Option<&MessageId> {
+        let (message, run) = self.handed.as_ref()?;
+        let can_interrupt = self.snapshot.as_ref().is_some_and(|s| s.can_interrupt);
+        (can_interrupt && self.is_live(run)).then_some(message)
+    }
+
     /// Whether a message may be sent while the agent's turn runs: the host
     /// hands it to that turn.
     pub(super) fn can_steer(&self) -> bool {
@@ -55,6 +64,9 @@ impl Session {
         } else {
             Steering::Handed
         };
+        if steering == Steering::Handed {
+            self.handed = Some((message.clone(), run.clone()));
+        }
         remember(&mut self.steered, (message, steering));
     }
 
@@ -63,6 +75,9 @@ impl Session {
     pub(super) fn on_answered(&mut self, conversation: &ConversationId, message: &MessageId) {
         if !self.is_current(conversation) || message.as_str().len() > MAX_LABEL_BYTES {
             return;
+        }
+        if self.handed.as_ref().is_some_and(|(id, _)| id == message) {
+            self.handed = None;
         }
         match self.steered.iter_mut().find(|(id, _)| id == message) {
             Some((_, steering)) => *steering = Steering::OwnTurn,
@@ -73,8 +88,17 @@ impl Session {
         }
     }
 
+    /// A turn now answers `message`, which the turn it was handed to never did.
+    pub(super) fn answered_by_a_turn_of_its_own(&mut self, message: &MessageId) {
+        self.handed = None;
+        if let Some((_, steering)) = self.steered.iter_mut().find(|(id, _)| id == message) {
+            *steering = Steering::OwnTurn;
+        }
+    }
+
     /// Forget where messages went, as a conversation switch does.
     pub(super) fn forget_steering(&mut self) {
+        self.handed = None;
         self.steered.clear();
         self.answered.clear();
     }

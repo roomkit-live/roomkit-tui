@@ -27,6 +27,13 @@ pub enum Command {
         /// Bounded message data; boxed to keep ordinary control requests small.
         message: Box<ImageMessage>,
     },
+    /// Start a turn for what the conversation already holds, without a new
+    /// message: for a message handed to a turn that was cut before reading it.
+    /// A host that cannot answers `Unsupported`.
+    Answer {
+        /// Agent selected in the current snapshot.
+        agent: ActorId,
+    },
     /// Invoke one of the commands advertised by the host.
     Invoke {
         /// Name without its slash.

@@ -107,7 +107,9 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 Ok(None)
             }
             Command::Invoke { .. } | Command::SubmitForm { .. } => self.invoke(request),
-            Command::Submit { .. } | Command::SubmitImages { .. } => self.submit(request),
+            Command::Submit { .. } | Command::SubmitImages { .. } | Command::Answer { .. } => {
+                self.submit(request)
+            }
             _ => {
                 let error = Rejection::new(
                     ErrorCode::Unsupported,
@@ -198,6 +200,10 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
             Command::Submit { text, .. } => {
                 let content = roomkit::model::TextContent::new(text.clone()).into();
                 self.start_turn(&request, content, reserved)?;
+                return Ok(None);
+            }
+            Command::Answer { .. } => {
+                self.start_answer(&request, reserved)?;
                 return Ok(None);
             }
             _ => return Ok(None),

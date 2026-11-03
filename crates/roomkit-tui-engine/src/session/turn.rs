@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use roomkit::model::{EventContent, InboundMessage};
+use roomkit::model::{EventContent, EventType, InboundMessage};
 use roomkit::{ConversationStore, InboundResult, ProcessInboundOptions, RoomKit};
 use roomkit_tui_protocol::limits::{
     MAX_IMAGE_BASE64_BYTES, MAX_IMAGE_NAME_BYTES, MAX_IMAGE_PIXELS, MAX_IMAGES, MAX_TEXT_BYTES,
@@ -18,6 +18,11 @@ use super::{AdapterError, CommandHandler, SessionConfig, restore};
 use crate::activity::Active;
 use crate::execution::{Interrupter, Operation};
 use crate::{ConversationChannel, SessionLifecycle, TurnOutcome, cancellation, projection};
+
+/// What a turn started without a new message is told. It is an instruction:
+/// never stored, and never shown as anyone's words.
+const ANSWER_NOW: &str = "The person cut the turn that was running to get an answer now. \
+Answer their latest message in this conversation.";
 
 /// Validate a submission against this view's agent and transport bounds.
 pub(super) fn validate(request: &Request, config: &SessionConfig) -> Result<(), Rejection> {
@@ -36,6 +41,7 @@ pub(super) fn validate(request: &Request, config: &SessionConfig) -> Result<(), 
         Command::SubmitImages { .. } => Err(Rejection::invalid(
             "Images unavailable for this agent or attachment limits exceeded",
         )),
+        Command::Answer { agent: to } if to.as_str() == agent => Ok(()),
         _ => Err(Rejection::invalid("Invalid agent or message")),
     }
 }
@@ -60,6 +66,28 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         content: EventContent,
         reserved: Active,
     ) -> Result<(), AdapterError> {
+        self.start(request, content, reserved, false)
+    }
+
+    /// Start a turn in the reserved room for what the conversation holds: the
+    /// agent reads it there. The host admitted those messages already, so it
+    /// hears the turn start and end, and no new prompt.
+    pub fn start_answer(
+        &mut self,
+        request: &Request,
+        reserved: Active,
+    ) -> Result<(), AdapterError> {
+        let content = roomkit::model::TextContent::new(ANSWER_NOW).into();
+        self.start(request, content, reserved, true)
+    }
+
+    fn start(
+        &mut self,
+        request: &Request,
+        content: EventContent,
+        reserved: Active,
+        answer: bool,
+    ) -> Result<(), AdapterError> {
         self.reply(request, None)?;
         let session = &self.session;
         let operation = request.operation.clone();
@@ -74,6 +102,7 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
             lifecycle: session.lifecycle.clone(),
             operation,
             controls,
+            answer,
         };
         tokio::spawn(turn.run(content, processing));
         self.work = Some(Interrupter::Engine(control));
@@ -88,6 +117,9 @@ struct Turn<S: ConversationStore> {
     lifecycle: Option<Arc<dyn SessionLifecycle>>,
     operation: OperationId,
     controls: cancellation::Receiver,
+    /// The turn answers what the conversation holds: its content is an
+    /// instruction, not a person's words.
+    answer: bool,
 }
 
 /// How a delivery ended, before the host's lifecycle is told.
@@ -126,7 +158,7 @@ impl<S: ConversationStore> Turn<S> {
                 lifecycle.as_ref(),
                 &self.config,
                 &self.operation,
-                &content,
+                (!self.answer).then_some(&content),
                 &self.channel,
                 &mut self.controls,
             );
@@ -173,13 +205,18 @@ impl<S: ConversationStore> Turn<S> {
         let (config, channel) = (&self.config, &self.channel);
         let mut message = InboundMessage::new(channel.id().clone(), &config.sender, content);
         message.addressed_to = Some(vec![config.agent.clone()]);
-        let key = [
-            config.conversation(),
-            channel.id().as_str(),
-            &config.sender,
-            self.operation.as_str(),
-        ];
-        message.idempotency_key = Some(serde_json::json!(key).to_string());
+        if self.answer {
+            // Never stored, it holds no key to replay under: RoomKit refuses one.
+            message.event_type = EventType::Instruction;
+        } else {
+            let key = [
+                config.conversation(),
+                channel.id().as_str(),
+                &config.sender,
+                self.operation.as_str(),
+            ];
+            message.idempotency_key = Some(serde_json::json!(key).to_string());
+        }
         let options = ProcessInboundOptions {
             room_id: Some(config.room.clone()),
             organization_id: config.organization.clone(),

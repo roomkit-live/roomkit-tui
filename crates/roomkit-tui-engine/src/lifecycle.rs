@@ -84,7 +84,7 @@ pub(crate) async fn prepare(
     lifecycle: &dyn SessionLifecycle,
     session: &SessionConfig,
     operation: &OperationId,
-    content: &EventContent,
+    content: Option<&EventContent>,
     channel: &crate::ConversationChannel,
     controls: &mut crate::cancellation::Receiver,
 ) -> Option<roomkit_tui_protocol::RunOutcome> {
@@ -93,7 +93,9 @@ pub(crate) async fn prepare(
     let mut announced = false;
     let result = {
         let future = async {
-            lifecycle.admit(session, operation, content).await?;
+            if let Some(content) = content {
+                lifecycle.admit(session, operation, content).await?;
+            }
             lifecycle.started(session, operation).await;
             Ok::<_, roomkit_tui_protocol::Rejection>(())
         };

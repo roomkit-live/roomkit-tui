@@ -8,10 +8,17 @@
 //!
 //! The draft stays in the composer until the host takes it: a refusal then
 //! changes nothing on screen, and the person can still edit or drop it.
+//!
+//! With an empty composer, Ctrl+S acts for the message last handed to a turn
+//! that still runs (RMK-1311), which may be far from its next step: it cuts
+//! that turn, and asks the host for a turn that answers what the conversation
+//! holds, the message included, as no new message would.
 
 use std::time::Duration;
 
-use roomkit_tui_protocol::{ErrorCode, ImageUpload, Rejection, RequestId, RunId};
+use roomkit_tui_protocol::{
+    Command, ErrorCode, ImageUpload, MessageId, Rejection, RequestId, RunId,
+};
 
 use super::{Session, SessionError};
 
@@ -27,6 +34,9 @@ const RETRY_FOR: Duration = Duration::from_secs(30);
 pub(super) struct Waiting {
     text: String,
     images: Vec<ImageUpload>,
+    /// With an empty composer: the message handed to the turn being cut, which
+    /// a turn of its own then answers.
+    answers: Option<MessageId>,
     /// The run last asked to stop for it: a run started since is cut too.
     cut: Option<RunId>,
     /// Not sent before then: the host has just refused it as busy.
@@ -51,11 +61,13 @@ impl Session {
     /// draft, nothing changes.
     pub(crate) fn send_after_interruption(&mut self) -> Result<(), SessionError> {
         let snapshot = self.snapshot.as_ref().ok_or(SessionError::WaitingForHost)?;
-        if self.editor.text().trim().is_empty() && self.images.is_empty() {
-            return Err(SessionError::EmptyMessage);
-        }
         if self.sends_after_interruption() {
             return Ok(());
+        }
+        let empty = self.editor.text().trim().is_empty() && self.images.is_empty();
+        let answers = self.handed_to_a_live_turn().filter(|_| empty).cloned();
+        if empty && answers.is_none() {
+            return Err(SessionError::EmptyMessage);
         }
         if self.is_executing() && !snapshot.can_interrupt {
             return Err(SessionError::NotInterruptible);
@@ -63,6 +75,7 @@ impl Session {
         self.waiting = Some(Waiting {
             text: self.editor.text().to_owned(),
             images: self.images.clone(),
+            answers,
             cut: None,
             not_before: Duration::ZERO,
             give_up: None,
@@ -132,6 +145,18 @@ impl Session {
         true
     }
 
+    /// What the wait sends: the draft, or the request that answers the message
+    /// handed to the cut turn.
+    pub(crate) fn waited_command(&self) -> Result<Command, SessionError> {
+        if self.waiting.as_ref().is_none_or(|w| w.answers.is_none()) {
+            return self.input_command();
+        }
+        let snapshot = self.snapshot.as_ref().ok_or(SessionError::WaitingForHost)?;
+        Ok(Command::Answer {
+            agent: snapshot.selected_agent.clone(),
+        })
+    }
+
     /// The waited draft left as request `id`.
     pub(crate) fn sent_waited(&mut self, id: RequestId) {
         self.flight = Some((id, self.editor.text().to_owned()));
@@ -176,7 +201,9 @@ impl Session {
         if self.waiting.as_ref().is_some_and(|w| w.text != text) {
             return;
         }
-        self.waiting = None;
+        if let Some(message) = self.waiting.take().and_then(|w| w.answers) {
+            self.answered_by_a_turn_of_its_own(&message);
+        }
         self.notice.clear();
         if self.editor.text() == text && self.images.is_empty() {
             self.editor.submitted();

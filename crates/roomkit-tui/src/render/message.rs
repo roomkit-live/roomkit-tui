@@ -71,8 +71,10 @@ pub(super) fn render(view: &View<'_>, message: &Message, cols: usize) -> Vec<Lin
         lines.push(line(" ".repeat(cols), Tone::Input));
     }
     if let Some(steering) = session.steering(&message.id) {
+        let cut = session.handed_to_a_live_turn() == Some(&message.id);
+        let cut = if cut { " · Ctrl+S to cut it now" } else { "" };
         lines.push(line(
-            format!("   ↳ {}", steering_note(steering)),
+            format!("   ↳ {}{cut}", steering_note(steering)),
             Tone::Muted,
         ));
     }

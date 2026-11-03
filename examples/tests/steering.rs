@@ -502,3 +502,96 @@ async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }
+
+/// RMK-1311: a message handed to a turn waits for that turn's next step, which
+/// may be far. The turn is cut, and a turn of its own reads the message where
+/// it is, in the conversation: it is not written twice, nothing else is shown,
+/// and the host, which admitted it already, hears only the turn.
+#[tokio::test]
+async fn a_message_handed_to_a_cut_turn_is_answered_by_a_turn_of_its_own() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([
+        ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
+        ScriptedRound::answering("Answered at once"),
+    ]);
+    let (_tools, gate) = watch::channel(false);
+    let (console, view) = room(&kit, provider.clone(), gate).await;
+    let agent = view.agent.clone();
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let lifecycle = Arc::new(Host::default());
+    let session = LocalSession::new(kit.clone(), console, view).with_lifecycle(lifecycle.clone());
+    let task = tokio::spawn(session.run(host));
+    let mut ui = Session::default();
+    until(&client, &mut ui, "the conversation", |ui| {
+        ui.snapshot().is_some()
+    })
+    .await;
+
+    write(&client, &mut ui, "Look up record 42");
+    let tool = |item: &Item| matches!(item, Item::Tool { .. });
+    until(&client, &mut ui, "the turn's tool call", |ui| {
+        ui.snapshot().is_some_and(|s| s.items.iter().any(tool))
+    })
+    .await;
+    write(&client, &mut ui, "Use the second ledger");
+    until(&client, &mut ui, "the message handed to the turn", |ui| {
+        message(ui, "Use the second ledger")
+            .is_some_and(|m| ui.steering(&m.id) == Some(Steering::Handed))
+    })
+    .await;
+
+    let run = ui.active_run().cloned().expect("The turn runs");
+    let interrupt = ui.request(Command::Interrupt { run }).unwrap();
+    client.try_send(interrupt.clone()).unwrap();
+    ui.sent(&interrupt);
+    until(&client, &mut ui, "the turn stopped", |ui| {
+        ui.active_run().is_none()
+    })
+    .await;
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let answered = loop {
+        let command = Command::Answer {
+            agent: agent.as_str().into(),
+        };
+        let answer = ui.request(command).unwrap();
+        client.try_send(answer.clone()).unwrap();
+        ui.sent(&answer);
+        match replied(&client, &mut ui, &answer).await {
+            None => break answer,
+            Some(refusal) => assert_eq!(refusal.code, ErrorCode::Busy, "{refusal:?}"),
+        }
+        assert!(Instant::now() < deadline, "The host stayed busy");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    until(&client, &mut ui, "the answer", |ui| {
+        message(ui, "Answered at once").is_some()
+    })
+    .await;
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 2, "One request for each turn");
+    let read = requests[1]
+        .messages
+        .iter()
+        .filter(|m| m.text() == "Use the second ledger")
+        .count();
+    assert_eq!(read, 1, "The message was read once");
+    let shown = ui.snapshot().unwrap().items.iter().filter(|item| {
+        matches!(item, Item::Message(m) if m.text == "Use the second ledger" || m.text.contains("cut the turn"))
+    }).count();
+    assert_eq!(
+        shown, 1,
+        "The message shows once, and the instruction not at all"
+    );
+    let told = lifecycle.told(answered.operation.as_str()).await;
+    assert_eq!(
+        told,
+        ["started", "finished"],
+        "The host heard the turn only"
+    );
+
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}

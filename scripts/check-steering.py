@@ -9,7 +9,8 @@ person types:
 - Ctrl+S, or Ctrl+Enter as a terminal with the kitty keyboard protocol
   reports it (RMK-1285): the turn is interrupted, and the message leaves
   once it stopped, in a turn of its own. The terminal's loop tries again
-  while the host holds the room (RMK-1303, against a scripted host).
+  while the host holds the room (RMK-1303, against a scripted host). On an
+  empty composer, it cuts the turn for the message handed to it (RMK-1311).
 """
 
 import json
@@ -124,6 +125,27 @@ def sent_now(port, directory, key):
         terminal.exited()
 
 
+def cut_for_a_message_already_handed(port, directory):
+    """RMK-1311: the handed message's line names the key. Ctrl+S on the empty
+    composer cuts the turn, and a turn of its own answers the message, which is
+    in the conversation once and shows once."""
+    with chat(port, directory) as terminal:
+        terminal.send(STEERED.encode() + b"\r")
+        terminal.wait_for("sent to the running turn · Ctrl+S to cut it now".encode())
+        require(not terminal.screen.shows(b"Ctrl+S send now"), "The key stayed on the row below")
+        terminal.send(CTRL_S)
+        terminal.wait_for(b"Execution Interrupted")
+        terminal.wait_for(b"Record 42 is in the second ledger.")
+        terminal.wait_for("answered in its own turn".encode())
+        require(len(Fixture.requests) == 2, f"{len(Fixture.requests)} model requests, not 2")
+        read = sum(STEERED == message.get("content") for message in Fixture.requests[1]["messages"])
+        require(read == 1, f"The model read the message {read} times")
+        require(terminal.screen.text().count(STEERED) == 1, "The message shows twice")
+        require(not terminal.screen.ever(b"cut the turn"), "The instruction showed")
+        terminal.send(b"\x04")
+        terminal.exited()
+
+
 def tried_again_while_the_host_holds_the_room():
     """RMK-1303, against a scripted host: it refuses the message twice with no
     run to show. The terminal's own loop sends it again, and the draft stays in
@@ -149,6 +171,7 @@ try:
         handed_to_the_running_turn,
         lambda port, directory: sent_now(port, directory, CTRL_S),
         lambda port, directory: sent_now(port, directory, CTRL_ENTER),
+        cut_for_a_message_already_handed,
     ):
         with tempfile.TemporaryDirectory() as directory:
             check(server.server_port, directory)
@@ -159,4 +182,4 @@ finally:
     server.shutdown()
 print("Steering checks passed: Enter hands a message to the running turn, which reads it at its next "
       "step; Ctrl+S and Ctrl+Enter cut the turn and send the message once it stopped, trying again "
-      "while the host holds the room.")
+      "while the host holds the room; on an empty composer, for the message handed to the turn.")

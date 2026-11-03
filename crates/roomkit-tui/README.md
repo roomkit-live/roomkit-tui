@@ -118,6 +118,14 @@ message whose turn was cut stays in the conversation, and the next turn reads
 it. Any other refusal leaves the draft in the composer. For a command, Ctrl+S is
 Enter.
 
+A message handed to a turn waits for that turn's next step, which may be far.
+While that turn runs, the message's line says so, and Ctrl+S on an empty composer
+cuts the turn and sends `Command::Answer`, with the same retries: a turn of its
+own reads the message where it is, in the conversation, and nothing new is
+written. Esc cancels, and text typed meanwhile stays. Whether the turn read the
+message already, nothing tells the view: the next turn reads the whole
+conversation either way.
+
 The terminal asks for the kitty keyboard protocol
 (`DISAMBIGUATE_ESCAPE_CODES`) and removes it on exit, so terminals that support
 it report Ctrl+Enter, which does the same, and Shift+Enter, which inserts a line

@@ -340,7 +340,7 @@ terminal status, session observation) in detail.
 | Key | Action |
 | --- | --- |
 | Enter | Send the message or the command |
-| Ctrl+S, Ctrl+Enter | Send the message now: interrupt whatever runs and send it once nothing runs any more |
+| Ctrl+S, Ctrl+Enter | Send the message now: interrupt whatever runs and send it once nothing runs any more. On an empty composer, do so for the message already handed to the running turn |
 | Alt+Enter, Ctrl+J, Shift+Enter | Insert a newline (Shift+Enter where the terminal reports it) |
 | `/` (configurable) | Open the host's commands; type to filter |
 | Tab, Enter in a menu | Insert the highlighted choice; Enter again sends it |

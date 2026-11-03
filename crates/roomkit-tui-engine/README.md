@@ -78,6 +78,13 @@ keeps a message busy: the host preparing a turn, work started by a command, a
 turn being interrupted, another agent's stream, images. A buffered console never
 steers, and its snapshot says so.
 
+`Command::Answer` starts a turn for what the conversation already holds, as for
+a message handed to a turn that was cut before reading it. The agent is told so
+by an instruction, which is never stored or shown, and reads the message where
+it is. The host hears `started` and `finished`, not `admit`: it admitted the
+message already. While anything holds the room it is refused as busy, before
+any host call, and never handed to the running turn.
+
 Applications can set `SessionConfig::commands` and use `run_with_commands` with
 their own `CommandHandler`. Commands are never sent to the model and default to
 idle-only. A handler may opt individual control commands into `allow_while_busy`;

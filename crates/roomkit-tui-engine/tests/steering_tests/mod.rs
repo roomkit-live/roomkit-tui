@@ -719,3 +719,56 @@ async fn a_message_for_the_running_turn_passes_the_host_s_admission() {
     task.await.unwrap().unwrap();
     channel_idle(&kit).await;
 }
+
+fn answer(id: u64, operation: &str, agent: &str) -> Request {
+    Request::new(
+        RequestId::new(id),
+        operation,
+        "room",
+        Command::Answer {
+            agent: agent.into(),
+        },
+    )
+}
+
+/// RMK-1311: an answer is no message: another agent's is refused, and one
+/// during a turn is busy, never handed to that turn.
+#[tokio::test]
+async fn an_answer_is_refused_for_another_agent_and_busy_during_a_turn() {
+    let kit = RoomKit::new(Default::default());
+    let rounds = vec![
+        ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
+        ScriptedRound::answering("Done"),
+    ];
+    let (channel, provider) = steering_room(&kit, rounds).await;
+    let (open, gate) = watch::channel(false);
+    let entered = Arc::new(Notify::new());
+    hold_tools(&kit, gate, entered.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
+    next(&client).await;
+
+    client.try_send(answer(1, "other", "someone")).unwrap();
+    let refused = reply(&client, 1).await.map(|rejection| rejection.code);
+    assert_eq!(refused, Some(ErrorCode::Invalid));
+
+    client
+        .try_send(submit(2, "one", "Look up record 42"))
+        .unwrap();
+    entered.notified().await;
+    client
+        .try_send(answer(3, "two", config().agent.as_str()))
+        .unwrap();
+    let refused = reply(&client, 3).await.map(|rejection| rejection.code);
+    assert_eq!(refused, Some(ErrorCode::Busy));
+    open.send_replace(true);
+    collect_operation(&client).await;
+    assert_eq!(
+        provider.requests().len(),
+        2,
+        "No turn for the refused answer"
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
+    channel_idle(&kit).await;
+}

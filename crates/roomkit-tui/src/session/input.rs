@@ -203,9 +203,12 @@ impl Session {
     }
 
     pub(super) fn message_pending(&self) -> bool {
-        self.pending
-            .values()
-            .any(|c| matches!(c, Command::Submit { .. } | Command::SubmitImages { .. }))
+        self.pending.values().any(|c| {
+            matches!(
+                c,
+                Command::Submit { .. } | Command::SubmitImages { .. } | Command::Answer { .. }
+            )
+        })
     }
 
     /// Whether `command` invokes an advertised command that takes no choices,

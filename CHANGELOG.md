@@ -24,6 +24,12 @@ by Git; a host using it takes `roomkit-tui` from the same commit.
   `DISAMBIGUATE_ESCAPE_CODES` and removes it once on exit or on a panic. In
   terminals with the protocol, Shift+Enter inserts a line break, and Ctrl+[,
   Ctrl+M and Ctrl+I no longer stand for Esc, Enter and Tab.
+- Cut a turn for a message already handed to it (RMK-1311): its line says
+  `Ctrl+S to cut it now` while the turn runs, in place of a hint on the row
+  below. Ctrl+S on an empty composer cuts the turn, and `Command::Answer` starts
+  a turn of its own that reads the message in the conversation, with nothing new
+  written. A host that cannot answers `Unsupported`.
+
 - Write to the model while it works (RMK-1161). For an agent registered with
   `AiChannelOptions::steer_room_turns`, a streaming console advertises
   `Snapshot::can_steer`: the engine reads it from the agent's registered
