@@ -160,9 +160,12 @@ the meaning of each choice.
 Scoped interruption uses the detached delivery handle of the execution started
 by this attachment. Wrong-room, stale and foreign run requests are refused.
 Acknowledgment only requests cancellation; the terminal outcome follows engine
-cleanup, including pending permissions and tool finalizers. Completed external
-effects and application-owned background processes remain. The shared kit stays
-open, and detaching still does not implicitly interrupt.
+cleanup, including pending permissions and tool finalizers, once the cut turns
+are over and the run's stream to this console has ended. RoomKit stores the
+stopped answer after its turns are over: a buffered console, which has no
+stream, may receive it after the run and its operation have finished. Completed
+external effects and application-owned background processes remain. The shared
+kit stays open, and detaching still does not implicitly interrupt.
 
 The adapter projects provider-reported measurements from AI turn records,
 distinguishing cumulative consumption from the last generation. It restores idle

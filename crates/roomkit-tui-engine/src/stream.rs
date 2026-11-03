@@ -70,6 +70,8 @@ impl Channel for ConversationChannel {
         let answers = response.responds_to.as_ref().unwrap_or(&response.id);
         let run = projection::run_id(responder, answers);
         let active = self.activity.enter(&room);
+        // Read until its end is told: an interruption reports the run after it.
+        let streaming = self.live_streams.open(&room, &run);
         // The stream's trigger is already committed and visible to this channel.
         let trigger = context.recent_events.iter().find(|r| &r.id == answers);
         if let Some(trigger) = trigger {
@@ -108,7 +110,7 @@ impl Channel for ConversationChannel {
         // this run end, and a view's own work stays its earliest run.
         drop(approvals);
         let finished = reader.finish();
-        drop(active);
+        drop((streaming, active));
         finished
     }
 }

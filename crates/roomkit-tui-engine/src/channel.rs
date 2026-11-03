@@ -5,7 +5,7 @@ use roomkit::model::{ChannelId, RoomEvent, RoomId};
 use roomkit_tui_protocol::{Decision, Event, Item, RunId};
 use tokio::sync::broadcast;
 
-use crate::activity::{Active, Activity, Held, Stopping, Work};
+use crate::activity::{Active, Activity, Held, Stopping, Streams, Work};
 use crate::approvals::{Approvals, Details};
 use crate::own_turns::OwnTurns;
 use crate::{PermissionRequest, projection};
@@ -28,6 +28,7 @@ pub struct ConversationChannel {
     pub(crate) events: broadcast::Sender<(String, Event)>,
     pub(crate) activity: Activity,
     pub(crate) stopping: Stopping,
+    pub(crate) live_streams: Streams,
     pub(crate) approvals: Approvals,
     pub(crate) own_turns: OwnTurns,
 }
@@ -53,6 +54,7 @@ impl ConversationChannel {
             events,
             activity: Activity::default(),
             stopping: Stopping::default(),
+            live_streams: Streams::default(),
             own_turns: OwnTurns::default(),
         }
     }

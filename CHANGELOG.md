@@ -32,10 +32,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   follow Python's, and whose OpenAI provider sends an output cap only when
   configured. A round of tool calls that opens by repeating the text of the
   round before reaches the room, and the view, from where it goes on, as in
-  Python. Tool approvals are asked from a `BEFORE_TOOL_USE` hook registered
-  with `kit.hook`, and `roomkit-openai` reports its provider as
-  `OpenAIAIProvider`, the name a view's `ModelInfo` must carry for its context
-  and token usage to show.
+  Python. A stopped answer is stored once its turns are over: a buffered
+  console may receive it after its run ended. Tool approvals are asked from a
+  `BEFORE_TOOL_USE` hook registered with `kit.hook`, and `roomkit-openai`
+  reports its provider as `OpenAIAIProvider`, the name a view's `ModelInfo`
+  must carry for its context and token usage to show.
 - `ConversationChannel::ask_tool_permission` refuses a call made outside a
   room: no view can answer it.
 - `ConversationChannel` declares a window of 50 recent events, so a turn's

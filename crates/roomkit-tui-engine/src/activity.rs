@@ -121,6 +121,70 @@ impl Drop for Active {
     }
 }
 
+/// The runs whose stream the channel is reading: an interruption reports a
+/// run only once its stream has ended.
+#[derive(Clone, Debug)]
+pub(crate) struct Streams {
+    runs: Arc<Mutex<BTreeMap<(String, RunId), usize>>>,
+    /// Counts the streams that ended, for those waiting on one.
+    ended: watch::Sender<u64>,
+}
+
+impl Default for Streams {
+    fn default() -> Self {
+        Self {
+            runs: Arc::default(),
+            ended: watch::channel(0).0,
+        }
+    }
+}
+
+impl Streams {
+    /// Mark the stream of `run` read until the returned guard drops.
+    pub fn open(&self, room: &str, run: &RunId) -> Streaming {
+        let key = (room.to_owned(), run.clone());
+        *self.lock().entry(key.clone()).or_default() += 1;
+        Streaming {
+            streams: self.clone(),
+            key,
+        }
+    }
+
+    /// Resolves once no stream of `run` is read.
+    pub async fn ended(&self, room: &str, run: &RunId) {
+        let mut ended = self.ended.subscribe();
+        let key = (room.to_owned(), run.clone());
+        while self.lock().contains_key(&key) {
+            // The sender lives as long as this value; an error cannot occur.
+            let _ = ended.changed().await;
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<(String, RunId), usize>> {
+        self.runs.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// A stream being read; dropping it ends it.
+pub(crate) struct Streaming {
+    streams: Streams,
+    key: (String, RunId),
+}
+
+impl Drop for Streaming {
+    fn drop(&mut self) {
+        let mut runs = self.streams.lock();
+        if let Some(count) = runs.get_mut(&self.key) {
+            *count -= 1;
+            if *count == 0 {
+                runs.remove(&self.key);
+            }
+        }
+        drop(runs);
+        self.streams.ended.send_modify(|count| *count += 1);
+    }
+}
+
 /// A stopping run: whether its stream left its end to the interruption, with
 /// the outcome it reached and the draft it was writing.
 #[derive(Debug, Default)]
@@ -132,7 +196,7 @@ struct Stop {
 type StoppingRuns = Arc<Mutex<BTreeMap<(String, RunId), Stop>>>;
 
 /// Runs whose interruption was accepted. Their stream defers its terminal
-/// event until delivery is joined, recording the draft it was writing.
+/// event until the interruption has seen it end, recording its draft.
 #[derive(Clone, Debug)]
 pub(crate) struct Stopping {
     runs: StoppingRuns,
@@ -204,22 +268,11 @@ impl Stopping {
     }
 }
 
-/// Keeps a stream's terminal event deferred until delivery is joined.
+/// Keeps a stream's terminal event for the interruption, which reports the
+/// run once that stream has ended.
 pub(crate) struct StopGuard {
     runs: StoppingRuns,
     key: (String, RunId),
-}
-
-impl StopGuard {
-    /// The outcome the stream reached if it ended after the interruption and
-    /// left its terminal event to it; `None` when it had finished on its own.
-    pub fn deferred(&self) -> Option<RunOutcome> {
-        self.runs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&self.key)
-            .and_then(|stop| stop.deferred)
-    }
 }
 
 impl StopGuard {
@@ -275,6 +328,30 @@ mod tests {
             .expect("idle once everything is released");
     }
 
+    #[tokio::test]
+    async fn a_run_s_stream_ends_once_its_last_reader_is_done() {
+        let streams = Streams::default();
+        let run = RunId::from("agent:turn");
+        let within = std::time::Duration::from_secs(1);
+        tokio::time::timeout(within, streams.ended("room", &run))
+            .await
+            .expect("No stream: ended at once");
+        let (first, second) = (streams.open("room", &run), streams.open("room", &run));
+        drop(first);
+        let ended = tokio::time::timeout(within / 10, streams.ended("room", &run)).await;
+        assert!(ended.is_err(), "One reader is still reading");
+        let waiting = tokio::spawn({
+            let streams = streams.clone();
+            let run = run.clone();
+            async move { streams.ended("room", &run).await }
+        });
+        drop(second);
+        tokio::time::timeout(within, waiting)
+            .await
+            .expect("Ended with its last reader")
+            .expect("The waiter does not panic");
+    }
+
     /// Review finding: a cancelled row taking the stream's draft used to
     /// erase the deferral, so no one reported the end of the run.
     #[test]
@@ -282,12 +359,10 @@ mod tests {
         let stopping = Stopping::default();
         let run = RunId::from("agent:turn");
         let guard = stopping.register("room", &run);
-        assert_eq!(guard.deferred(), None);
         let draft = MessageId::from("draft:agent:turn:0");
         assert!(stopping.defer("room", &run, RunOutcome::Completed, draft.clone()));
         assert_eq!(stopping.take_draft("room", &run), Some(draft));
         assert_eq!(stopping.take_draft("room", &run), None, "Taken once");
-        assert_eq!(guard.deferred(), Some(RunOutcome::Completed));
         assert_eq!(guard.release(), Some(RunOutcome::Completed));
         assert!(
             !stopping.defer("room", &run, RunOutcome::Completed, "d".into()),
