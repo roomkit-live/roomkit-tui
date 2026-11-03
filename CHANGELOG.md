@@ -6,6 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Cut a turn for a message already handed to it (RMK-1311): its line says
+  `Ctrl+S to cut it now` while the turn runs. Ctrl+S on an empty composer cuts the
+  turn, and `Command::Answer` starts a turn of its own that reads what it was
+  handed in the conversation, with nothing new written. A host advertises it with
+  `Snapshot::can_answer`, and refines the gate with
+  `SessionLifecycle::admit_answer`, which is `admit` by default. The row below
+  names Ctrl+S only for what is typed during a run.
+
+### Fixed
+
+- A message written while the answer streams stays below what it had written; a
+  finished answer keeps its draft's place, and an answer after blanks stays below
+  the tools of its turn.
+
 ## [0.2.0] - 2026-11-03
 
 The first release on crates.io: `roomkit-tui-protocol`, `roomkit-tui-transport`
@@ -24,14 +40,6 @@ by Git; a host using it takes `roomkit-tui` from the same commit.
   `DISAMBIGUATE_ESCAPE_CODES` and removes it once on exit or on a panic. In
   terminals with the protocol, Shift+Enter inserts a line break, and Ctrl+[,
   Ctrl+M and Ctrl+I no longer stand for Esc, Enter and Tab.
-- Cut a turn for a message already handed to it (RMK-1311): its line says
-  `Ctrl+S to cut it now` while the turn runs. Ctrl+S on an empty composer cuts the
-  turn, and `Command::Answer` starts a turn of its own that reads what it was
-  handed in the conversation, with nothing new written. A host advertises it with
-  `Snapshot::can_answer`, and refines the gate with
-  `SessionLifecycle::admit_answer`, which is `admit` by default. The row below
-  names Ctrl+S only for what is typed during a run.
-
 - Write to the model while it works (RMK-1161). For an agent registered with
   `AiChannelOptions::steer_room_turns`, a streaming console advertises
   `Snapshot::can_steer`: the engine reads it from the agent's registered
@@ -44,7 +52,6 @@ by Git; a host using it takes `roomkit-tui` from the same commit.
   turn of its own, which the view shows, can interrupt, and whose decisions
   are stored. The host hears that turn start through
   `SessionLifecycle::started`, before its loop asks the model (RMK-1232).
-  A message written while the answer streams stays below what it had written.
   Host preparation, command work, another agent's stream, images and
   buffered consoles stay busy. `roomkit-chat` enables it, and
   `scripts/check-steering.py` drives it on a real pseudo-terminal.
