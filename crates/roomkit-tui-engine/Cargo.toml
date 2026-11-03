@@ -6,7 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish.workspace = true
+# Not on crates.io: roomkit-rs is only on Git, and the crates.io name `roomkit`
+# belongs to an unrelated project, which a published requirement would name.
+publish = false
 readme = "README.md"
 keywords = ["roomkit", "ai", "agent", "chat", "llm"]
 categories = ["command-line-interface", "api-bindings"]

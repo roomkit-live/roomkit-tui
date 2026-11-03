@@ -71,6 +71,35 @@ verifies actual Cargo package listings.
 When the interface changes visibly, regenerate `assets/screenshot.png` with
 `scripts/screenshot.py`; its header lists the commands.
 
+## Releasing
+
+`roomkit-tui-protocol`, `roomkit-tui-transport` and `roomkit-tui` are crates.io
+packages. `roomkit-tui-engine` and the examples are not: each sets
+`publish = false`. A host takes the engine through Git, with `roomkit-tui` from
+the same commit, so that both share the protocol's types.
+
+1. Set the version in `workspace.package` and in the internal requirements of
+   `workspace.dependencies`: they change together. Run
+   `cargo update --workspace --offline` and check that the `Cargo.lock` diff
+   changes only the roomkit-tui packages.
+2. Turn the changelog's `Unreleased` section into the release's, and update its
+   comparison links and the README's version.
+3. Commit, then run `make check`, `make msrv` and `make audit` on that commit,
+   and push it.
+4. Package every published crate, build each against the others in a local
+   registry and stop before the upload:
+
+   ```sh
+   cargo publish --workspace --dry-run --locked
+   ```
+
+5. Publish from that clean checkout, with `cargo publish --workspace --locked`.
+   crates.io never takes a version back: a yank only hides it from new
+   dependents, so a fix is a new version.
+6. Once the upload has succeeded, tag that commit, annotated, naming the checks
+   run on it, and publish its GitHub release from the changelog's section. A tag
+   marks what shipped.
+
 ## Pull requests
 
 Use conventional commit subjects, for example `feat(tui): display scoped tool
