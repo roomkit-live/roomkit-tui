@@ -11,8 +11,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Send a message now (RMK-1285): Ctrl+S, or Ctrl+Enter where the terminal
   reports it, interrupts the run and sends the draft once nothing runs any
   more, in a turn of its own. A run that starts meanwhile is interrupted too.
-  Only the unedited draft leaves; Esc keeps it, and a draft refused as busy
-  comes back to the composer. The terminal asks for the kitty keyboard
+  Only the unedited draft leaves; Esc keeps it, and a refused draft comes
+  back to the composer. The terminal asks for the kitty keyboard
   protocol's `DISAMBIGUATE_ESCAPE_CODES` and removes it once on exit or on a
   panic. In terminals with the protocol, Shift+Enter inserts a line break, and
   Ctrl+[, Ctrl+M and Ctrl+I no longer stand for Esc, Enter and Tab.

@@ -3,7 +3,7 @@
 //! so the draft waits in the composer until the interrupted turn has
 //! stopped, then leaves as any message does.
 
-use roomkit_tui_protocol::{RequestId, RunId};
+use roomkit_tui_protocol::{ImageUpload, RequestId, RunId};
 
 use super::{Session, SessionError};
 
@@ -12,7 +12,7 @@ use super::{Session, SessionError};
 #[derive(Debug)]
 pub(super) struct Waiting {
     text: String,
-    images: usize,
+    images: Vec<ImageUpload>,
     /// The run last asked to stop for it: a run started since is cut too.
     cut: Option<RunId>,
 }
@@ -23,7 +23,7 @@ impl Session {
     pub fn sends_after_interruption(&self) -> bool {
         self.waiting
             .as_ref()
-            .is_some_and(|w| w.text == self.editor.text() && w.images == self.images.len())
+            .is_some_and(|w| w.text == self.editor.text() && w.images == self.images)
     }
 
     /// Keep the draft for once the work under way stops.
@@ -37,7 +37,7 @@ impl Session {
         }
         self.waiting = Some(Waiting {
             text: self.editor.text().to_owned(),
-            images: self.images.len(),
+            images: self.images.clone(),
             cut: None,
         });
         Ok(())
@@ -75,8 +75,9 @@ impl Session {
         ready
     }
 
-    /// The waited draft left as request `id`: should the host refuse it as
-    /// still busy, the draft comes back to an empty composer.
+    /// The waited draft left as request `id`: should the host refuse it, as
+    /// when it still holds the room, the draft comes back to an empty
+    /// composer.
     pub(crate) fn sent_waited(&mut self, id: RequestId, draft: String) {
         self.waited_send = Some((id, draft));
     }

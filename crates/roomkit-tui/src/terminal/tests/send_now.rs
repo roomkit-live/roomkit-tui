@@ -161,6 +161,59 @@ fn an_edited_draft_never_leaves_unseen() {
     }
 }
 
+/// Light review: the same number of images, another image, left too.
+#[test]
+fn a_draft_with_other_images_never_leaves_unseen() {
+    let (mut session, client, host) = fixture(true);
+    let mut snapshot = Snapshot::new("room", "Example", Actor::new("agent", "Agent"));
+    snapshot.active_run = Some("run".into());
+    snapshot.can_interrupt = true;
+    snapshot.can_attach_images = true;
+    session.apply(Event::Snapshot(snapshot));
+    session.insert(DRAFT);
+    session.add_image(crate::tests::image_fixture()).unwrap();
+    ctrl_s(&mut session, &client);
+    assert_eq!(host.try_recv().unwrap().command, interrupt());
+    session.remove_last_image();
+    let mut other = crate::tests::image_fixture();
+    other.name = "other.png".into();
+    session.add_image(other).unwrap();
+    assert!(!session.sends_after_interruption());
+    stopped(&mut session);
+    assert!(!composer::send_waiting(&mut session, &client));
+    assert!(host.try_recv().is_err(), "Another image left unseen");
+}
+
+/// Light review: the refusal of the first run's interruption, arriving
+/// once a second run was asked to stop, cleared that second interruption.
+#[test]
+fn a_late_refusal_leaves_the_next_interruption_pending() {
+    let (mut session, client, host) = working();
+    started(&mut session);
+    session.insert(DRAFT);
+    ctrl_s(&mut session, &client);
+    let first = host.try_recv().unwrap();
+    stopped(&mut session);
+    session.apply(Event::RunStarted {
+        conversation: "room".into(),
+        run: "next".into(),
+        answers: None,
+    });
+    assert!(composer::send_waiting(&mut session, &client));
+    assert_eq!(
+        host.try_recv().unwrap().command,
+        Command::Interrupt { run: "next".into() }
+    );
+    session.apply(Event::Reply {
+        request: first.id,
+        error: Some(Rejection::refused("This execution has already ended")),
+    });
+    assert!(
+        session.interrupting(),
+        "The second interruption was forgotten"
+    );
+}
+
 #[test]
 fn ctrl_c_or_a_conversation_switch_sends_nothing() {
     let (mut session, client, host) = fixture(true);
@@ -258,7 +311,8 @@ fn the_hint_names_the_key_and_the_wait() {
             .join("\n")
     };
     assert!(hints(&session, 120).contains("Ctrl+S send now"));
-    assert!(hints(&session, 60).contains("Ctrl+S send now"));
+    let narrow = hints(&session, 60);
+    assert!(narrow.contains("Ctrl+S send now") && !narrow.contains("Alt+Enter"));
     session.insert("Now");
     ctrl_s(&mut session, &client);
     assert!(hints(&session, 120).contains("Sends once the turn stops"));

@@ -225,7 +225,7 @@ fn install_panic_hook(mouse: bool, keyboard: Arc<AtomicBool>) -> Arc<PanicHook> 
     previous
 }
 
-fn restore(stdout: &mut io::Stdout, mouse: bool, keyboard: &AtomicBool) {
+fn restore(stdout: &mut impl Write, mouse: bool, keyboard: &AtomicBool) {
     if mouse {
         let _ = execute!(stdout, event::DisableMouseCapture);
     }
@@ -293,5 +293,29 @@ mod tests {
             ColorMode::Auto,
             "Auto is resolved"
         );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod restore_tests {
+    use super::*;
+
+    /// Review finding: on a panic on the terminal thread, the hook and then
+    /// the drop both removed the keyboard protocol, the second time on the
+    /// main screen, whose stack it was not pushed on.
+    #[test]
+    fn the_keyboard_protocol_is_removed_once_before_leaving_the_alternate_screen() {
+        let pushed = AtomicBool::new(true);
+        let mut out = Vec::new();
+        restore(&mut out, false, &pushed);
+        restore(&mut out, false, &pushed);
+        let written = String::from_utf8_lossy(&out);
+        assert_eq!(written.matches("\x1b[<1u").count(), 1, "{written:?}");
+        assert!(written.find("\x1b[<1u") < written.find("\x1b[?1049l"));
+
+        let never = AtomicBool::new(false);
+        let mut out = Vec::new();
+        restore(&mut out, false, &never);
+        assert!(!String::from_utf8_lossy(&out).contains("\x1b[<1u"));
     }
 }

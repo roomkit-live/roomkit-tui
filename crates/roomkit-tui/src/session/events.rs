@@ -302,7 +302,11 @@ impl Session {
             Command::Decide { permission, .. } => {
                 self.deciding.remove(&permission);
             }
-            Command::Interrupt { .. } => self.interrupting = None,
+            // A late refusal for a run already over leaves the interruption
+            // of the run under way pending.
+            Command::Interrupt { run } if self.interrupting.as_ref() == Some(&run) => {
+                self.interrupting = None;
+            }
             _ => {}
         }
         self.notice = bounded(&error.message, self.limits.text_bytes.get());
