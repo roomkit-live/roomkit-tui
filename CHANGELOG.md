@@ -9,8 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Write to the model while it works (RMK-1161). For an agent registered with
-  `AiChannelOptions::steer_room_turns`, a host sets `SessionConfig::can_steer`;
-  a streaming console then advertises `Snapshot::can_steer`. A message
+  `AiChannelOptions::steer_room_turns`, a streaming console advertises
+  `Snapshot::can_steer`: the engine reads it from the agent's registered
+  channel, and the host declares nothing (RMK-1256). A message
   submitted while that agent's turn streams, and is not being interrupted,
   goes to the turn, which reads it at its next step, instead of being refused
   as busy. It passes the host's admission like any message.

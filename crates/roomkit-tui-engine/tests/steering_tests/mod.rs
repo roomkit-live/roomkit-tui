@@ -10,20 +10,33 @@ use tokio::sync::{Notify, watch};
 
 mod lifecycle;
 
+/// The console and the agent of a test's room.
+#[derive(Clone, Copy)]
+struct Setup {
+    /// The console shows only committed rows.
+    buffered: bool,
+    /// The agent steers its room's turns (`steer_room_turns`).
+    steers: bool,
+}
+
 /// An agent that steers its room's turns, answering `rounds`, beside a
 /// streaming console.
 async fn steering_room(
     kit: &RoomKit,
     rounds: Vec<ScriptedRound>,
 ) -> (ConversationChannel, ScriptedProvider) {
-    room_with_console(kit, rounds, false).await
+    let setup = Setup {
+        buffered: false,
+        steers: true,
+    };
+    room_with(kit, rounds, setup).await
 }
 
-/// `steering_room`, with a buffered console when `buffered`.
-async fn room_with_console(
+/// The room `setup` describes, its agent answering `rounds`.
+async fn room_with(
     kit: &RoomKit,
     rounds: Vec<ScriptedRound>,
-    buffered: bool,
+    setup: Setup,
 ) -> (ConversationChannel, ScriptedProvider) {
     let provider = ScriptedProvider::new(rounds);
     let lookup = AiTool {
@@ -36,13 +49,13 @@ async fn room_with_console(
         tool_handler: Some(ToolHandler::new(|_, _| async {
             Ok(ToolResult::Json(json!({"record":"42"})))
         })),
-        steer_room_turns: true,
+        steer_room_turns: setup.steers,
         ..Default::default()
     };
     let agent = AiChannel::new(config().agent, provider.clone(), options).unwrap();
     kit.register_channel(agent).unwrap();
     let id = ChannelId::new("console").unwrap();
-    let channel = if buffered {
+    let channel = if setup.buffered {
         ConversationChannel::buffered(id)
     } else {
         ConversationChannel::new(id)
@@ -98,12 +111,6 @@ async fn reply(client: &Client, id: u64) -> Option<Rejection> {
     }
 }
 
-fn steering() -> SessionConfig {
-    let mut config = config();
-    config.can_steer = true;
-    config
-}
-
 /// Whether the model was asked with `text` among its messages.
 fn asked_with(provider: &ScriptedProvider, round: usize, text: &str) -> bool {
     provider.requests()[round]
@@ -112,6 +119,7 @@ fn asked_with(provider: &ScriptedProvider, round: usize, text: &str) -> bool {
         .any(|message| message.text().contains(text))
 }
 
+/// RMK-1256: the host declares nothing; the engine reads the agent's channel.
 #[tokio::test]
 async fn a_message_during_a_tool_round_goes_to_the_running_turn() {
     let kit = RoomKit::new(Default::default());
@@ -124,7 +132,7 @@ async fn a_message_during_a_tool_round_goes_to_the_running_turn() {
     let entered = Arc::new(Notify::new());
     hold_tools(&kit, gate, entered.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, steering()).run(host));
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
     assert!(matches!(next(&client).await, Event::Snapshot(snapshot) if snapshot.can_steer));
     client
         .try_send(submit(1, "one", "Look up record 42"))
@@ -237,7 +245,7 @@ async fn a_steered_message_s_own_turn_can_be_stopped() {
     let entered = Arc::new(Notify::new());
     hold_tools(&kit, tools_gate, entered.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, steering()).run(host));
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
     next(&client).await;
     let own = steer_into_its_own_turn(&client, &open, &held).await;
     entered.notified().await;
@@ -293,7 +301,7 @@ async fn decisions_in_a_steered_message_s_own_turn_are_stored() {
     )
     .unwrap();
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), steering()).run(host));
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
     next(&client).await;
     let own = steer_into_its_own_turn(&client, &open, &held).await;
     let permission = loop {
@@ -359,7 +367,7 @@ async fn a_message_while_the_host_prepares_the_turn_is_busy() {
     let lifecycle = Arc::new(SlowStart::default());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session =
-        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
     let task = tokio::spawn(session.run(host));
     next(&client).await;
     client.try_send(submit(1, "one", "First question")).unwrap();
@@ -392,7 +400,7 @@ async fn a_message_after_an_interruption_never_goes_to_the_stopped_turn() {
     let held = Arc::new(Notify::new());
     hold_first_answer(&kit, gate, held.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, steering()).run(host));
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
     next(&client).await;
     client.try_send(submit(1, "one", "First question")).unwrap();
     let stopped = loop {
@@ -465,7 +473,7 @@ async fn stopping_a_steered_turn_never_waits_behind_another_message() {
     let lifecycle = Arc::new(StuckAdmit::default());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session =
-        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
     let task = tokio::spawn(session.run(host));
     next(&client).await;
     client.try_send(submit(1, "one", "First question")).unwrap();
@@ -513,12 +521,16 @@ async fn a_buffered_console_does_not_steer() {
         ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
         ScriptedRound::answering("Done"),
     ];
-    let (channel, _) = room_with_console(&kit, rounds, true).await;
+    let setup = Setup {
+        buffered: true,
+        steers: true,
+    };
+    let (channel, _) = room_with(&kit, rounds, setup).await;
     let (open, gate) = watch::channel(false);
     let entered = Arc::new(Notify::new());
     hold_tools(&kit, gate, entered.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, steering()).run(host));
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
     assert!(matches!(next(&client).await, Event::Snapshot(snapshot) if !snapshot.can_steer));
     client
         .try_send(submit(1, "one", "Look up record 42"))
@@ -534,6 +546,8 @@ async fn a_buffered_console_does_not_steer() {
     channel_idle(&kit).await;
 }
 
+/// RMK-1256: an agent that does not steer its room's turns would run a
+/// second turn beside the first; its console keeps the message busy.
 #[tokio::test]
 async fn a_message_during_a_turn_is_busy_unless_the_agent_steers() {
     let kit = RoomKit::new(Default::default());
@@ -541,14 +555,17 @@ async fn a_message_during_a_turn_is_busy_unless_the_agent_steers() {
         ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
         ScriptedRound::answering("Done"),
     ];
-    let (channel, _) = steering_room(&kit, rounds).await;
+    let setup = Setup {
+        buffered: false,
+        steers: false,
+    };
+    let (channel, _) = room_with(&kit, rounds, setup).await;
     let (open, gate) = watch::channel(false);
     let entered = Arc::new(Notify::new());
     hold_tools(&kit, gate, entered.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    // The host did not say its agent steers.
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
-    next(&client).await;
+    assert!(matches!(next(&client).await, Event::Snapshot(snapshot) if !snapshot.can_steer));
     client
         .try_send(submit(1, "one", "Look up record 42"))
         .unwrap();
@@ -583,7 +600,7 @@ impl CommandHandler for Holding {
 async fn a_message_during_host_work_is_busy() {
     let kit = RoomKit::new(Default::default());
     let (channel, _) = steering_room(&kit, vec![]).await;
-    let mut view = steering();
+    let mut view = config();
     view.commands.push(CommandSpec::new("deploy", "Deploy"));
     let release = Arc::new(Notify::new());
     let handler = Holding {
@@ -668,7 +685,7 @@ async fn a_message_for_the_running_turn_passes_the_host_s_admission() {
     let lifecycle = Arc::new(AdmitsOnce::default());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session =
-        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
     let task = tokio::spawn(session.run(host));
     next(&client).await;
     client

@@ -8,7 +8,7 @@ use roomkit::{
 };
 use roomkit_tui_protocol::{Actor, ActorId, ContextUsage, Item, Snapshot, TokenUsage};
 
-use super::{AdapterError, SessionConfig};
+use super::{AdapterError, SessionConfig, steer};
 use crate::{ConversationChannel, approval_history, measurements, projection};
 
 /// Rows restored into a snapshot; older history stays in the engine.
@@ -71,7 +71,7 @@ pub(crate) async fn snapshot<S: ConversationStore>(
     }
     let mut snapshot = history.into_snapshot(config);
     // Only a streaming console follows the turn a message goes to.
-    snapshot.can_steer &= channel.streams();
+    snapshot.can_steer = channel.streams() && steer::agent_steers(kit, config);
     Ok(snapshot)
 }
 
@@ -119,7 +119,6 @@ impl History {
         snapshot.commands.clone_from(&config.commands);
         snapshot.input_actions.clone_from(&config.input_actions);
         snapshot.can_attach_images = config.can_attach_images;
-        snapshot.can_steer = config.can_steer;
         snapshot.mode.clone_from(&config.mode);
         snapshot.items = self.items;
         snapshot.can_interrupt = true;

@@ -137,7 +137,7 @@ async fn a_steered_message_s_own_turn_is_started_before_the_model_is_asked() {
     let lifecycle = Recording::new(provider.clone(), None);
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session =
-        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
     let task = tokio::spawn(session.run(host));
     next(&client).await;
     let own = steer_into_its_own_turn(&client, &open, &held).await;
@@ -172,7 +172,7 @@ async fn a_message_handed_to_the_running_turn_starts_nothing() {
     let lifecycle = Recording::new(provider.clone(), None);
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session =
-        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
     let task = tokio::spawn(session.run(host));
     next(&client).await;
     client
@@ -212,7 +212,7 @@ async fn stopping_a_steered_message_s_own_turn_as_it_starts() {
     let lifecycle = Recording::new(provider.clone(), Some("two"));
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session =
-        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
     let task = tokio::spawn(session.run(host));
     next(&client).await;
     let own = steer_into_its_own_turn(&client, &open, &held).await;
@@ -267,7 +267,7 @@ async fn a_resent_message_s_own_turn_is_still_started() {
     let lifecycle = Recording::new(provider.clone(), None);
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session =
-        LocalSession::new(kit.clone(), channel, steering()).with_lifecycle(lifecycle.clone());
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
     let task = tokio::spawn(session.run(host));
     next(&client).await;
     client.try_send(submit(1, "one", "First question")).unwrap();

@@ -30,7 +30,9 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
     /// interrupted.
     pub(super) fn steering_target(&self, request: &Request) -> Option<RunId> {
         let (channel, config) = (&self.session.channel, &self.session.config);
-        if !matches!(request.command, Command::Submit { .. }) || !config.can_steer {
+        if !matches!(request.command, Command::Submit { .. })
+            || !agent_steers(&self.session.kit, config)
+        {
             return None;
         }
         let room = config.conversation();
@@ -72,6 +74,14 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         tokio::spawn(steer.run(text.clone()));
         Ok(())
     }
+}
+
+/// Whether the view's agent steers its room's turns, as its registered
+/// channel says (`AiChannelOptions::steer_room_turns`). Any other agent
+/// would run a message's turn beside the running one.
+pub(super) fn agent_steers<S: ConversationStore>(kit: &RoomKit<S>, config: &SessionConfig) -> bool {
+    kit.get_channel(&config.agent)
+        .is_some_and(|agent| agent.steers_room_turns())
 }
 
 struct Steer<S: ConversationStore> {

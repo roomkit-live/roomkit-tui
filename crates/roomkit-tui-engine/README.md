@@ -61,22 +61,22 @@ The conversation stays busy throughout admission and finalization; wait for
 `OperationFinished` before restoring an idle snapshot or switching views.
 
 An agent registered with `AiChannelOptions::steer_room_turns` takes a message
-sent while its turn runs. Set `SessionConfig::can_steer` for it, and only for
-it: another agent's turns would run side by side. The view then accepts a
-message while that agent's run streams to this console and is not being
-interrupted. The message passes the host's `SessionLifecycle::admit` and is
-committed at once, without an operation of its own. RoomKit hands it to the
-running turn, which reads it at its next step: it starts no turn, so no
-`started`, and `Event::MessageSteered` names that turn's run. Should the turn
-no longer read its queue, as when it is already writing its last answer, the
-message gets a turn of its own, whose `RunStarted` names it in `answers`. The
-host hears that turn start through `started` once the agent has prepared it
-(memory, `BEFORE_AI_GENERATION` hooks), before its loop asks the model or
-calls a tool; Esc drops a `started` still running. The view can interrupt
-the turn, and its decisions are stored. Anything else holding
-the room keeps a message busy: the host preparing a turn, work started by a
-command, a turn being interrupted, another agent's stream, images. A buffered
-console never steers, and its snapshot says so.
+sent while its turn runs. The engine reads it from the agent's registered
+channel (`RegisteredChannel::steers_room_turns`); the host declares nothing. The
+view then accepts a message while that agent's run streams to this console and
+is not being interrupted. The message passes the host's
+`SessionLifecycle::admit` and is committed at once, without an operation of its
+own. RoomKit hands it to the running turn, which reads it at its next step: it
+starts no turn, so no `started`, and `Event::MessageSteered` names that turn's
+run. Should the turn no longer read its queue, as when it is already writing its
+last answer, the message gets a turn of its own, whose `RunStarted` names it in
+`answers`. The host hears that turn start through `started` once the agent has
+prepared it (memory, `BEFORE_AI_GENERATION` hooks), before its loop asks the
+model or calls a tool; Esc drops a `started` still running. The view can
+interrupt the turn, and its decisions are stored. Anything else holding the room
+keeps a message busy: the host preparing a turn, work started by a command, a
+turn being interrupted, another agent's stream, images. A buffered console never
+steers, and its snapshot says so.
 
 Applications can set `SessionConfig::commands` and use `run_with_commands` with
 their own `CommandHandler`. Commands are never sent to the model and default to

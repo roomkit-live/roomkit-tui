@@ -79,9 +79,7 @@ async fn room(
         },
     )
     .unwrap();
-    let mut view = SessionConfig::new(room, agent, "alice");
-    view.can_steer = true;
-    (console, view)
+    (console, SessionConfig::new(room, agent, "alice"))
 }
 
 /// Apply the host's events to the terminal until `done` holds.
