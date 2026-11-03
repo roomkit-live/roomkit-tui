@@ -175,7 +175,7 @@ async fn verify_decision_history(linked: bool) {
                 r#"{"_roomkit_intent":"Checking the record"}"#,
             )],
         ),
-        ScriptedRound::calling("Checking more", [("automatic", "lookup_record", "{}")]),
+        ScriptedRound::calling("Looking further", [("automatic", "lookup_record", "{}")]),
         ScriptedRound::answering("First answer"),
         ScriptedRound::calling("Checking again", [("call1", "lookup_record", "{}")]),
         ScriptedRound::answering("Second answer"),
@@ -355,7 +355,7 @@ async fn verify_decision_history(linked: bool) {
                 let next_message = snapshot
                     .items
                     .iter()
-                    .position(|i| matches!(i, Item::Message(m) if m.text == "Checking more"))
+                    .position(|i| matches!(i, Item::Message(m) if m.text == "Looking further"))
                     .unwrap();
                 assert!(
                     approval < next_message,

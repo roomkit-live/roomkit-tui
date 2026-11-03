@@ -27,12 +27,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `Event::RunStarted` has an `answers` field; constructing it now names one
   (`None` when the run answers no message).
-- The engine follows roomkit-rs 5d88436, whose channel, hook and AI APIs
+- The engine follows roomkit-rs 9830bc4, whose channel, hook and AI APIs
   follow Python's, and whose OpenAI provider sends an output cap only when
-  configured. Tool approvals are asked from a `BEFORE_TOOL_USE` hook
-  registered with `kit.hook`, and `roomkit-openai` reports its provider as
-  `OpenAIAIProvider`, the name a view's `ModelInfo` must carry for its
-  context and token usage to show.
+  configured. A round of tool calls that opens by repeating the text of the
+  round before reaches the room, and the view, from where it goes on, as in
+  Python. Tool approvals are asked from a `BEFORE_TOOL_USE` hook registered
+  with `kit.hook`, and `roomkit-openai` reports its provider as
+  `OpenAIAIProvider`, the name a view's `ModelInfo` must carry for its context
+  and token usage to show.
 - `ConversationChannel::ask_tool_permission` refuses a call made outside a
   room: no view can answer it.
 - `ConversationChannel` declares a window of 50 recent events, so a turn's

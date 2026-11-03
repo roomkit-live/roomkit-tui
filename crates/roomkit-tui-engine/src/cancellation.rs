@@ -1,6 +1,10 @@
 //! Scoped requests use the engine's delivery handle; acknowledgments never
 //! claim completion before its joined cleanup and durable rows have settled.
-use roomkit::{DeliveryHandle, InboundResult, RoomKitError};
+use std::future::Future;
+use std::pin::pin;
+use std::task::{Context, Poll, Waker};
+
+use roomkit::{CancelOptions, DeliveryHandle, InboundResult, RoomKitError};
 use roomkit_tui_protocol::{Event, RunId, RunOutcome};
 use tokio::sync::{mpsc, oneshot};
 
@@ -78,7 +82,7 @@ pub(crate) async fn wait(
                     // Suppress a stream-end event while the engine still has
                     // finalizers and cancelled tool rows to settle.
                     let guard = channel.stopping.register(room, &run);
-                    if delivery.request_cancel() {
+                    if ask_cancel(&delivery) {
                         // Only now: a stream woken earlier reads on before
                         // the engine applies the cancel.
                         channel.stopping.accepted();
@@ -116,6 +120,22 @@ pub(crate) async fn wait(
         finished(channel, room, &run, outcome);
     }
     (result, interrupted)
+}
+
+/// Ask `delivery` to cut its turns, without waiting for them to be over:
+/// whether it was asked. RoomKit's `cancel` asks the cut as it is first
+/// polled, then waits for the turns; dropped then, the cut stands, and
+/// `wait` joins the turns it cut.
+fn ask_cancel(delivery: &DeliveryHandle) -> bool {
+    if delivery.done() {
+        return false;
+    }
+    let mut cancel = pin!(delivery.cancel(CancelOptions::default()));
+    let polled = cancel
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()));
+    // Refused from the room's own work: nothing is cut.
+    !matches!(polled, Poll::Ready(Err(RoomKitError::Runtime(_))))
 }
 
 fn finished(channel: &ConversationChannel, room: &str, run: &RunId, outcome: RunOutcome) {
