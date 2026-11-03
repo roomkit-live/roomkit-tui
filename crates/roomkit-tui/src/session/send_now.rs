@@ -21,6 +21,9 @@ const RETRY_EVERY: Duration = Duration::from_millis(200);
 /// before it stays in the composer: long enough for a turn's closing hooks.
 const RETRY_FOR: Duration = Duration::from_secs(30);
 
+/// What the person reads when Esc comes after the host took the draft.
+const ALREADY_LEFT: &str = "This message was already sent";
+
 /// The draft kept for once the work under way stops, as it was when the
 /// person asked: an edited draft, a command among them, never leaves unseen.
 #[derive(Debug)]
@@ -54,18 +57,19 @@ impl Session {
         if self.editor.text().trim().is_empty() && self.images.is_empty() {
             return Err(SessionError::EmptyMessage);
         }
+        if self.sends_after_interruption() {
+            return Ok(());
+        }
         if self.is_executing() && !snapshot.can_interrupt {
             return Err(SessionError::NotInterruptible);
         }
-        if !self.sends_after_interruption() {
-            self.waiting = Some(Waiting {
-                text: self.editor.text().to_owned(),
-                images: self.images.clone(),
-                cut: None,
-                not_before: Duration::ZERO,
-                give_up: None,
-            });
-        }
+        self.waiting = Some(Waiting {
+            text: self.editor.text().to_owned(),
+            images: self.images.clone(),
+            cut: None,
+            not_before: Duration::ZERO,
+            give_up: None,
+        });
         Ok(())
     }
 
@@ -91,8 +95,13 @@ impl Session {
         if executing {
             waiting.give_up = None;
         }
+        // A run seen while the draft is on its way may be the one it started.
         let can_interrupt = self.snapshot.as_ref().is_some_and(|s| s.can_interrupt);
-        if !self.sends_after_interruption() || self.interrupting.is_some() || !can_interrupt {
+        if !self.sends_after_interruption()
+            || self.interrupting.is_some()
+            || self.flight.is_some()
+            || !can_interrupt
+        {
             return None;
         }
         let run = self.active_run().cloned()?;
@@ -114,6 +123,7 @@ impl Session {
         if self.is_executing()
             || self.interrupting.is_some()
             || self.message_pending()
+            || self.flight.is_some()
             || now < waiting.not_before
         {
             return false;
@@ -146,9 +156,10 @@ impl Session {
             self.waited_draft_left(&text);
             return false;
         };
-        // Dropped meanwhile, or replaced by an edited draft sent next.
+        // Dropped meanwhile, or replaced by an edited draft sent next: being
+        // busy no longer matters, any other refusal still does.
         let Some(waiting) = self.waiting.as_mut().filter(|w| w.text == text) else {
-            return true;
+            return refusal.code == ErrorCode::Busy;
         };
         let now = at.unwrap_or_default();
         let give_up = *waiting.give_up.get_or_insert(now.saturating_add(RETRY_FOR));
@@ -163,10 +174,19 @@ impl Session {
     /// The host took the draft `text`: it leaves the composer, unless the
     /// person kept or edited it meanwhile. Images leave as any image message.
     fn waited_draft_left(&mut self, text: &str) {
-        if self.waiting.as_ref().is_none_or(|w| w.text != text) {
+        let Some(waiting) = self.waiting.as_ref() else {
+            // Esc came too late to keep it from leaving: sent again by mistake
+            // otherwise.
+            if self.editor.text() == text {
+                self.notice = ALREADY_LEFT.into();
+            }
+            return;
+        };
+        if waiting.text != text {
             return;
         }
         self.waiting = None;
+        self.notice.clear();
         if self.editor.text() == text && self.images.is_empty() {
             self.editor.submitted();
             self.draft_epoch = self.draft_epoch.wrapping_add(1);

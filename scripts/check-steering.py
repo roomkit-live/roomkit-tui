@@ -131,7 +131,7 @@ def tried_again_while_the_host_holds_the_room():
         require(terminal.screen.shows(STEERED.encode()), "The draft left the composer")
         terminal.wait_for(re.compile(rb"Taken after 2 refusals, \d+ ms apart"))
         waited = int(re.search(r"refusals, (\d+) ms", terminal.screen.text()).group(1))
-        require(waited >= 190, f"Tried again after {waited} ms, sooner than the 200 ms apart it should")
+        require(waited >= 380, f"Two retries within {waited} ms, sooner than 200 ms apart")
         terminal.wait_until(lambda: not terminal.screen.shows(STEERED.encode()),
                             "the composer emptied once the host took the draft")
         terminal.send(b"\x04")

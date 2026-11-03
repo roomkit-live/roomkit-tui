@@ -4,7 +4,7 @@
 
 #![allow(clippy::unwrap_used, reason = "Test fixtures fail on invalid state")]
 use super::*;
-use roomkit_tui_protocol::{Rejection, Request};
+use roomkit_tui_protocol::{InputAction, Rejection, Request};
 
 const DRAFT: &str = "Use the second ledger";
 const NOW: Duration = Duration::ZERO;
@@ -309,6 +309,10 @@ fn a_draft_refused_as_busy_stays_and_is_tried_again() {
     assert_eq!(session.scroll, scrolled, "A retry moved the view");
     taken(&mut session, &again, retry);
     assert!(session.draft().is_empty());
+    assert!(
+        session.notice().is_empty(),
+        "Sent, as any message clears it"
+    );
     assert!(!session.sends_after_interruption());
     assert!(!pass(&mut session, &client, retry * 2));
     assert!(host.try_recv().is_err(), "The draft left twice");
@@ -333,6 +337,21 @@ fn a_turn_that_starts_around_a_busy_refusal_is_cut_too() {
         run_stopped(&mut session, "own");
         left(&mut session, &client, &host, LATER);
     }
+}
+
+/// The run seen while the draft is on its way may be the one it started: it
+/// is not cut before the host has answered.
+#[test]
+fn a_draft_on_its_way_never_cuts_the_turn_it_started() {
+    let (mut session, client, host) = waiting_idle();
+    let sent = left(&mut session, &client, &host, NOW);
+    run_started(&mut session, "its own");
+    assert!(!pass(&mut session, &client, NOW));
+    assert!(host.try_recv().is_err(), "The draft cut its own turn");
+    taken(&mut session, &sent, NOW);
+    assert!(session.draft().is_empty());
+    assert!(!pass(&mut session, &client, LATER));
+    assert!(host.try_recv().is_err(), "The draft cut its own turn");
 }
 
 /// RMK-1303: with nothing shown as running, Ctrl+S still follows the rule:
@@ -435,6 +454,67 @@ fn escape_while_the_draft_is_on_its_way_ends_the_wait() {
     assert!(session.notice().is_empty());
     assert!(!pass(&mut session, &client, LATER));
     assert!(host.try_recv().is_err(), "The kept draft left");
+}
+
+/// Esc can come too late: the person is told, or Enter sends a second copy.
+#[test]
+fn escape_too_late_says_the_message_left() {
+    let (mut session, client, host) = waiting_idle();
+    let sent = left(&mut session, &client, &host, NOW);
+    press(&mut session, &client, escape(), NOW);
+    taken(&mut session, &sent, NOW);
+    assert_eq!(session.draft(), DRAFT);
+    assert_eq!(session.notice(), "This message was already sent");
+}
+
+/// A dropped draft silences being busy, not another refusal.
+#[test]
+fn another_refusal_of_a_dropped_draft_is_told() {
+    let (mut session, client, host) = waiting_idle();
+    let sent = left(&mut session, &client, &host, NOW);
+    press(&mut session, &client, escape(), NOW);
+    refused(&mut session, &sent, Rejection::refused("Not allowed"), NOW);
+    assert_eq!(session.notice(), "Not allowed");
+}
+
+/// The draft leaves once, whatever it became: a snapshot may advertise an
+/// action that turns it into a command, which no pending message holds back.
+#[test]
+fn one_request_at_a_time_whatever_the_draft_became() {
+    let (mut session, client, host) = fixture(true);
+    session.insert("!run");
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    let mut snapshot = Snapshot::new("room", "Example", Actor::new("agent", "Agent"));
+    snapshot.can_interrupt = true;
+    snapshot.commands = vec![CommandSpec::new("run", "Run")];
+    snapshot.input_actions = vec![InputAction::new('!', "run", "Run")];
+    session.apply(Event::Snapshot(snapshot));
+    assert!(pass(&mut session, &client, NOW));
+    assert!(matches!(
+        host.try_recv().unwrap().command,
+        Command::Invoke { .. }
+    ));
+    assert!(!pass(&mut session, &client, NOW));
+    assert!(host.try_recv().is_err(), "Sent again before its answer");
+}
+
+/// A second press on a waiting draft says nothing, even if a run it cannot
+/// cut has started since.
+#[test]
+fn pressing_again_over_a_run_it_cannot_cut_says_nothing() {
+    let (mut session, client, host) = fixture(false);
+    let mut snapshot = Snapshot::new("room", "Example", Actor::new("agent", "Agent"));
+    snapshot.can_interrupt = false;
+    session.apply(Event::Snapshot(snapshot));
+    session.insert(DRAFT);
+    ctrl_s(&mut session, &client);
+    let sent = host.try_recv().unwrap();
+    refused(&mut session, &sent, busy(), NOW);
+    started(&mut session);
+    ctrl_s(&mut session, &client);
+    assert!(session.sends_after_interruption());
+    assert!(session.notice().is_empty(), "{}", session.notice());
 }
 
 /// Review of 21765e6: a key typed during a send replaced the draft. The

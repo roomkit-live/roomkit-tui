@@ -110,8 +110,8 @@ The draft stays in the composer until the host takes it, and only as it was
 when Ctrl+S was pressed: edited, a command among them, it stays there, as it does
 after Esc; Ctrl+C clears it. The host may hold the room with no run to show, as
 for the own turn of a message sent earlier. A draft it refuses as busy goes on
-waiting and is sent again every 200 ms, for up to 30 seconds without a run; a
-refusal runs no host hook. That own turn is interrupted too, unless it had just
+waiting and is sent again every 200 ms; a refusal runs no host hook. After 30
+seconds without a run it stays in the composer, with the refusal. That own turn is interrupted too, unless it had just
 started when the draft arrived: it is then handed the draft, and reads both. A
 message whose turn was cut stays in the conversation, and the next turn reads
 it. Any other refusal leaves the draft in the composer. For a command, Ctrl+S
