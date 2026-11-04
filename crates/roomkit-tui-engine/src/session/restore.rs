@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use roomkit::model::{Access, ChannelCategory, EventType, RoomContext, RoomEvent};
+use roomkit::model::{Access, ChannelCategory, EventId, EventType, RoomContext, RoomEvent};
 use roomkit::{
     ConversationStore, GetRoomOptions, GetTimelineOptions, ListBindingsOptions, RoomKit,
 };
@@ -76,6 +76,44 @@ pub(crate) async fn snapshot<S: ConversationStore>(
     Ok(snapshot)
 }
 
+/// What a turn's own record measured, on the model on screen, the message it
+/// rides found by the event the turn answers: another turn's record says
+/// nothing of this one. None when the turn wrote no record.
+pub(crate) async fn turn_measure<S: ConversationStore>(
+    kit: &RoomKit<S>,
+    channel: &ConversationChannel,
+    config: &SessionConfig,
+    answers: &EventId,
+) -> Option<(Option<ContextUsage>, TokenUsage)> {
+    let organization = config.organization.clone();
+    let room = GetRoomOptions {
+        organization_id: organization.clone(),
+    };
+    let room = kit.get_room(&config.room, room).await.ok()?;
+    let bindings = ListBindingsOptions {
+        organization_id: organization.clone(),
+    };
+    let bindings = kit.list_bindings(&config.room, bindings).await.ok()?;
+    let timeline = GetTimelineOptions {
+        newest_first: true,
+        limit: RESTORED_ROWS,
+        organization_id: organization,
+        ..Default::default()
+    };
+    let mut context = RoomContext::new(room);
+    context.bindings = bindings;
+    context.recent_events = kit.get_timeline(&config.room, timeline).await.ok()?;
+    roomkit::visible_events(&context, channel.id())
+        .iter()
+        .filter(|row| {
+            row.responds_to.as_ref() == Some(answers) && matches!(row.r#type, EventType::Message)
+        })
+        .find_map(|row| {
+            let (context, usage) = measurements::restore(row, config);
+            Some((context, usage?))
+        })
+}
+
 /// The projection of visible rows: items, actor names and the latest usage.
 #[derive(Default)]
 struct History {
@@ -94,7 +132,8 @@ impl History {
                 .as_ref()
                 .map_or_else(|| row.source.channel_id.to_string(), ToString::to_string)
         });
-        if matches!(row.r#type, EventType::Message) {
+        // A message with no record, a person's, says nothing of the measure.
+        if matches!(row.r#type, EventType::Message) && measurements::event(row).is_some() {
             (self.context, self.usage) = measurements::restore(row, config);
         }
         if let Some(item) = projection::item(row) {

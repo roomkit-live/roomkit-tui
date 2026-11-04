@@ -176,7 +176,9 @@ external effects and application-owned background processes remain. The shared
 kit stays open, and detaching still does not implicitly interrupt.
 
 The adapter projects provider-reported measurements from AI turn records,
-distinguishing cumulative consumption from the last generation. It restores idle
+distinguishing cumulative consumption from the last generation, and from each
+generation as it ends on a streaming console (a buffered one reads them at the
+turn's end). It restores idle
 conversations; a remote service, automatic event replay and authentication are
 not implemented. It is not an authentication boundary for untrusted callers.
 
@@ -193,6 +195,10 @@ The API is unpublished and may change before 1.0. Engine dependencies use one
 pinned revision from `roomkit-rs/main`; no adjacent checkout is required.
 
 ## Measurements
+
+Each `StreamItem::Usage` becomes an `Event::ContextUpdated` for the running turn.
+A stopped turn keeps what its generations told: its record reaches the view as
+`Event::UsageUpdated`, and a later restore reads it again.
 
 `SessionConfig.context_capacity` is the host-confirmed capacity of its configured
 model. With matching `ai_model`/`ai_provider` metadata, `ai_last_usage` supplies

@@ -164,3 +164,32 @@ fn context_has_a_visible_footer_row_even_with_a_long_model_name() {
             .any(|line| line.contains("context (last report) 120/1000 · 88.0% left"))
     );
 }
+
+/// RMK-1333: a measure of the turn shows as current, and a stop keeps it.
+#[test]
+fn a_stopped_run_keeps_what_its_generations_told() {
+    let mut session = session();
+    session.apply(Event::Snapshot(snapshot()));
+    started(&mut session, "run-1");
+    session.apply(Event::ContextUpdated {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+        provider: "local".into(),
+        model: "model-a".into(),
+        usage: ContextUsage::new(200).with_capacity(1000),
+    });
+    let draw = |session: &Session| {
+        render::screen(session, 230, 30, &Renderers::default())
+            .lines
+            .join("\n")
+    };
+    assert!(draw(&session).contains("context 200/1000"));
+    session.apply(Event::RunFinished {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+        outcome: RunOutcome::Interrupted,
+    });
+    let screen = draw(&session);
+    assert!(screen.contains("context 200/1000"), "{screen}");
+    assert!(!screen.contains("last report"), "{screen}");
+}

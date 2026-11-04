@@ -110,6 +110,11 @@ impl Channel for ConversationChannel {
                 }
             }
         }
+        // A read stopped from outside hands its target the stream's end: the
+        // run was cut, it did not complete.
+        if stream.cut() {
+            reader.outcome = RunOutcome::Interrupted;
+        }
         // Unanswered requests go before RunFinished; the room stays busy until
         // RunFinished is out, so no view starts work before its terminal saw
         // this run end, and a view's own work stays its earliest run.
@@ -214,7 +219,7 @@ impl<'a> Reader<'a> {
                 text,
             }),
             StreamItem::Usage(marker) => {
-                if let Some(event) = crate::measurements::told(self.room, &self.run, &marker) {
+                if let Some(event) = crate::measurements::told(self.room, self.run, &marker) {
                     self.publish(event);
                 }
             }

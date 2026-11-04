@@ -13,6 +13,7 @@ use roomkit::{ConversationStore, InboundResult, ProcessInboundOptions, RoomKit};
 use roomkit_tui_protocol::{Command, Event, MessageId, OperationId, Rejection, Request, RunId};
 
 use super::serve::View;
+use super::turn;
 use super::{AdapterError, CommandHandler, SessionConfig};
 use crate::activity::Active;
 use crate::cancellation::{self, Receiver};
@@ -188,6 +189,7 @@ impl<S: ConversationStore> Steer<S> {
         let room = room.to_owned();
         let (done, interrupted) =
             cancellation::wait(delivery, own, &room, &self.channel, &mut self.controls).await;
+        turn::publish_usage(&self.kit, &self.channel, &self.config, row).await;
         let failure = match done {
             Ok(done) => done.error.map(|error| error.message),
             Err(error) => Some(error.to_string()),

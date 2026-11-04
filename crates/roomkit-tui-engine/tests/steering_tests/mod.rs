@@ -233,9 +233,11 @@ async fn steer_into_its_own_turn(
 #[tokio::test]
 async fn a_steered_message_s_own_turn_can_be_stopped() {
     let kit = RoomKit::new(Default::default());
+    let used = json!({ "input_tokens": 500, "output_tokens": 10 });
     let rounds = vec![
         ScriptedRound::answering("First answer"),
-        ScriptedRound::calling("Checking", [("call2", "lookup_record", "{}")]),
+        ScriptedRound::calling("Checking", [("call2", "lookup_record", "{}")])
+            .with_usage(used.as_object().unwrap().clone()),
         ScriptedRound::answering("Never said"),
     ];
     let (channel, _) = steering_room(&kit, rounds).await;
@@ -246,7 +248,9 @@ async fn a_steered_message_s_own_turn_can_be_stopped() {
     let entered = Arc::new(Notify::new());
     hold_tools(&kit, tools_gate, entered.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
+    let mut config = config();
+    config.model = Some(ModelInfo::new("scripted", "scripted"));
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config).run(host));
     next(&client).await;
     let own = steer_into_its_own_turn(&client, &open, &held).await;
     entered.notified().await;
@@ -264,6 +268,15 @@ async fn a_steered_message_s_own_turn_can_be_stopped() {
     };
     assert_eq!(outcome, RunOutcome::Interrupted);
     tools_open.send_replace(true);
+    // RMK-1333: its usage comes after it stopped, as a turn of its own's does.
+    let usage = loop {
+        if let Event::UsageUpdated { run, usage, .. } = next(&client).await
+            && run == own
+        {
+            break usage;
+        }
+    };
+    assert_eq!(usage.input_tokens, Some(500));
     drop(client);
     task.await.unwrap().unwrap();
     channel_idle(&kit).await;

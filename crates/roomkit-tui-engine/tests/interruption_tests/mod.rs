@@ -135,7 +135,12 @@ async fn a_run_tells_its_context_at_each_step_and_a_stop_keeps_it() {
     while told.len() < 2 {
         match next(&client).await {
             Event::RunStarted { run: started, .. } => run = Some(started),
-            Event::ContextUpdated { usage, .. } => {
+            Event::ContextUpdated {
+                run: measured,
+                usage,
+                ..
+            } => {
+                assert_eq!(Some(&measured), run.as_ref(), "The view keeps this run's");
                 assert_eq!(usage.capacity, Some(10_000));
                 told.push(usage.tokens);
             }
@@ -144,14 +149,25 @@ async fn a_run_tells_its_context_at_each_step_and_a_stop_keeps_it() {
     }
     assert_eq!(told, [1010, 2010], "Each step, as it goes");
     held.notified().await;
-    let stop = Command::Interrupt { run: run.unwrap() };
+    let run = run.unwrap();
+    let stop = Command::Interrupt { run: run.clone() };
     client
         .try_send(Request::new(RequestId::new(2), "stop", "room", stop))
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // The stop is taken: the answer it holds up may go.
+    while !matches!(next(&client).await, Event::Reply { request, .. } if request == RequestId::new(2))
+    {
+    }
     open.send_replace(true);
 
     let events = collect_operation(&client).await;
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::RunFinished { outcome: RunOutcome::Interrupted, run: ended, .. } if *ended == run
+        )),
+        "{events:#?}"
+    );
     let usage = events
         .iter()
         .rev()
@@ -162,7 +178,114 @@ async fn a_run_tells_its_context_at_each_step_and_a_stop_keeps_it() {
         .expect("the stop keeps what the steps told");
     assert_eq!(usage.0.map(|context| context.tokens), Some(2010));
     assert_eq!(usage.1.input_tokens, Some(3000));
+    assert!(usage.1.complete, "The third generation was never asked");
     drop(client);
     task.await.unwrap().unwrap();
     roomkit::testing::idle(&kit).await;
+}
+
+/// RMK-1333: a turn stopped with no message of its own, after one that had:
+/// the record of the turn before it says nothing of this one, so the context
+/// its generation told stays.
+#[tokio::test]
+async fn a_stopped_turn_with_no_record_is_not_told_the_last_one_s() {
+    let kit = RoomKit::new(Default::default());
+    let provider = NamedProvider(ScriptedProvider::new([
+        ScriptedRound::answering("Done.").with_usage(used(100)),
+        ScriptedRound::calling("", [("c1", "lookup_record", "{}")]).with_usage(used(5000)),
+        ScriptedRound::answering("Never.").with_usage(used(6000)),
+    ]));
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    let on_hold = held.clone();
+    kit.hook(
+        roomkit::HookTrigger::BeforeBroadcast,
+        move |event: roomkit::model::RoomEvent, _| {
+            let (mut gate, on_hold) = (gate.clone(), on_hold.clone());
+            let call = event.r#type == roomkit::model::EventType::ToolCallStart;
+            async move {
+                if call {
+                    on_hold.notify_one();
+                    let _ = gate.wait_for(|open| *open).await;
+                }
+                Ok(roomkit::model::HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("hold-the-call"),
+    )
+    .unwrap();
+    let mut config = config();
+    config.model = Some(ModelInfo::new("local", "fixture"));
+    config.context_capacity = Some(10_000);
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config).run(host));
+    next(&client).await;
+    client.try_send(request("first")).unwrap();
+    collect_operation(&client).await;
+
+    let again = Command::Submit {
+        agent: "agent".into(),
+        text: "Again.".into(),
+    };
+    client
+        .try_send(Request::new(RequestId::new(2), "second", "room", again))
+        .unwrap();
+    let run = loop {
+        if let Event::RunStarted { run, .. } = next(&client).await {
+            break run;
+        }
+    };
+    held.notified().await;
+    let stop = Command::Interrupt { run: run.clone() };
+    client
+        .try_send(Request::new(RequestId::new(3), "stop", "room", stop))
+        .unwrap();
+    while !matches!(next(&client).await, Event::Reply { request, .. } if request == RequestId::new(3))
+    {
+    }
+    open.send_replace(true);
+
+    let events = collect_operation(&client).await;
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            Event::UsageUpdated { run: measured, .. } if *measured == run
+        )),
+        "This turn wrote no record: {events:#?}"
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
+    roomkit::testing::idle(&kit).await;
+}
+
+/// The kit's close hands a reading target its stream's end: the run was cut.
+#[tokio::test]
+async fn a_run_the_kit_closes_ends_interrupted() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([
+        ScriptedRound::calling("One.", [("c1", "lookup_record", "{}")]),
+        ScriptedRound::answering("Never."),
+    ]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_answers(&kit, gate, held.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
+    next(&client).await;
+    client.try_send(request("ask")).unwrap();
+    held.notified().await;
+    let closing = kit.clone();
+    tokio::spawn(async move { closing.close().await });
+    tokio::task::yield_now().await;
+    open.send_replace(true);
+    let outcome = loop {
+        if let Event::RunFinished { outcome, .. } = next(&client).await {
+            break outcome;
+        }
+    };
+    assert_eq!(outcome, RunOutcome::Interrupted);
+    drop(client);
+    let _ = task.await;
 }

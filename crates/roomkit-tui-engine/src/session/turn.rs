@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use roomkit::model::{EventContent, EventType, InboundMessage};
+use roomkit::model::{EventContent, EventType, InboundMessage, RoomEvent};
 use roomkit::{ConversationStore, InboundResult, ProcessInboundOptions, RoomKit};
 use roomkit_tui_protocol::limits::{
     MAX_IMAGE_BASE64_BYTES, MAX_IMAGE_NAME_BYTES, MAX_IMAGE_PIXELS, MAX_IMAGES, MAX_TEXT_BYTES,
@@ -279,7 +279,9 @@ impl<S: ConversationStore> Turn<S> {
         if failure.is_some() {
             outcome = RunOutcome::Failed;
         }
-        self.publish_usage(&admitted).await;
+        if let Some(trigger) = &admitted.event {
+            publish_usage(&self.kit, &self.channel, &self.config, trigger).await;
+        }
         buffered.finish(&admitted, outcome);
         Delivered {
             outcome,
@@ -287,29 +289,33 @@ impl<S: ConversationStore> Turn<S> {
             blocked: admitted.blocked,
         }
     }
+}
 
-    /// The final record may update an earlier text segment after streaming;
-    /// measure only what this view is authorized to see.
-    async fn publish_usage(&self, admitted: &InboundResult) {
-        let Some(trigger) = &admitted.event else {
-            return;
-        };
-        let Ok(snapshot) = restore::snapshot(&self.kit, &self.channel, &self.config).await else {
-            return;
-        };
-        if let (Some(usage), Some(model)) = (snapshot.usage, snapshot.model) {
-            let room = self.config.conversation();
-            self.channel.publish(
-                room,
-                Event::UsageUpdated {
-                    conversation: room.into(),
-                    run: projection::run_id(&self.config.agent, &trigger.id),
-                    provider: model.provider,
-                    model: model.model,
-                    context: snapshot.context,
-                    usage,
-                },
-            );
-        }
-    }
+/// Tell the views what the turn on `trigger` measured, once its delivery is
+/// over, a stopped turn's too. The final record may update an earlier text
+/// segment after streaming; measure only what this view is authorized to see.
+pub(super) async fn publish_usage<S: ConversationStore>(
+    kit: &RoomKit<S>,
+    channel: &ConversationChannel,
+    config: &SessionConfig,
+    trigger: &RoomEvent,
+) {
+    let (Some((context, usage)), Some(model)) = (
+        restore::turn_measure(kit, channel, config, &trigger.id).await,
+        config.model.clone(),
+    ) else {
+        return;
+    };
+    let room = config.conversation();
+    channel.publish(
+        room,
+        Event::UsageUpdated {
+            conversation: room.into(),
+            run: projection::run_id(&config.agent, &trigger.id),
+            provider: model.provider,
+            model: model.model,
+            context,
+            usage,
+        },
+    );
 }

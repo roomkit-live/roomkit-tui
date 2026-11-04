@@ -11,7 +11,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The context follows a long turn (RMK-1333): the engine sends
   `Event::ContextUpdated`, from the kit's `StreamItem::Usage`, after each
   generation, in the capacity the session configured; a stopped run keeps what its
-  generations told. Pinned to roomkit-rs dcaf5053.
+  generations told, a steered message's own turn too, and a turn with no record
+  is not told the last one's. A run the kit's close cuts ends `Interrupted`, not
+  `Completed`. A person's message no longer clears the restored measure. Pinned to
+  roomkit-rs dcaf5053.
 
 - A model's reasoning (RMK-1325): `Event::ThinkingDelta`, which the engine sends
   from the kit's `StreamItem::Thinking`, and `Item::Thinking`, a block the view
