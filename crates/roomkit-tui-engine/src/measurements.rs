@@ -1,5 +1,5 @@
-use roomkit::model::RoomEvent;
-use roomkit_tui_protocol::{ContextUsage, Event, TokenUsage};
+use roomkit::model::{Metadata, RoomEvent, UsageMarker};
+use roomkit_tui_protocol::{ContextUsage, Event, RunId, TokenUsage};
 use serde_json::Value;
 
 use crate::SessionConfig;
@@ -33,18 +33,7 @@ pub(crate) fn event(row: &RoomEvent) -> Option<Event> {
     let context = metadata
         .get("ai_last_usage")
         .and_then(Value::as_object)
-        .and_then(|last| {
-            let input = last.get("input_tokens")?.as_u64()?;
-            let cached = last
-                .get("cache_read_input_tokens")
-                .and_then(Value::as_u64)
-                .unwrap_or(0);
-            Some(ContextUsage::new(
-                input
-                    .checked_add(cached)?
-                    .checked_add(last.get("output_tokens")?.as_u64()?)?,
-            ))
-        });
+        .and_then(context_of);
     Some(Event::UsageUpdated {
         conversation: row.room_id.as_str().into(),
         run: crate::projection::run_id(&row.source.channel_id, row.responds_to.as_ref()?),
@@ -55,17 +44,53 @@ pub(crate) fn event(row: &RoomEvent) -> Option<Event> {
     })
 }
 
+/// What a generation told of itself, as the context it filled: none when it
+/// reported no counters, or does not name what it ran on.
+pub(crate) fn told(room: &str, run: &RunId, marker: &UsageMarker) -> Option<Event> {
+    Some(Event::ContextUpdated {
+        conversation: room.into(),
+        run: run.clone(),
+        provider: marker.provider.clone()?,
+        model: marker.model.clone()?,
+        usage: context_of(&marker.usage)?,
+    })
+}
+
+/// The context a request filled, as what it reported: its input, cached
+/// included, and its output.
+fn context_of(last: &Metadata) -> Option<ContextUsage> {
+    let input = last.get("input_tokens")?.as_u64()?;
+    let cached = last
+        .get("cache_read_input_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    Some(ContextUsage::new(
+        input
+            .checked_add(cached)?
+            .checked_add(last.get("output_tokens")?.as_u64()?)?,
+    ))
+}
+
 pub(crate) fn for_view(event: &mut Event, config: &SessionConfig) {
-    if let Event::UsageUpdated {
-        provider,
-        model,
-        context: Some(context),
-        ..
-    } = event
-        && config
-            .model
-            .as_ref()
-            .is_some_and(|selected| selected.provider == *provider && selected.model == *model)
+    let (provider, model, context) = match event {
+        Event::UsageUpdated {
+            provider,
+            model,
+            context: Some(context),
+            ..
+        } => (provider, model, context),
+        Event::ContextUpdated {
+            provider,
+            model,
+            usage,
+            ..
+        } => (provider, model, usage),
+        _ => return,
+    };
+    if config
+        .model
+        .as_ref()
+        .is_some_and(|selected| selected.provider == *provider && selected.model == *model)
     {
         context.capacity = config.context_capacity.filter(|capacity| *capacity > 0);
     }

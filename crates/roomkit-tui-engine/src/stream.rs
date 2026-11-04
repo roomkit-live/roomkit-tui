@@ -213,6 +213,11 @@ impl<'a> Reader<'a> {
                 run: self.run.clone(),
                 text,
             }),
+            StreamItem::Usage(marker) => {
+                if let Some(event) = crate::measurements::told(self.room, &self.run, &marker) {
+                    self.publish(event);
+                }
+            }
             _ => {}
         }
     }
