@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use roomkit::model::{ChannelId, RoomId};
+use roomkit::model::{ChannelId, EventContent, RoomId};
 use roomkit::{CreateRoomOptions, HookOptions, RoomKit};
 use roomkit_ai::testing::{ScriptedProvider, ScriptedRound};
 use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
@@ -595,6 +595,28 @@ async fn a_message_whose_own_turn_is_cut_is_read_by_the_next_turn() {
     kit.close().await.unwrap();
 }
 
+/// Tell `delivered` once the delivery of the message `text` is over: the turn
+/// under way took it, or RoomKit has it wait a turn of its own (RMK-1371). The
+/// host says a message went to a turn as it is committed, before that.
+fn tell_when_delivered(kit: &RoomKit, text: &'static str, delivered: Arc<Notify>) {
+    kit.hook(
+        roomkit::HookTrigger::AfterBroadcast,
+        move |event: roomkit::model::RoomEvent, _| {
+            let found = matches!(&event.content, EventContent::Text(said) if said.body == text);
+            if found {
+                delivered.notify_one();
+            }
+            async {}
+        },
+        HookOptions {
+            name: "delivered".to_owned(),
+            execution: roomkit::HookExecution::Async,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+}
+
 /// RMK-1311: a message handed to a turn waits for that turn's next step, which
 /// may be far. The turn is cut, and a turn of its own reads the message where
 /// it is, in the conversation: it is not written twice, nothing else is shown,
@@ -609,6 +631,8 @@ async fn a_message_handed_to_a_cut_turn_is_answered_by_a_turn_of_its_own() {
     let (_tools, gate) = watch::channel(false);
     let (console, view) = room(&kit, provider.clone(), gate).await;
     let agent = view.agent.clone();
+    let delivered = Arc::new(Notify::new());
+    tell_when_delivered(&kit, "Use the second ledger", delivered.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let lifecycle = Arc::new(Host::default());
     let session = LocalSession::new(kit.clone(), console, view).with_lifecycle(lifecycle.clone());
@@ -631,6 +655,9 @@ async fn a_message_handed_to_a_cut_turn_is_answered_by_a_turn_of_its_own() {
             .is_some_and(|m| ui.steering(&m.id) == Some(Steering::Handed))
     })
     .await;
+    // Cut before its delivery, the message gets a turn of its own instead.
+    let reached = tokio::time::timeout(Duration::from_secs(5), delivered.notified());
+    reached.await.expect("The message's delivery ends");
 
     let run = ui.active_run().cloned().expect("The turn runs");
     let interrupt = ui.request(Command::Interrupt { run }).unwrap();
