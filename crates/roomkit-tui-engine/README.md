@@ -68,9 +68,9 @@ is not being interrupted. The message passes the host's
 `SessionLifecycle::admit` and is committed at once, without an operation of its
 own. RoomKit hands it to the running turn, which reads it at its next step: it
 starts no turn, so no `started`, and `Event::MessageSteered` names that turn's
-run. Should the turn no longer read its queue, as when it is already writing its
-last answer, the message gets a turn of its own, whose `RunStarted` names it in
-`answers`. The host hears that turn start through `started` once the agent has
+run, as the message is committed. Should the turn no longer read its queue when
+the message's delivery reaches it, already writing its last answer or cut since,
+the message gets a turn of its own, whose `RunStarted` names it in `answers`. The host hears that turn start through `started` once the agent has
 prepared it (memory, `BEFORE_AI_GENERATION` hooks), before its loop asks the
 model or calls a tool; Esc drops a `started` still running. The view can
 interrupt the turn, and its decisions are stored. Anything else holding the room
@@ -84,7 +84,9 @@ by an instruction, which is never stored or shown, and reads the message where
 it is. The host's gate holds as for any turn: `SessionLifecycle::admit_answer`,
 which is `admit` unless the host refines it, then `started` and `finished`. While
 anything holds the room it is refused as busy, before any host call, and never
-handed to the running turn.
+handed to the running turn. A message still under delivery holds the room, and
+its own `RunStarted` then says the answer has come: a client that asks again past
+it gets a second answer.
 
 Applications can set `SessionConfig::commands` and use `run_with_commands` with
 their own `CommandHandler`. Commands are never sent to the model and default to
