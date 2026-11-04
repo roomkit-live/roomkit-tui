@@ -339,7 +339,7 @@ terminal status, session observation) in detail.
 
 A host sends `Event::ThinkingDelta` for what its model reasons. The view shows the
 last lines and the time while it comes, then folds it to one line once the model
-goes on, as `∴ Thought for 12.0s`; a click opens it, as a call's details open. F2
+goes on, as `∴ Thought for 12.0s`; a click opens that block alone. F2
 reaches the newest call, and a block only when the conversation has no call;
 Alt+Up/Down reach any block. Opened, it shows its newest lines, the last 100 past
 that, and a very long reasoning keeps its end. The engine forwards the kit's

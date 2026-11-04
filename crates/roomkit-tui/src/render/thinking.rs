@@ -26,8 +26,9 @@ pub(super) fn block(view: &View<'_>, snapshot: &Snapshot, block: &Thinking, cols
     let expanded = session.tool_expanded(actor, run, id);
     let width = cols.saturating_sub(INDENT.width()).max(1);
     let shown = shown_lines(block, state, expanded, width);
-    // F2 opens and closes everything in the activity view, what has the focus else.
-    let f2_reaches = focused || (expanded && view.options.tool_activity);
+    // F2 opens and closes everything in the activity view, what has the focus
+    // else: a block a click opened alone there does not close with it.
+    let f2_reaches = focused || (session.expanded && view.options.tool_activity);
     let hint = hint(state, expanded, f2_reaches, shown.truncated);
     let mut laid = Block::default();
     laid.lines.push(header(state, focused, hint));

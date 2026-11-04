@@ -48,16 +48,33 @@ impl Session {
         }
     }
 
+    /// A click in the activity view. On a call it opens every detail, as F2 does.
+    /// A reasoning block opens alone, the calls below it left as they were; with
+    /// every detail open, a click closes them wherever it lands.
     pub(crate) fn toggle_activity_target(&mut self, target: &crate::render::ToolTarget) {
         let key = (
             target.actor.clone(),
             target.run.clone(),
             target.call.clone(),
         );
-        if self.is_current(&target.conversation) && self.has_tool(&key) {
-            self.focused_tool = Some(key);
-            self.toggle_activity();
+        if !self.is_current(&target.conversation) || !self.has_tool(&key) {
+            return;
         }
+        if !self.expanded && self.is_reasoning(&key) {
+            self.toggle_tool_details(&target.actor, &target.run, &target.call);
+            return;
+        }
+        self.focused_tool = Some(key);
+        self.toggle_activity();
+    }
+
+    fn is_reasoning(&self, (actor, run, call): &ToolKey) -> bool {
+        self.snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.items.iter().any(|item| {
+                matches!(item, Item::Thinking(block)
+                    if block.actor == *actor && block.run == *run && block.id == *call)
+            })
+        })
     }
 
     pub(crate) fn toggle_activity(&mut self) {

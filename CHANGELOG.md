@@ -34,6 +34,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A click on a reasoning block opens that block alone in the activity view, where
+  it opened every call below it too (RMK-1332).
 - A message handed to the running turn stays below what the turn writes without
   it, up to the turn's next stop (RMK-1317). What follows goes below it, and its
   line turns to `read by the turn`: `Steering::Read`.

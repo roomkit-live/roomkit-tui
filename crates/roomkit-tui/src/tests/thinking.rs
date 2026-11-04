@@ -827,3 +827,100 @@ fn words_after_reasoning_are_one_answer_for_a_message_handed_after_the_calls() {
     assert_eq!(order(&session), ["tool", "thinking", "answer", "person"]);
     assert_eq!(session.steering(&"sent".into()), Some(Steering::Handed));
 }
+
+/// A click on a block opens that block alone, in the activity view too: the
+/// calls below it stay as they were.
+#[test]
+fn a_click_on_a_block_opens_it_alone_in_the_activity_view() {
+    let options = UiOptions {
+        tool_activity: true,
+        ..UiOptions::default()
+    };
+    let drawn = |session: &Session| {
+        render::screen_with_options(session, 80, 30, &Renderers::default(), &options, secs(20))
+    };
+    let mut session = turn();
+    thinks_at(&mut session, 10, "Weighing the ledgers");
+    calls(&mut session, 11, "c1", ToolState::Running);
+    calls(&mut session, 12, "c1", ToolState::Succeeded);
+    calls(&mut session, 13, "c2", ToolState::Running);
+    calls(&mut session, 14, "c2", ToolState::Succeeded);
+    writes_at(&mut session, 15, "Words");
+    let closed = drawn(&session);
+    let row = closed
+        .lines
+        .iter()
+        .position(|line| line.contains("∴ Thought"))
+        .unwrap();
+    let target = closed
+        .tool_targets
+        .iter()
+        .find(|target| target.row == row)
+        .unwrap()
+        .clone();
+    let rows_of_calls = |lines: &[String]| lines.iter().filter(|l| l.contains("lookup")).count();
+
+    session.toggle_activity_target(&target);
+    let opened = drawn(&session);
+    assert!(
+        opened
+            .lines
+            .iter()
+            .any(|line| line.contains("Weighing the ledgers"))
+    );
+    assert_eq!(
+        rows_of_calls(&opened.lines),
+        rows_of_calls(&closed.lines),
+        "The calls moved:\n{}",
+        opened.lines.join("\n")
+    );
+    assert!(
+        !opened.lines.iter().any(|line| line.contains("F2 collapse")),
+        "F2 would open everything, not close this:\n{}",
+        opened.lines.join("\n")
+    );
+    let call = (&"agent".into(), &RUN.into(), &"c1".into());
+    assert!(
+        !session.tool_expanded(call.0, call.1, call.2),
+        "A call opened with it"
+    );
+
+    session.toggle_activity_target(&target);
+    assert!(
+        !drawn(&session)
+            .lines
+            .iter()
+            .any(|line| line.contains("Weighing"))
+    );
+}
+
+/// With every detail open, as F2 does in the activity view, a click closes them
+/// as a click on a call does.
+#[test]
+fn a_click_on_a_block_with_every_detail_open_closes_them() {
+    let options = UiOptions {
+        tool_activity: true,
+        ..UiOptions::default()
+    };
+    let mut session = turn();
+    thinks_at(&mut session, 10, "Weighing the ledgers");
+    calls(&mut session, 11, "c1", ToolState::Succeeded);
+    writes_at(&mut session, 12, "Words");
+    session.toggle_activity();
+    let screen =
+        render::screen_with_options(&session, 80, 30, &Renderers::default(), &options, secs(20));
+    let row = screen
+        .lines
+        .iter()
+        .position(|line| line.contains("∴ Thought"))
+        .unwrap();
+    let target = screen
+        .tool_targets
+        .iter()
+        .find(|target| target.row == row)
+        .unwrap()
+        .clone();
+    session.toggle_activity_target(&target);
+    let call = (&"agent".into(), &RUN.into(), &"c1".into());
+    assert!(!session.tool_expanded(call.0, call.1, call.2));
+}
