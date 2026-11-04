@@ -122,6 +122,7 @@ pub(super) fn bound_end_in_place(text: &mut String, limit: usize) {
     let kept = (limit - limit / 4).saturating_sub(mark.len());
     let cut = text.ceil_char_boundary(text.len() - kept);
     text.replace_range(..cut, mark);
+    text.shrink_to(limit);
 }
 
 #[cfg(test)]
@@ -157,5 +158,9 @@ mod tests {
         let mut small = "abcdef".to_owned();
         bound_end_in_place(&mut small, 4);
         assert_eq!(small, "def", "No room for the mark");
+
+        let mut huge = "x".repeat(1 << 20);
+        bound_end_in_place(&mut huge, 200);
+        assert!(huge.capacity() < 1024, "{}", huge.capacity());
     }
 }

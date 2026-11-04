@@ -195,12 +195,13 @@ fn an_opened_block_shows_a_bounded_number_of_lines() {
         secs(12),
     )
     .lines;
-    assert!(lines.iter().any(|line| line.contains("line-99")));
-    assert!(!lines.iter().any(|line| line.contains("line-100")));
+    assert!(lines.iter().any(|line| line.contains("line-149")));
+    assert!(lines.iter().any(|line| line.contains("line-50")));
+    assert!(!lines.iter().any(|line| line.contains("line-49")));
     assert!(
         lines
             .iter()
-            .any(|line| line.contains("view limited to 100 lines"))
+            .any(|line| line.contains("view limited to the last 100 lines"))
     );
 }
 
@@ -352,6 +353,16 @@ fn blank_reasoning_opens_no_block() {
 }
 
 #[test]
+fn a_blank_after_the_calls_says_no_stop_passed() {
+    let mut session = turn();
+    calls(&mut session, 10, "c1", ToolState::Running);
+    hand(&mut session, "sent");
+    calls(&mut session, 11, "c1", ToolState::Succeeded);
+    thinks_at(&mut session, 12, "\n");
+    assert_eq!(session.steering(&"sent".into()), Some(Steering::Handed));
+}
+
+#[test]
 fn blanks_of_the_next_answer_say_no_stop_passed_twice() {
     let mut session = turn();
     calls(&mut session, 10, "c1", ToolState::Succeeded);
@@ -374,6 +385,12 @@ fn the_newest_lines_stay_in_view_past_the_bound() {
     }
     thinks_at(&mut session, 99, "NEWEST-LINE");
     assert!(draw(&session, 100).contains("NEWEST-LINE"));
+    writes_at(&mut session, 101, "Words");
+    session.toggle_tool();
+    assert!(
+        draw(&session, 102).contains("NEWEST-LINE"),
+        "Opened once ended"
+    );
     let snapshot = session.snapshot().unwrap();
     let Item::Thinking(block) = &snapshot.items[0] else {
         panic!("Expected reasoning");
@@ -413,6 +430,21 @@ fn a_block_opened_while_it_comes_shows_its_newest_lines() {
     assert!(lines.iter().any(|line| line.contains("line-149")));
     assert!(lines.iter().any(|line| line.contains("line-50")));
     assert!(!lines.iter().any(|line| line.contains("line-49")));
+
+    writes_at(&mut session, 13, "Words");
+    let ended = render::screen_with_options(
+        &session,
+        100,
+        200,
+        &Renderers::default(),
+        &UiOptions::default(),
+        secs(14),
+    )
+    .lines;
+    assert!(
+        ended.iter().any(|line| line.contains("line-149")),
+        "The view does not jump when the block ends"
+    );
 }
 
 fn thinks_as(session: &mut Session, actor: &str, run: &str, at: u64, text: &str) {
@@ -602,10 +634,17 @@ fn a_block_a_host_sends_goes_above_what_the_turn_has_not_read_and_stays_bounded(
     let limit = crate::Limits::default().text_bytes.get();
     session.apply(Event::Item {
         conversation: "room-a".into(),
-        item: Item::Thinking(Thinking::new("t1", "agent", RUN, "x".repeat(limit * 2))),
+        item: Item::Thinking(Thinking::new(
+            "t1",
+            "agent",
+            RUN,
+            format!("{}END", "x".repeat(limit * 2)),
+        )),
     });
     assert_eq!(order(&session), ["thinking", "person"]);
-    assert!(thinking_texts(&session)[0].len() <= limit);
+    let kept = thinking_texts(&session)[0];
+    assert!(kept.len() <= limit, "{}", kept.len());
+    assert!(kept.ends_with("END"));
 }
 
 /// Another agent's block says nothing of whether this one wrote since its calls.
@@ -669,6 +708,45 @@ fn a_block_offers_f2_only_when_it_has_something_to_open_or_close() {
     session.toggle_tool();
     writes_at(&mut session, 12, "Words");
     assert!(draw(&session, 13).contains("· F2 expand"));
+}
+
+/// A click opens a block F2 does not reach, as the newest call has it: its header
+/// offers no F2. In the activity view F2 closes every block.
+#[test]
+fn an_opened_block_offers_f2_only_when_f2_reaches_it() {
+    let mut session = turn();
+    thinks_at(&mut session, 10, "Weighing");
+    calls(&mut session, 11, "c1", ToolState::Succeeded);
+    writes_at(&mut session, 12, "Words");
+    let header = |session: &Session, tool_activity: bool| {
+        let options = UiOptions {
+            tool_activity,
+            ..UiOptions::default()
+        };
+        let frame =
+            render::screen_with_options(session, 60, 30, &Renderers::default(), &options, secs(13));
+        let row = frame
+            .lines
+            .iter()
+            .position(|line| line.contains("∴ Thought"))
+            .unwrap();
+        (frame.lines[row].clone(), frame.tool_targets.clone(), row)
+    };
+    let (_, targets, row) = header(&session, false);
+    let target = targets.iter().find(|target| target.row == row).unwrap();
+    session.toggle_tool_details(&target.actor, &target.run, &target.call);
+    let (opened, _, _) = header(&session, false);
+    assert!(draw(&session, 13).contains("Weighing"));
+    assert!(!opened.contains("F2"), "{opened}");
+
+    let mut session = turn();
+    thinks_at(&mut session, 10, "Weighing");
+    calls(&mut session, 11, "c1", ToolState::Succeeded);
+    writes_at(&mut session, 12, "Words");
+    session.toggle_activity();
+    session.focus_tool(false);
+    let (opened, _, _) = header(&session, true);
+    assert!(opened.contains("F2 collapse"), "{opened}");
 }
 
 /// A click opens a block: its header is a target from the bracket on.

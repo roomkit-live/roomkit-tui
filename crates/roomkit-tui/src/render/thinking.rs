@@ -1,5 +1,6 @@
 //! A model's reasoning: its last lines while it thinks, one line once it ended,
-//! opened and closed as a call's details are.
+//! opened and closed as a call's details are. Opened, it shows its newest lines
+//! too: past the bound a block holds only its end, and it does not jump as it ends.
 
 use roomkit_tui_protocol::{Snapshot, Thinking};
 use unicode_width::UnicodeWidthStr;
@@ -25,9 +26,11 @@ pub(super) fn block(view: &View<'_>, snapshot: &Snapshot, block: &Thinking, cols
     let expanded = session.tool_expanded(actor, run, id);
     let width = cols.saturating_sub(INDENT.width()).max(1);
     let shown = shown_lines(block, state, expanded, width);
+    // F2 opens and closes everything in the activity view, what has the focus else.
+    let f2_reaches = focused || (expanded && view.options.tool_activity);
+    let hint = hint(state, expanded, f2_reaches, shown.truncated);
     let mut laid = Block::default();
-    laid.lines
-        .push(header(state, expanded, focused, shown.truncated));
+    laid.lines.push(header(state, focused, hint));
     if view.options.selection == crate::SelectionMode::CopyOnSelect {
         let end = columns_of(&laid.lines[0]).min(cols);
         laid.targets.push(ToolTarget {
@@ -55,29 +58,22 @@ struct Shown {
     truncated: bool,
 }
 
-/// What a block shows under its header: while it is written its newest lines,
-/// more of them once opened; ended, its first lines once opened; else nothing.
+/// What a block shows under its header: its newest lines, more of them once
+/// opened, and nothing once it ended folded.
 fn shown_lines(block: &Thinking, state: ThoughtState, expanded: bool, width: usize) -> Shown {
-    let live = matches!(state, ThoughtState::Open(_));
-    if live {
-        let rows = if expanded { OPEN_LINES } else { LIVE_LINES };
-        let lines = wrapped(tail(&block.text, rows, width), width);
-        let skip = lines.len().saturating_sub(rows);
-        return Shown {
-            truncated: skip > 0 && expanded,
-            lines: lines.into_iter().skip(skip).collect(),
-        };
-    }
-    if !expanded {
+    if matches!(state, ThoughtState::Ended(_)) && !expanded {
         return Shown {
             lines: Vec::new(),
             truncated: false,
         };
     }
-    let lines = wrapped(&block.text, width);
+    let rows = if expanded { OPEN_LINES } else { LIVE_LINES };
+    let end = tail(&block.text, rows, width);
+    let lines = wrapped(end, width);
+    let skip = lines.len().saturating_sub(rows);
     Shown {
-        truncated: lines.len() > OPEN_LINES,
-        lines: lines.into_iter().take(OPEN_LINES).collect(),
+        truncated: expanded && (skip > 0 || end.len() < block.text.len()),
+        lines: lines.into_iter().skip(skip).collect(),
     }
 }
 
@@ -95,7 +91,20 @@ fn tail(text: &str, rows: usize, width: usize) -> &str {
     &text[text.ceil_char_boundary(text.len().saturating_sub(bytes))..]
 }
 
-fn header(state: ThoughtState, expanded: bool, focused: bool, truncated: bool) -> Line {
+/// What the header offers: the F2 that really answers, then the view's limit.
+fn hint(state: ThoughtState, expanded: bool, f2_reaches: bool, truncated: bool) -> &'static str {
+    let ended = matches!(state, ThoughtState::Ended(_));
+    match (expanded, f2_reaches, truncated) {
+        (true, true, true) => " · F2 collapse · view limited to the last 100 lines",
+        (true, true, false) => " · F2 collapse",
+        (true, false, true) => " · view limited to the last 100 lines",
+        // While it is written its lines already show: nothing to offer yet.
+        (false, true, _) if ended => " · F2 expand",
+        _ => "",
+    }
+}
+
+fn header(state: ThoughtState, focused: bool, hint: &str) -> Line {
     let label = match state {
         ThoughtState::Open(Some(took)) => format!("∴ Thinking · {}", format_duration(took, false)),
         ThoughtState::Open(None) => "∴ Thinking".to_owned(),
@@ -103,14 +112,6 @@ fn header(state: ThoughtState, expanded: bool, focused: bool, truncated: bool) -
             format!("∴ Thought for {}", format_duration(took, true))
         }
         ThoughtState::Ended(None) => "∴ Thought".to_owned(),
-    };
-    let ended = matches!(state, ThoughtState::Ended(_));
-    let hint = match (expanded, truncated) {
-        (true, true) => " · F2 collapse · view limited to 100 lines",
-        (true, false) => " · F2 collapse",
-        // While it is written its lines already show: nothing to offer yet.
-        (false, _) if focused && ended => " · F2 expand",
-        (false, _) => "",
     };
     vec![
         span(if focused { " › " } else { "   " }, Tone::Accent),
