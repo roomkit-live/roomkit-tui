@@ -42,6 +42,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A turn stopped with no message of its own keeps its measure (RMK-1344): its record
+  rides its last row since roomkit-rs b96ca1e, and both the stop and a later
+  restore read it there; a turn that told no usage leaves no measure, not the last
+  turn's.
 - A click on a reasoning block opens that block alone in the activity view, where
   it opened every call below it too (RMK-1332).
 - A message handed to the running turn stays below what the turn writes without

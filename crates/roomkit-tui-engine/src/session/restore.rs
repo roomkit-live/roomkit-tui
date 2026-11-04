@@ -83,9 +83,9 @@ fn can_read(bindings: &[ChannelBinding], channel: &ConversationChannel) -> bool 
     })
 }
 
-/// What a turn's own record measured, on the model on screen, the message it
-/// rides found by the event the turn answers: another turn's record says
-/// nothing of this one. None when the turn wrote no record.
+/// What a turn's own record measured, on the model on screen, the row it rides
+/// found by the event the turn answers: another turn's record says nothing of
+/// this one. None when the turn wrote no record.
 pub(crate) async fn turn_measure<S: ConversationStore>(
     kit: &RoomKit<S>,
     channel: &ConversationChannel,
@@ -115,9 +115,7 @@ pub(crate) async fn turn_measure<S: ConversationStore>(
     context.recent_events = kit.get_timeline(&config.room, timeline).await.ok()?;
     roomkit::visible_events(&context, channel.id())
         .iter()
-        .filter(|row| {
-            row.responds_to.as_ref() == Some(answers) && matches!(row.r#type, EventType::Message)
-        })
+        .filter(|row| row.responds_to.as_ref() == Some(answers))
         .find_map(|row| {
             let (context, usage) = measurements::restore(row, config);
             Some((context, usage?))
@@ -143,8 +141,11 @@ impl History {
                 .map_or_else(|| row.source.channel_id.to_string(), ToString::to_string)
         });
         // A person's message says nothing of the measure; an agent's replaces
-        // it, even with none: no stale measure reads as current.
-        if matches!(row.r#type, EventType::Message) && row.source.channel_id == config.agent {
+        // it, even with none, and so does any row of its that holds a turn's
+        // record, one that wrote no message: no stale measure reads as current.
+        let measures = matches!(row.r#type, EventType::Message)
+            || row.metadata.contains_key("loop_end_reason");
+        if measures && row.source.channel_id == config.agent {
             (self.context, self.usage) = measurements::restore(row, config);
         }
         if let Some(item) = projection::item(row) {

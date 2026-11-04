@@ -184,15 +184,13 @@ async fn a_run_tells_its_context_at_each_step_and_a_stop_keeps_it() {
     roomkit::testing::idle(&kit).await;
 }
 
-/// RMK-1333: a turn stopped with no message of its own, after one that had:
-/// the record of the turn before it says nothing of this one. A later restore
-/// keeps the last measure, the person's message after it saying nothing of it.
-#[tokio::test]
-async fn a_stopped_turn_with_no_record_is_not_told_the_last_one_s() {
+/// A turn whose call `second` makes is stopped with no message of its own, after
+/// one that had: what it is told of its usage, and what a later restore reads.
+async fn stopped_with_no_message(second: ScriptedRound) -> (Option<u64>, Option<u64>) {
     let kit = RoomKit::new(Default::default());
     let provider = NamedProvider(ScriptedProvider::new([
         ScriptedRound::answering("Done.").with_usage(used(100)),
-        ScriptedRound::calling("", [("c1", "lookup_record", "{}")]).with_usage(used(5000)),
+        second,
         ScriptedRound::answering("Never.").with_usage(used(6000)),
     ]));
     let channel = prepare(&kit, provider, Arc::default(), false).await;
@@ -248,13 +246,14 @@ async fn a_stopped_turn_with_no_record_is_not_told_the_last_one_s() {
     open.send_replace(true);
 
     let events = collect_operation(&client).await;
-    assert!(
-        !events.iter().any(|event| matches!(
-            event,
-            Event::UsageUpdated { run: measured, .. } if *measured == run
-        )),
-        "This turn wrote no record: {events:#?}"
-    );
+    let told = events.iter().rev().find_map(|event| match event {
+        Event::UsageUpdated {
+            run: measured,
+            context,
+            ..
+        } if *measured == run => context.as_ref().map(|context| context.tokens),
+        _ => None,
+    });
     drop(client);
     task.await.unwrap().unwrap();
     roomkit::testing::idle(&kit).await;
@@ -262,7 +261,24 @@ async fn a_stopped_turn_with_no_record_is_not_told_the_last_one_s() {
         .snapshot()
         .await
         .unwrap();
-    assert_eq!(restored.context.map(|context| context.tokens), Some(110));
+    (told, restored.context.map(|context| context.tokens))
+}
+
+/// RMK-1344: its record rides its last row, the call's end, so the turn is told
+/// what it used, and a later restore reads that, not the turn's before it.
+#[tokio::test]
+async fn a_stopped_turn_with_no_message_tells_what_it_used() {
+    let second = ScriptedRound::calling("", [("c1", "lookup_record", "{}")]);
+    let measured = stopped_with_no_message(second.with_usage(used(5000))).await;
+    assert_eq!(measured, (Some(5010), Some(5010)));
+}
+
+/// RMK-1344: the record of a turn that told no usage says nothing of the turn
+/// before it: no measure is told, and a later restore reads none as current.
+#[tokio::test]
+async fn a_stopped_turn_that_told_no_usage_is_not_told_the_last_one_s() {
+    let second = ScriptedRound::calling("", [("c1", "lookup_record", "{}")]);
+    assert_eq!(stopped_with_no_message(second).await, (None, None));
 }
 
 /// A view that may no longer read its room is told no measure of its record.
