@@ -11,7 +11,9 @@ person types:
   reports it (RMK-1285): the turn is interrupted, and the message leaves
   once it stopped, in a turn of its own. The terminal's loop tries again
   while the host holds the room (RMK-1303, against a scripted host). On an
-  empty composer, it cuts the turn for the message handed to it (RMK-1311).
+  empty composer, it cuts the turn for the message handed to it (RMK-1311), or
+  ends its wait at the message's own turn, should the cut come first (RMK-1371,
+  a real engine holding the message's delivery).
 """
 
 import json
@@ -230,6 +232,26 @@ def tried_again_while_the_host_holds_the_room():
         terminal.exited()
 
 
+def cut_before_the_message_reached_the_turn():
+    """RMK-1371: the cut comes between the message's commit and its delivery, so
+    the message gets a turn of its own. The terminal has asked for an answer,
+    which the host refused while it held the message. That turn ends its asking:
+    the person sees one answer, however long they wait."""
+    with Terminal([binary("cut-before-delivery")], rows=60) as terminal:
+        terminal.wait_for(b"Enter send")
+        terminal.send(b"Look up record 42\r")
+        terminal.wait_for(b"Checking")
+        terminal.send(STEERED.encode() + b"\r")
+        terminal.wait_for("sent to the running turn · Ctrl+S to cut it now".encode())
+        terminal.send(CTRL_S)
+        terminal.wait_for(b"Its own answer")
+        terminal.wait_for("answered in its own turn".encode())
+        terminal.pump(1)  # Five times as long as the terminal waits to try again.
+        require(not terminal.screen.ever(b"Answered twice"), "The model answered twice")
+        terminal.send(b"\x04")
+        terminal.exited()
+
+
 server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 try:
@@ -245,9 +267,11 @@ try:
             check(server.server_port, directory)
         Fixture.release.set()
     tried_again_while_the_host_holds_the_room()
+    cut_before_the_message_reached_the_turn()
 finally:
     Fixture.release.set()
     server.shutdown()
 print("Steering checks passed: Enter hands a message to the running turn, which reads it at its next "
       "step; Ctrl+S and Ctrl+Enter cut the turn and send the message once it stopped, trying again "
-      "while the host holds the room; on an empty composer, for the message handed to the turn.")
+      "while the host holds the room; on an empty composer, for the message handed to the turn, "
+      "which is answered once when the cut comes before the turn took it.")

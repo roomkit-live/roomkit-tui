@@ -853,6 +853,35 @@ fn a_turn_of_its_own_for_the_message_ends_the_wait() {
     assert!(host.try_recv().is_err(), "The message's own turn was cut");
 }
 
+/// RMK-1371: the cut came before the turn took the message, so the host holds
+/// it and refuses the answer. Its own turn starts: that is the answer, and the
+/// wait asks no more, while the turn runs or after it.
+#[test]
+fn a_refused_answer_is_not_asked_again_once_the_message_has_its_own_turn() {
+    let (mut session, client, host) = handed();
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(pass(&mut session, &client, NOW));
+    let sent = host.try_recv().unwrap();
+    assert_eq!(sent.command, answer());
+    refused(&mut session, &sent, busy(), LATER);
+
+    session.apply(Event::RunStarted {
+        conversation: "room".into(),
+        run: "own".into(),
+        answers: Some("handed".into()),
+    });
+    run_stopped(&mut session, "own");
+    finished(&mut session);
+    assert!(!pass(&mut session, &client, LATER * 2));
+    assert!(
+        host.try_recv().is_err(),
+        "The message would be answered twice"
+    );
+}
+
 /// Review of aa33d7c: a turn that ends by itself read what it was handed:
 /// answering again would answer twice, and tell the model it was cut.
 #[test]
