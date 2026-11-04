@@ -1415,7 +1415,7 @@ dependencies = [
 [[package]]
 name = "roomkit"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=dcaf5053a894b814e7f4a5e11e935e8ff87a0283#dcaf5053a894b814e7f4a5e11e935e8ff87a0283"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b96ca1eafee4ea889fdcabb65189a492a214d81b#b96ca1eafee4ea889fdcabb65189a492a214d81b"
 dependencies = [
  "futures-core",
  "getrandom 0.4.3",
@@ -1433,7 +1433,7 @@ dependencies = [
 [[package]]
 name = "roomkit-ai"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=dcaf5053a894b814e7f4a5e11e935e8ff87a0283#dcaf5053a894b814e7f4a5e11e935e8ff87a0283"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b96ca1eafee4ea889fdcabb65189a492a214d81b#b96ca1eafee4ea889fdcabb65189a492a214d81b"
 dependencies = [
  "futures-core",
  "roomkit",
@@ -1449,7 +1449,7 @@ dependencies = [
 [[package]]
 name = "roomkit-core"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=dcaf5053a894b814e7f4a5e11e935e8ff87a0283#dcaf5053a894b814e7f4a5e11e935e8ff87a0283"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b96ca1eafee4ea889fdcabb65189a492a214d81b#b96ca1eafee4ea889fdcabb65189a492a214d81b"
 dependencies = [
  "jiff",
  "serde",
@@ -1463,9 +1463,10 @@ dependencies = [
 [[package]]
 name = "roomkit-openai"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=dcaf5053a894b814e7f4a5e11e935e8ff87a0283#dcaf5053a894b814e7f4a5e11e935e8ff87a0283"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b96ca1eafee4ea889fdcabb65189a492a214d81b#b96ca1eafee4ea889fdcabb65189a492a214d81b"
 dependencies = [
  "futures-core",
+ "jiff",
  "reqwest",
  "roomkit",
  "roomkit-ai",
@@ -1474,6 +1475,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "webpki-roots",
 ]
@@ -1481,7 +1483,7 @@ dependencies = [
 [[package]]
 name = "roomkit-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=dcaf5053a894b814e7f4a5e11e935e8ff87a0283#dcaf5053a894b814e7f4a5e11e935e8ff87a0283"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b96ca1eafee4ea889fdcabb65189a492a214d81b#b96ca1eafee4ea889fdcabb65189a492a214d81b"
 dependencies = [
  "roomkit",
  "roomkit-core",
