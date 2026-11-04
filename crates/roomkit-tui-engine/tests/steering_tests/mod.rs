@@ -8,6 +8,7 @@ use roomkit_tui_engine::{
 use std::sync::Mutex;
 use tokio::sync::{Notify, watch};
 
+mod cut;
 mod lifecycle;
 
 /// The console and the agent of a test's room.

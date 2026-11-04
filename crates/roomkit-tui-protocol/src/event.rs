@@ -261,8 +261,10 @@ pub enum Event {
         usage: TokenUsage,
     },
     /// The host handed a message to a run already under way, which reads it
-    /// at its next step instead of starting a turn of its own. Should the run
-    /// no longer read it, a later `RunStarted` names the message in `answers`.
+    /// at its next step instead of starting a turn of its own. Told as the
+    /// message is committed, before its delivery reaches the run: should the
+    /// run no longer read it, cut in between or past its last step, a later
+    /// `RunStarted` names the message in `answers`.
     MessageSteered {
         /// Target conversation.
         conversation: ConversationId,

@@ -107,7 +107,7 @@ impl SessionLifecycle for Recording {
 }
 
 /// The run that ends as `run`, and how.
-async fn run_finished(client: &Client, run: &RunId) -> RunOutcome {
+pub(super) async fn run_finished(client: &Client, run: &RunId) -> RunOutcome {
     loop {
         if let Event::RunFinished {
             run: ended,

@@ -29,7 +29,9 @@ pub enum Command {
     },
     /// Start a turn for what the conversation already holds, without a new
     /// message: for a message handed to a turn that was cut before reading it.
-    /// A host that cannot answers `Unsupported`.
+    /// A host that holds the message refuses it as busy; a `RunStarted` naming
+    /// the message in `answers` then says it has its turn, and asking again
+    /// would answer it twice. A host that cannot answers `Unsupported`.
     Answer {
         /// Agent selected in the current snapshot.
         agent: ActorId,
