@@ -257,6 +257,18 @@ async fn stopped_with_no_message(second: ScriptedRound) -> (Option<u64>, Option<
     drop(client);
     task.await.unwrap().unwrap();
     roomkit::testing::idle(&kit).await;
+    // A person's message after it says nothing of the measure: one no agent
+    // answers, which would measure its own turn.
+    let person = roomkit::model::TextContent::new("Back.");
+    let unanswered = roomkit::SendEventOptions {
+        visibility: roomkit::model::Visibility::Transport,
+        ..Default::default()
+    };
+    let room = restored_config.room.clone();
+    kit.send_event(&room, channel.id(), person, unanswered)
+        .await
+        .unwrap();
+    roomkit::testing::idle(&kit).await;
     let restored = LocalSession::new(kit.clone(), channel, restored_config)
         .snapshot()
         .await
@@ -269,6 +281,15 @@ async fn stopped_with_no_message(second: ScriptedRound) -> (Option<u64>, Option<
 #[tokio::test]
 async fn a_stopped_turn_with_no_message_tells_what_it_used() {
     let second = ScriptedRound::calling("", [("c1", "lookup_record", "{}")]);
+    let measured = stopped_with_no_message(second.with_usage(used(5000))).await;
+    assert_eq!(measured, (Some(5010), Some(5010)));
+}
+
+/// A turn with text before its call holds its record on that message: the rows
+/// of the call after it, an agent's with no record, leave the measure.
+#[tokio::test]
+async fn an_agent_s_call_rows_with_no_record_leave_its_measure() {
+    let second = ScriptedRound::calling("Checking.", [("c1", "lookup_record", "{}")]);
     let measured = stopped_with_no_message(second.with_usage(used(5000))).await;
     assert_eq!(measured, (Some(5010), Some(5010)));
 }

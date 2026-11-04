@@ -292,8 +292,8 @@ impl<S: ConversationStore> Turn<S> {
 }
 
 /// Tell the views what the turn on `trigger` measured, once its delivery is
-/// over, a stopped turn's too. The final record may update an earlier text
-/// segment after streaming; measure only what this view is authorized to see.
+/// over, a stopped turn's too. The final record may update an earlier row of
+/// the turn after streaming; measure only what this view is authorized to see.
 pub(super) async fn publish_usage<S: ConversationStore>(
     kit: &RoomKit<S>,
     channel: &ConversationChannel,

@@ -208,7 +208,8 @@ sum of the session. Unknown counters or capacity remain unknown. `ai_usage`
 feeds a separate latest-execution total, marked partial when accounting is
 incomplete. Neither figure compacts or changes the model's context.
 
-Snapshots restore only the latest applicable visible message's measurements.
+Snapshots restore only the measurements of the latest applicable visible record:
+it rides the turn's last message, or its last row when it wrote none.
 New runs and model changes clear old measurements. Hosts configuring OpenAI
 use the provider identity `OpenAIAIProvider`, matching the engine's attribution.
 
