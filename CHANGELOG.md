@@ -6,6 +6,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The engine follows roomkit-rs c30375c, whose channel, hook and AI APIs it uses
+  unchanged (RMK-1324).
+
 ### Added
 
 - Cut a turn for a message already handed to it (RMK-1311): its line says

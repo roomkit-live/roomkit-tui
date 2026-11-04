@@ -62,6 +62,7 @@ async fn room(kit: &RoomKit, gate: watch::Receiver<bool>) -> (ConversationChanne
         name: "lookup_record".to_owned(),
         description: "Read a record".to_owned(),
         parameters: json!({"type":"object"}),
+        tags: Vec::new(),
     };
     let options = AiChannelOptions {
         tools: vec![ToolEntry::Definition(lookup)],

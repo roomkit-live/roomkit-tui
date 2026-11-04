@@ -38,6 +38,7 @@ fn agent_declaring_no_window(channel: &ConversationChannel) -> AiChannel<Scripte
         name: "lookup_record".to_owned(),
         description: "Read".to_owned(),
         parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
+        tags: Vec::new(),
     };
     let options = AiChannelOptions {
         tools: vec![ToolEntry::Definition(lookup)],

@@ -11,6 +11,7 @@ async fn limited(kit: &RoomKit, rounds: Vec<ScriptedRound>, buffered: bool) -> C
         name: "lookup_record".to_owned(),
         description: "Read".to_owned(),
         parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
+        tags: Vec::new(),
     };
     let options = AiChannelOptions {
         tools: vec![ToolEntry::Definition(lookup)],

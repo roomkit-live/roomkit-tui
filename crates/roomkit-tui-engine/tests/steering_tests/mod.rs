@@ -43,6 +43,7 @@ async fn room_with(
         name: "lookup_record".to_owned(),
         description: "Read a fictional record".to_owned(),
         parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
+        tags: Vec::new(),
     };
     let options = AiChannelOptions {
         tools: vec![ToolEntry::Definition(lookup)],
