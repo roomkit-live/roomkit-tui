@@ -908,6 +908,63 @@ fn every_message_handed_to_the_cut_turn_is_answered() {
     }
 }
 
+/// The turn's round of calls ends, and the model answers again.
+fn passes_a_stop(session: &mut Session) {
+    for state in [ToolState::Running, ToolState::Succeeded] {
+        session.apply(Event::Item {
+            conversation: "room".into(),
+            item: Item::Tool {
+                actor: "agent".into(),
+                run: "run".into(),
+                call: ToolCall::new("call", "lookup", serde_json::json!({}), state),
+            },
+        });
+    }
+    session.apply(Event::TextDelta {
+        conversation: "room".into(),
+        message: "draft".into(),
+        actor: "agent".into(),
+        run: "run".into(),
+        text: "Going on".into(),
+    });
+}
+
+/// RMK-1317: the cut answers the message it was asked for and what no stop
+/// read. What a stop read stays read.
+#[test]
+fn a_cut_leaves_what_the_turn_read_as_read() {
+    let (mut session, client, host) = handed();
+    passes_a_stop(&mut session);
+    assert_eq!(session.steering(&"handed".into()), Some(Steering::Read));
+    hand(&mut session, "also");
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(pass(&mut session, &client, NOW));
+    let sent = host.try_recv().unwrap();
+    taken(&mut session, &sent, NOW);
+    assert_eq!(session.steering(&"handed".into()), Some(Steering::Read));
+    assert_eq!(session.steering(&"also".into()), Some(Steering::OwnTurn));
+}
+
+/// A message the turn read can still be cut for: the model may go on without
+/// answering it.
+#[test]
+fn a_cut_answers_a_message_the_turn_read() {
+    let (mut session, client, host) = handed();
+    passes_a_stop(&mut session);
+    assert!(screen(&session).contains("read by the turn · Ctrl+S"));
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    stopped(&mut session);
+    finished(&mut session);
+    assert!(pass(&mut session, &client, NOW));
+    let sent = host.try_recv().unwrap();
+    taken(&mut session, &sent, NOW);
+    assert_eq!(session.steering(&"handed".into()), Some(Steering::OwnTurn));
+}
+
 /// Review of aa33d7c: typing ends a wait to answer, even if the composer then
 /// empties again: its text was sent, or dropped.
 #[test]

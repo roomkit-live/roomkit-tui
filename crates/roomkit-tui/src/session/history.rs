@@ -5,25 +5,24 @@ use roomkit_tui_protocol::{ActorId, ConversationId, Item, Message, MessageId, Ru
 
 use super::bounds::{bound_in_place, bound_item, bound_labels, bounded, trim_items};
 use super::steering::Handed;
-use super::unread::place;
+use super::unread::{is_output_of, place};
 use super::{ObservedRun, Session};
 
 /// Blank so far, as what a model streams before a tool call, a draft takes no
 /// room on screen: its text starts where the turn's output ends, below what
 /// came since, and a finished answer takes its draft's place.
 fn blank_draft_to_the_end(
-    snapshot: &mut Snapshot,
+    items: &mut Vec<Item>,
     handed: Option<&Handed>,
     message: &MessageId,
     actor: &ActorId,
 ) {
-    let blank = snapshot.items.iter().rposition(|item| {
+    let blank = items.iter().rposition(|item| {
         matches!(item, Item::Message(m) if m.id == *message && m.actor == *actor && m.text.trim().is_empty())
     });
     if let Some(at) = blank {
-        let draft = snapshot.items.remove(at);
-        let at = place(handed, snapshot, &draft);
-        snapshot.items.insert(at, draft);
+        let draft = items.remove(at);
+        items.insert(place(handed, items), draft);
     }
 }
 
@@ -108,13 +107,13 @@ impl Session {
         {
             return;
         }
-        self.text_comes(run, &message);
+        self.text_comes(run);
         let limit = self.limits.text_bytes.get();
         let Some(snapshot) = &mut self.snapshot else {
             return;
         };
-        let handed = self.handed.as_ref();
-        blank_draft_to_the_end(snapshot, handed, &message, &actor);
+        let handed = self.handed.as_ref().filter(|handed| handed.run == *run);
+        blank_draft_to_the_end(&mut snapshot.items, handed, &message, &actor);
         // The streamed message is almost always the newest item.
         let existing = snapshot.items.iter_mut().rev().find_map(|item| match item {
             Item::Message(m) if m.id == message && m.actor == actor => Some(m),
@@ -128,8 +127,7 @@ impl Session {
             return;
         }
         let draft = Item::Message(Message::new(message, actor, bounded(text, limit)));
-        let at = place(handed, snapshot, &draft);
-        snapshot.items.insert(at, draft);
+        snapshot.items.insert(place(handed, &snapshot.items), draft);
         if trim_items(&mut snapshot.items, self.limits.items.get()) {
             self.forget_missing_tools();
         }
@@ -172,10 +170,21 @@ impl Session {
                 None => {}
             }
         }
-        self.on_item(conversation, item);
+        // No draft was seen of it: an answer all the same.
+        self.add_item(conversation, item, true);
     }
 
-    pub(super) fn on_item(&mut self, conversation: &ConversationId, mut item: Item) {
+    pub(super) fn on_item(&mut self, conversation: &ConversationId, item: Item) {
+        let of_turn = self
+            .handed
+            .as_ref()
+            .is_some_and(|handed| is_output_of(handed, &item));
+        self.add_item(conversation, item, of_turn);
+    }
+
+    /// Add `item`, or update the one it replaces, above what the turn has not
+    /// read if it is `of_turn`.
+    fn add_item(&mut self, conversation: &ConversationId, mut item: Item, of_turn: bool) {
         if !self.is_current(conversation) || matches!(item, Item::Unknown) {
             return;
         }
@@ -198,8 +207,8 @@ impl Session {
         let Some(snapshot) = &mut self.snapshot else {
             return;
         };
-        let at = place(self.handed.as_ref(), snapshot, &item);
-        snapshot.items.insert(at, item);
+        let handed = self.handed.as_ref().filter(|_| of_turn);
+        snapshot.items.insert(place(handed, &snapshot.items), item);
         if trim_items(&mut snapshot.items, self.limits.items.get()) {
             self.forget_missing_tools();
         }

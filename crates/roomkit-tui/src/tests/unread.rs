@@ -287,6 +287,189 @@ fn the_next_turn_writes_below_what_the_last_one_did_not_read() {
     assert_eq!(order(&session), ["a0", "sent", "d9"]);
 }
 
+/// Review of 9c540f0: blanks go on the draft of one answer, and the first of
+/// them said the stop the message waited for has passed.
+#[test]
+fn blanks_after_the_calls_are_one_answer_however_many() {
+    let mut session = turn();
+    call(&mut session, "c1", ToolState::Running);
+    call(&mut session, "c1", ToolState::Succeeded);
+    hand(&mut session, "sent");
+    delta(&mut session, "d1", "\n");
+    delta(&mut session, "d1", "\n");
+    delta(&mut session, "d1", "Going on");
+    assert_eq!(order(&session), ["c1", "d1", "sent"]);
+    assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
+}
+
+#[test]
+fn a_message_handed_during_the_blanks_of_an_answer_waits_for_its_end() {
+    let mut session = turn();
+    call(&mut session, "c1", ToolState::Running);
+    call(&mut session, "c1", ToolState::Succeeded);
+    delta(&mut session, "d1", "\n\n");
+    hand(&mut session, "sent");
+    delta(&mut session, "d1", "Going on");
+    assert_eq!(order(&session), ["c1", "d1", "sent"]);
+    assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
+}
+
+#[test]
+fn text_that_goes_on_after_the_calls_reads_nothing() {
+    let mut session = turn();
+    call(&mut session, "c1", ToolState::Running);
+    call(&mut session, "c1", ToolState::Succeeded);
+    delta(&mut session, "d1", "Going");
+    hand(&mut session, "sent");
+    delta(&mut session, "d1", " on");
+    assert_eq!(order(&session), ["c1", "d1", "sent"]);
+    assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
+}
+
+/// Handed once the answer ended, the loop had read its queue already.
+#[test]
+fn a_message_handed_after_an_answer_waits_for_the_stop_after_the_next_one() {
+    let mut session = turn();
+    hand(&mut session, "first");
+    delta(&mut session, "d0", "An answer");
+    finalized(&mut session, "d0", "a0");
+    hand(&mut session, "second");
+    delta(&mut session, "d1", "Next");
+    assert_eq!(order(&session), ["a0", "first", "d1", "second"]);
+    assert_eq!(steering(&session, "first"), Some(Steering::Read));
+    assert_eq!(steering(&session, "second"), Some(Steering::Handed));
+}
+
+/// The text of one answer ends as its calls start: no answer ended, and a
+/// message handed during those calls is read when they end.
+#[test]
+fn calls_after_text_leave_no_answer_ended() {
+    let mut session = turn();
+    hand(&mut session, "first");
+    delta(&mut session, "d0", "Looking");
+    finalized(&mut session, "d0", "a0");
+    call(&mut session, "c1", ToolState::Running);
+    hand(&mut session, "second");
+    call(&mut session, "c1", ToolState::Succeeded);
+    delta(&mut session, "d1", "The answer");
+    assert_eq!(order(&session), ["a0", "c1", "first", "second", "d1"]);
+    assert_eq!(steering(&session, "second"), Some(Steering::Read));
+}
+
+/// A stop reads once: the answer that made it no longer counts.
+#[test]
+fn a_stop_leaves_no_answer_ended() {
+    let mut session = turn();
+    hand(&mut session, "first");
+    delta(&mut session, "d0", "An answer");
+    finalized(&mut session, "d0", "a0");
+    delta(&mut session, "d1", "Next");
+    hand(&mut session, "second");
+    finalized(&mut session, "d1", "a1");
+    delta(&mut session, "d2", "Last");
+    assert_eq!(order(&session), ["a0", "first", "a1", "second", "d2"]);
+    assert_eq!(steering(&session, "second"), Some(Steering::Read));
+}
+
+/// With nothing held, text that ends with its calls leaves no answer ended.
+#[test]
+fn an_answer_with_nothing_held_counts_for_nothing_handed_later() {
+    let mut session = turn();
+    hand(&mut session, "first");
+    call(&mut session, "c1", ToolState::Running);
+    call(&mut session, "c1", ToolState::Succeeded);
+    delta(&mut session, "d1", "Looking again");
+    assert_eq!(steering(&session, "first"), Some(Steering::Read));
+    finalized(&mut session, "d1", "a1");
+    call(&mut session, "c2", ToolState::Running);
+    hand(&mut session, "second");
+    call(&mut session, "c2", ToolState::Succeeded);
+    delta(&mut session, "d2", "The answer");
+    assert_eq!(steering(&session, "second"), Some(Steering::Read));
+}
+
+/// Only the turn's own output tells its stop or goes above what it holds.
+#[test]
+fn what_another_run_does_neither_reads_nor_goes_above() {
+    let mut session = turn();
+    hand(&mut session, "sent");
+    call_of(&mut session, "other", "c1", ToolState::Succeeded);
+    delta(&mut session, "d0", "Words");
+    assert_eq!(order(&session), ["d0", "sent", "c1"]);
+    assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
+}
+
+#[test]
+fn what_people_write_after_the_calls_hides_no_stop() {
+    let mut session = turn();
+    hand(&mut session, "sent");
+    call(&mut session, "c1", ToolState::Running);
+    call(&mut session, "c1", ToolState::Succeeded);
+    written(&mut session, "next");
+    session.apply(Event::Item {
+        conversation: "room-a".into(),
+        item: Item::Message(Message::new("sms", "+15550001", "From elsewhere")),
+    });
+    delta(&mut session, "d1", "The answer");
+    assert_eq!(order(&session), ["c1", "sent", "next", "sms", "d1"]);
+    assert_eq!(steering(&session, "sent"), Some(Steering::Read));
+}
+
+/// The turn's request for a decision is its output too.
+#[test]
+fn a_decision_of_the_turn_goes_above() {
+    let mut session = turn();
+    hand(&mut session, "sent");
+    let permission = Permission::new("p1", "agent", RUN, "Read a record", "Record 42");
+    let decision = PermissionDecision::new(permission, Decision::Allow, "person:alice");
+    session.apply(Event::Item {
+        conversation: "room-a".into(),
+        item: Item::Approval(decision),
+    });
+    assert_eq!(order(&session), ["other", "sent"]);
+}
+
+/// An answer the turn never streamed takes the place of a draft.
+#[test]
+fn an_answer_without_a_draft_goes_above() {
+    let mut session = turn();
+    hand(&mut session, "sent");
+    finalized(&mut session, "d0", "a0");
+    assert_eq!(order(&session), ["a0", "sent"]);
+}
+
+/// The host may say where a message went once its turn ended, as the hooks that
+/// admit it can outlast the turn: nothing would then forget the hold.
+#[test]
+fn a_message_handed_to_a_turn_that_ended_holds_nothing() {
+    let mut session = turn();
+    written(&mut session, "sent");
+    finished(&mut session, RunOutcome::Completed);
+    handed(&mut session, "sent");
+    started(&mut session, "agent:other");
+    session.apply(Event::TextDelta {
+        conversation: "room-a".into(),
+        message: "d9".into(),
+        actor: "agent".into(),
+        run: "agent:other".into(),
+        text: "Another".into(),
+    });
+    finalized(&mut session, "d8", "a8");
+    assert_eq!(order(&session), ["sent", "d9", "a8"]);
+}
+
+/// A host that steers without end must not grow the view: beyond the bound the
+/// oldest message no longer waits, and the turn's output goes below it.
+#[test]
+fn a_turn_holds_a_bounded_number_of_unread_messages() {
+    let mut session = turn();
+    for index in 0..65 {
+        hand(&mut session, &format!("m{index}"));
+    }
+    delta(&mut session, "d0", "Words");
+    assert_eq!(order(&session)[..3], ["m0", "d0", "m1"]);
+}
+
 /// A snapshot states the live runs: a turn it no longer names told no end.
 #[test]
 fn a_snapshot_without_the_turn_leaves_nothing_waiting_for_it() {

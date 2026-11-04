@@ -43,7 +43,8 @@ impl Session {
 
     /// The message last handed to a turn that still runs and can be cut: Ctrl+S
     /// on an empty composer cuts that turn to answer what it was handed, on a
-    /// host that can. Whether the turn has read it already, nothing says.
+    /// host that can. A message the turn read counts: the model may go on
+    /// without answering it.
     pub(crate) fn handed_to_a_live_turn(&self) -> Option<&MessageId> {
         let handed = self.handed.as_ref()?;
         let can_cut = self
@@ -96,7 +97,10 @@ impl Session {
             if let Some(handed) = &mut self.handed {
                 remember(&mut handed.messages, message.clone());
             }
-            self.hold_unread(&message);
+            // Its turn may have ended before the host said where it went.
+            if self.is_live(run) {
+                self.hold_unread(&message);
+            }
         }
         remember(&mut self.steered, (message, steering));
     }
@@ -138,13 +142,16 @@ impl Session {
         }
     }
 
-    /// A turn now answers what the cut turn was handed, which it never did.
+    /// A turn now answers what the cut turn had not read, and the message the
+    /// cut was for. What a stop read stays read.
     pub(super) fn handed_answered_by_their_own_turn(&mut self) {
         let Some(handed) = self.handed.take() else {
             return;
         };
+        let target = handed.messages.last();
         for (id, steering) in &mut self.steered {
-            if handed.messages.contains(id) {
+            let unread = *steering == Steering::Handed && handed.messages.contains(id);
+            if unread || target == Some(id) {
                 *steering = Steering::OwnTurn;
             }
         }
@@ -159,7 +166,7 @@ impl Session {
 }
 
 /// Keep `entry`, forgetting the oldest beyond the bound.
-fn remember<T>(entries: &mut Vec<T>, entry: T) {
+pub(super) fn remember<T>(entries: &mut Vec<T>, entry: T) {
     if entries.len() >= MAX_STEERED {
         entries.remove(0);
     }

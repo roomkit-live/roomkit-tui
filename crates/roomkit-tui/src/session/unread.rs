@@ -7,10 +7,10 @@
 //! announces all its calls before any of them ends, so what comes once they
 //! all ended, like the text that follows an answer, is the model's next answer.
 
-use roomkit_tui_protocol::{Item, MessageId, RunId, Snapshot};
+use roomkit_tui_protocol::{Item, MessageId, RunId};
 
 use super::Session;
-use super::steering::{Handed, Steering};
+use super::steering::{Handed, Steering, remember};
 
 /// What a turn holds and has not read.
 #[derive(Debug, Default)]
@@ -51,20 +51,25 @@ impl Unread {
     }
 }
 
-/// Where `item` goes among `snapshot`'s: what a person writes at the end, what
-/// the turn writes above what it has not read.
-pub(super) fn place(handed: Option<&Handed>, snapshot: &Snapshot, item: &Item) -> usize {
-    let own = matches!(item, Item::Message(m) if snapshot.local_actor.as_ref() == Some(&m.actor));
-    if own {
-        return snapshot.items.len();
+/// Whether `item` comes from the turn `handed` names.
+pub(super) fn is_output_of(handed: &Handed, item: &Item) -> bool {
+    match item {
+        Item::Tool { run, .. } => *run == handed.run,
+        Item::Approval(decision) => decision.permission.run == handed.run,
+        _ => false,
     }
-    handed.map_or(snapshot.items.len(), |handed| {
-        snapshot
-            .items
-            .iter()
-            .position(|old| matches!(old, Item::Message(m) if handed.unread.holds(&m.id)))
-            .unwrap_or(snapshot.items.len())
-    })
+}
+
+/// Where the output of the turn `handed` names goes among `items`: above what
+/// it has not read. Anything else goes at the end.
+pub(super) fn place(handed: Option<&Handed>, items: &[Item]) -> usize {
+    handed
+        .and_then(|handed| {
+            items
+                .iter()
+                .position(|old| matches!(old, Item::Message(m) if handed.unread.holds(&m.id)))
+        })
+        .unwrap_or(items.len())
 }
 
 impl Session {
@@ -73,12 +78,17 @@ impl Session {
         let Some(run) = self.handed.as_ref().map(|handed| handed.run.clone()) else {
             return;
         };
-        let stopped = self.calls_ended(&run, Some(id));
+        let stopped = self.calls_ended(&run);
         if let Some(handed) = &mut self.handed {
-            handed.unread.messages.push(Held {
-                id: id.clone(),
-                after_next_answer: stopped || handed.unread.answered,
-            });
+            let after_next_answer = stopped || handed.unread.answered;
+            handed.unread.forget(id);
+            remember(
+                &mut handed.unread.messages,
+                Held {
+                    id: id.clone(),
+                    after_next_answer,
+                },
+            );
         }
         let Some(snapshot) = &mut self.snapshot else {
             return;
@@ -99,7 +109,7 @@ impl Session {
         if !self.holds_unread(run) {
             return;
         }
-        if self.calls_ended(run, None) {
+        if self.calls_ended(run) {
             self.turn_stopped();
         }
         if let Some(handed) = &mut self.handed {
@@ -107,24 +117,16 @@ impl Session {
         }
     }
 
-    /// `run` writes in `draft`. Text that extends words is the same answer.
-    pub(super) fn text_comes(&mut self, run: &RunId, draft: &MessageId) {
+    /// `run` writes text.
+    pub(super) fn text_comes(&mut self, run: &RunId) {
         if !self.holds_unread(run) {
-            return;
-        }
-        let extends = self.snapshot.as_ref().is_some_and(|snapshot| {
-            snapshot.items.iter().rev().any(
-                |item| matches!(item, Item::Message(m) if m.id == *draft && !m.text.trim().is_empty()),
-            )
-        });
-        if extends {
             return;
         }
         let answered = self
             .handed
             .as_ref()
             .is_some_and(|handed| handed.unread.answered);
-        if answered || self.calls_ended(run, Some(draft)) {
+        if answered || self.calls_ended(run) {
             self.turn_stopped();
         }
     }
@@ -165,25 +167,28 @@ impl Session {
             .is_some_and(|handed| handed.run == *run && !handed.unread.messages.is_empty())
     }
 
-    /// Whether what `run` last wrote is a call, and all its calls ended. The
-    /// message `other` names, and what people wrote meanwhile, do not count.
-    fn calls_ended(&self, run: &RunId, other: Option<&MessageId>) -> bool {
-        let (Some(snapshot), Some(handed)) = (&self.snapshot, &self.handed) else {
+    /// Whether all of `run`'s calls ended, and the agent that made them wrote
+    /// nothing since. Blanks count: the text they begin is that same answer.
+    fn calls_ended(&self, run: &RunId) -> bool {
+        let Some(snapshot) = &self.snapshot else {
             return false;
         };
-        let last = snapshot.items.iter().rev().find(|item| match item {
-            Item::Message(m) => {
-                Some(&m.id) != other
-                    && snapshot.local_actor.as_ref() != Some(&m.actor)
-                    && !handed.unread.holds(&m.id)
-            }
-            Item::Tool { run: of, .. } => of == run,
-            _ => false,
+        let items = &snapshot.items;
+        let last = items
+            .iter()
+            .rposition(|item| matches!(item, Item::Tool { run: of, .. } if of == run));
+        let Some(Item::Tool { actor, .. }) = last.map(|at| &items[at]) else {
+            return false;
+        };
+        let wrote = last.is_some_and(|at| {
+            items[at + 1..]
+                .iter()
+                .any(|item| matches!(item, Item::Message(m) if m.actor == *actor))
         });
-        matches!(last, Some(Item::Tool { .. }))
-            && !snapshot.items.iter().any(|item| {
-                matches!(item, Item::Tool { run: of, call, .. } if of == run && !call.state.is_settled())
-            })
+        let running = items.iter().any(|item| {
+            matches!(item, Item::Tool { run: of, call, .. } if of == run && !call.state.is_settled())
+        });
+        !wrote && !running
     }
 
     /// The turn passed a stop: what it held before is read.

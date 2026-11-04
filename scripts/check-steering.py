@@ -18,6 +18,7 @@ import json
 import re
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -35,6 +36,8 @@ class Fixture(BaseHTTPRequestHandler):
     requests = []
     release = threading.Event()
     silent_until_released = False
+    next_answer_thinks = False
+    next_answer = threading.Event()
 
     def log_message(self, *_):
         pass
@@ -66,6 +69,13 @@ class Fixture(BaseHTTPRequestHandler):
                     "function": {"name": "lookup_record", "arguments": "{\"reference\":\"42\"}"}}
             self.chunk({"tool_calls": [call]})
             self.chunk({}, "tool_calls")
+        elif Fixture.next_answer_thinks and len(Fixture.requests) == 2:
+            Fixture.next_answer.wait(DEADLINE)
+            for blank in ("\n", "\n"):
+                self.chunk({"content": blank})
+                time.sleep(0.05)  # Apart in time, or the engine joins them.
+            self.chunk({"content": "Going on without it."})
+            self.chunk({}, "stop")
         else:
             self.chunk({"content": "Record 42 is in the second ledger."})
             self.chunk({}, "stop")
@@ -84,6 +94,8 @@ def chat(port, directory, silent=False):
     Fixture.requests = []
     Fixture.release = threading.Event()
     Fixture.silent_until_released = silent
+    Fixture.next_answer_thinks = False
+    Fixture.next_answer = threading.Event()
     env = {
         "ROOMKIT_BASE_URL": f"http://127.0.0.1:{port}/v1",
         "ROOMKIT_MODEL": "fixture",
@@ -135,6 +147,31 @@ def read_at_the_next_stop(port, directory):
         require(len(Fixture.requests) == 2, f"{len(Fixture.requests)} model requests, not 2")
         require(not said(Fixture.requests[0], STEERED), "The first request knew the message")
         require(said(Fixture.requests[1], STEERED), "The turn's next step did not read the message")
+        terminal.send(b"\x04")
+        terminal.exited()
+
+
+def blanks_of_the_next_answer_read_nothing(port, directory):
+    """RMK-1317: handed once the calls ended, the model's next answer is already
+    being written without the message, however many blanks open it. The stop
+    after that answer reads it."""
+    with chat(port, directory) as terminal:
+        Fixture.next_answer_thinks = True
+        Fixture.release.set()
+        terminal.wait_until(lambda: len(Fixture.requests) == 2, "the model's next answer")
+        terminal.send(STEERED.encode() + b"\r")
+        terminal.wait_for("↳ sent to the running turn".encode())
+        Fixture.next_answer.set()
+        terminal.wait_for(b"Going on without it.")
+        terminal.wait_for(b"Record 42 is in the second ledger.")
+        written = terminal.screen.row_of(b"Going on without it.")
+        message = terminal.screen.row_of(STEERED.encode())
+        answer = terminal.screen.row_of(b"Record 42 is in the second ledger.")
+        require(written and message and answer and written < message < answer,
+                f"Written at row {written}, message at {message}, answer at {answer}")
+        require(len(Fixture.requests) == 3, f"{len(Fixture.requests)} model requests, not 3")
+        require(not said(Fixture.requests[1], STEERED), "The second request knew the message")
+        require(said(Fixture.requests[2], STEERED), "The turn's next step did not read the message")
         terminal.send(b"\x04")
         terminal.exited()
 
@@ -199,6 +236,7 @@ try:
     for check in (
         handed_to_the_running_turn,
         read_at_the_next_stop,
+        blanks_of_the_next_answer_read_nothing,
         lambda port, directory: sent_now(port, directory, CTRL_S),
         lambda port, directory: sent_now(port, directory, CTRL_ENTER),
         cut_for_a_message_already_handed,
