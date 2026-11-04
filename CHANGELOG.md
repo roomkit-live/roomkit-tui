@@ -11,8 +11,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A model's reasoning (RMK-1325): `Event::ThinkingDelta`, which the engine sends
   from the kit's `StreamItem::Thinking`, and `Item::Thinking`, a block the view
   builds. The block shows its last lines and its time while it comes, and folds to
-  `∴ Thought for 12.0s` once the model goes on; F2 or a click opens it. Nothing
-  stores it: no snapshot holds it, so it does not come back with a conversation.
+  `∴ Thought for 12.0s` once the model goes on; a click opens it, or F2 once focused,
+  which it only is by default with no call in the conversation. Nothing stores it:
+  no snapshot holds it, so it does not come back with a conversation.
   Reasoning also tells when a turn read a message it was handed.
 
 ### Changed

@@ -70,10 +70,15 @@ additional content, including preview rows clipped at the current width.
 Custom presenters can override `has_expanded_details` with a cheap schema-aware
 check; by default the library compares their compact and expanded presentations.
 
+A model's reasoning (`Event::ThinkingDelta`) is a block of the view's own that
+opens as a tool's details do: by a click, or by F2 once focused. F2 focuses the
+newest call by default, and the newest block only when the conversation has no
+call; Alt+Up/Down reach any block.
+
 Hosts may set `UiOptions::tool_activity` to replace consecutive tool cards with
 one updating public intention and current tool preview per actor/run sequence.
-Messages and approval receipts separate sequences. F2 or a click reveals the
-technical timeline; F2 returns to the compact view. This changes presentation
+Messages, approval receipts and reasoning blocks separate sequences. F2 or a click
+reveals the technical timeline, reasoning included; F2 returns to the compact view. This changes presentation
 only: calls and outcomes remain available, including failures and unfinished
 parallel work. Without an intention, the current tool's actual name is shown.
 The default keeps individual cards.

@@ -16,7 +16,8 @@ impl Session {
                 .contains(&(actor.clone(), run.clone(), call.clone()))
     }
 
-    /// Whether this is the keyboard-focused tool (the newest call by default).
+    /// Whether this is the keyboard-focused tool: by default the newest call, or
+    /// the newest reasoning block when there is no call.
     pub fn tool_focused(&self, actor: &ActorId, run: &RunId, call: &CallId) -> bool {
         let matches = |(a, r, c): &ToolKey| a == actor && r == run && c == call;
         match &self.focused_tool {
@@ -79,8 +80,9 @@ impl Session {
         };
         let current = self
             .focused_tool
-            .as_ref()
-            .and_then(|key| keys.iter().position(|candidate| candidate == key))
+            .clone()
+            .or_else(|| self.newest_tool())
+            .and_then(|key| keys.iter().position(|candidate| *candidate == key))
             .unwrap_or(last);
         let index = if backwards {
             current.saturating_sub(1)
@@ -116,8 +118,9 @@ impl Session {
         self.focused_tool.is_some()
     }
 
-    /// Forget disclosure state of calls no longer retained by the view.
+    /// Forget disclosure state and timing of what the view no longer retains.
     pub(super) fn forget_missing_tools(&mut self) {
+        self.forget_missing_thoughts();
         let keys = self.tool_keys();
         self.expanded_tools.retain(|key| keys.contains(key));
         if self
@@ -134,17 +137,16 @@ impl Session {
             .as_ref()
             .into_iter()
             .flat_map(|s| &s.items)
-            .filter_map(|item| match item {
-                Item::Tool { actor, run, call } => Some((actor, run, &call.id)),
-                // A reasoning block opens and closes as a call's details do.
-                Item::Thinking(block) => Some((&block.actor, &block.run, &block.id)),
-                _ => None,
-            })
+            .filter_map(disclosure_key)
     }
 
+    /// What F2 reaches with no focus. Reasoning never takes it from a call.
     fn newest_tool(&self) -> Option<ToolKey> {
-        self.tool_items()
-            .next_back()
+        let items = self.snapshot.iter().flat_map(|s| &s.items).rev();
+        items
+            .filter(|item| matches!(item, Item::Tool { .. }))
+            .find_map(disclosure_key)
+            .or_else(|| self.tool_items().next_back())
             .map(|(a, r, c)| (a.clone(), r.clone(), c.clone()))
     }
 
@@ -216,5 +218,17 @@ impl Session {
     /// Expand or collapse every tool's details.
     pub fn toggle_all_details(&mut self) {
         self.expanded = !self.expanded;
+    }
+}
+
+/// The identity of what opens and closes: a call, or a reasoning block with text
+/// to show.
+fn disclosure_key(item: &Item) -> Option<(&ActorId, &RunId, &CallId)> {
+    match item {
+        Item::Tool { actor, run, call } => Some((actor, run, &call.id)),
+        Item::Thinking(block) if !block.text.trim().is_empty() => {
+            Some((&block.actor, &block.run, &block.id))
+        }
+        _ => None,
     }
 }

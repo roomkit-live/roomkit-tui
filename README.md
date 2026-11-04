@@ -339,9 +339,11 @@ terminal status, session observation) in detail.
 
 A host sends `Event::ThinkingDelta` for what its model reasons. The view shows the
 last lines and the time while it comes, then folds it to one line once the model
-goes on, as `∴ Thought for 12.0s`; F2 or a click opens it, as a call's details
-open. The engine forwards the kit's `StreamItem::Thinking`. Nothing stores
-reasoning, so a snapshot never holds it.
+goes on, as `∴ Thought for 12.0s`; a click opens it, as a call's details open. F2
+reaches the newest call, and a block only when the conversation has no call;
+Alt+Up/Down reach any block. A very long reasoning keeps its end. The engine
+forwards the kit's `StreamItem::Thinking`. Nothing stores reasoning, so a snapshot
+never holds it.
 
 ## Keyboard and mouse
 
@@ -359,9 +361,9 @@ reasoning, so a snapshot never holds it.
 | Ctrl+P, Ctrl+N | Browse input history |
 | PageUp, PageDown | Scroll the conversation, or the pending permission's details |
 | Ctrl+End | Return to the latest message |
-| F2 | Expand or collapse the focused tool |
-| Shift+F2 | Expand or collapse all tools |
-| Alt+Up, Alt+Down | Focus the previous or next tool |
+| F2 | Expand or collapse the focused tool or reasoning block |
+| Shift+F2 | Expand or collapse all tools and reasoning blocks |
+| Alt+Up, Alt+Down | Focus the previous or next tool or reasoning block |
 | Shift+Tab | Switch to the host's next interaction mode; in a menu, move up |
 | Ctrl+V | Paste text, or an image when the host accepts images |
 | Alt+Backspace | Remove the last attached image |

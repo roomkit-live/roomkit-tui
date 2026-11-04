@@ -3,8 +3,8 @@
 roomkit-chat runs the real engine against a local Chat Completions fixture
 that writes its reasoning in `reasoning_content`, as a server with a reasoning
 parser does, and holds its answer. The terminal shows the reasoning as it comes
-and folds it once the answer starts; F2 opens it. Nothing stores it: the same
-conversation opened again does not show it.
+and folds it once the answer starts; F2 or a click opens it. Nothing stores it:
+the same conversation opened again does not show it.
 """
 
 import json
@@ -58,6 +58,11 @@ def chat(port, directory):
     return terminal
 
 
+def click(terminal, row):
+    terminal.mouse(0, 10, row)
+    terminal.mouse(0, 10, row, release=True)
+
+
 server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 try:
@@ -78,6 +83,10 @@ try:
             terminal.wait_for(REASONING)
             terminal.send(F2)
             terminal.wait_until(lambda: not terminal.screen.shows(REASONING), "the reasoning closed")
+            click(terminal, written)
+            terminal.wait_for(REASONING)
+            click(terminal, written)
+            terminal.wait_until(lambda: not terminal.screen.shows(REASONING), "the click closed it")
             terminal.send(b"\x04")
             terminal.exited()
         with chat(server.server_port, directory) as terminal:
@@ -90,4 +99,4 @@ finally:
     Fixture.release.set()
     server.shutdown()
 print("Thinking checks passed: the reasoning shows as it comes, folds once the answer starts, opens "
-      "with F2, and the same conversation opened again does not hold it.")
+      "with F2 or a click, and the same conversation opened again does not hold it.")

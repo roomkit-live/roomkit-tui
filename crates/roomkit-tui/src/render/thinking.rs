@@ -13,9 +13,8 @@ use crate::session::ThoughtState;
 const LIVE_LINES: usize = 3;
 /// The lines an opened block shows, as a call's details are limited.
 const OPEN_LINES: usize = 100;
-/// How much of the end of a block is laid out while it is written, in bytes: a
-/// long reasoning costs what the screen shows.
-const LIVE_TAIL_BYTES: usize = 4096;
+/// The most bytes a character of a row takes.
+const MAX_CHAR_BYTES: usize = 4;
 const INDENT: &str = "     ";
 
 pub(super) fn block(view: &View<'_>, snapshot: &Snapshot, block: &Thinking, cols: usize) -> Block {
@@ -56,46 +55,44 @@ struct Shown {
     truncated: bool,
 }
 
-/// What a block shows under its header: its last lines while it is written, all
-/// of them up to the bound once opened, nothing otherwise.
+/// What a block shows under its header: while it is written its newest lines,
+/// more of them once opened; ended, its first lines once opened; else nothing.
 fn shown_lines(block: &Thinking, state: ThoughtState, expanded: bool, width: usize) -> Shown {
     let live = matches!(state, ThoughtState::Open(_));
-    if !live && !expanded {
+    if live {
+        let rows = if expanded { OPEN_LINES } else { LIVE_LINES };
+        let lines = wrapped(tail(&block.text, rows, width), width);
+        let skip = lines.len().saturating_sub(rows);
+        return Shown {
+            truncated: skip > 0 && expanded,
+            lines: lines.into_iter().skip(skip).collect(),
+        };
+    }
+    if !expanded {
         return Shown {
             lines: Vec::new(),
             truncated: false,
         };
     }
-    let text = if live && !expanded {
-        tail(&block.text)
-    } else {
-        block.text.as_str()
-    };
-    let lines: Vec<String> = sanitize(text.trim())
-        .lines()
-        .flat_map(|paragraph| wrap_words(paragraph, width))
-        .collect();
-    if live && !expanded {
-        let skip = lines.len().saturating_sub(LIVE_LINES);
-        return Shown {
-            lines: lines.into_iter().skip(skip).collect(),
-            truncated: false,
-        };
-    }
-    let truncated = lines.len() > OPEN_LINES;
+    let lines = wrapped(&block.text, width);
     Shown {
+        truncated: lines.len() > OPEN_LINES,
         lines: lines.into_iter().take(OPEN_LINES).collect(),
-        truncated,
     }
 }
 
-/// The end of `text`, on a character boundary.
-fn tail(text: &str) -> &str {
-    let mut start = text.len().saturating_sub(LIVE_TAIL_BYTES);
-    while !text.is_char_boundary(start) {
-        start += 1;
-    }
-    &text[start..]
+fn wrapped(text: &str, width: usize) -> Vec<String> {
+    sanitize(text.trim())
+        .lines()
+        .flat_map(|paragraph| wrap_words(paragraph, width))
+        .collect()
+}
+
+/// As much of the end of `text` as `rows` rows of `width` columns can show: a
+/// long reasoning costs what the screen shows.
+fn tail(text: &str, rows: usize, width: usize) -> &str {
+    let bytes = rows.saturating_mul(width.saturating_mul(MAX_CHAR_BYTES) + 1);
+    &text[text.ceil_char_boundary(text.len().saturating_sub(bytes))..]
 }
 
 fn header(state: ThoughtState, expanded: bool, focused: bool, truncated: bool) -> Line {
@@ -107,11 +104,13 @@ fn header(state: ThoughtState, expanded: bool, focused: bool, truncated: bool) -
         }
         ThoughtState::Ended(None) => "∴ Thought".to_owned(),
     };
-    let hint = match (focused, expanded, truncated) {
-        (_, true, true) => " · F2 collapse · view limited to 100 lines",
-        (_, true, false) => " · F2 collapse",
-        (true, false, _) => " · F2 expand",
-        (false, false, _) => "",
+    let ended = matches!(state, ThoughtState::Ended(_));
+    let hint = match (expanded, truncated) {
+        (true, true) => " · F2 collapse · view limited to 100 lines",
+        (true, false) => " · F2 collapse",
+        // While it is written its lines already show: nothing to offer yet.
+        (false, _) if focused && ended => " · F2 expand",
+        (false, _) => "",
     };
     vec![
         span(if focused { " › " } else { "   " }, Tone::Accent),

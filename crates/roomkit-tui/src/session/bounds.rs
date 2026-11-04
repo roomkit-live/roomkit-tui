@@ -8,6 +8,7 @@ use roomkit_tui_protocol::limits::{
 use roomkit_tui_protocol::{Item, ModelInfo, Snapshot, ToolCall};
 
 const TRUNCATION_MARK: &str = "\n[view truncated]";
+const TRUNCATED_START_MARK: &str = "[view truncated]\n";
 
 /// Whether a label event fits. A longer one is refused, not shortened, so the
 /// view keeps the last label; only a snapshot, which cannot be half applied,
@@ -55,7 +56,7 @@ pub(super) fn bound_item(item: &mut Item, limit: usize) {
         }
         Item::Message(message) => bound_in_place(&mut message.text, limit),
         Item::Tool { call, .. } => bound_tool(call, limit),
-        Item::Thinking(block) => bound_in_place(&mut block.text, limit),
+        Item::Thinking(block) => bound_end_in_place(&mut block.text, limit),
         _ => {}
     }
 }
@@ -106,6 +107,23 @@ pub(super) fn bound_in_place(text: &mut String, limit: usize) {
     text.push_str(TRUNCATION_MARK);
 }
 
+/// Keep the end of `text` within `limit` bytes, marked when truncated. It drops a
+/// quarter more than it must, so a text that keeps growing is not moved whole for
+/// each piece.
+pub(super) fn bound_end_in_place(text: &mut String, limit: usize) {
+    if text.len() <= limit {
+        return;
+    }
+    let mark = if limit / 2 < TRUNCATED_START_MARK.len() {
+        ""
+    } else {
+        TRUNCATED_START_MARK
+    };
+    let kept = (limit - limit / 4).saturating_sub(mark.len());
+    let cut = text.ceil_char_boundary(text.len() - kept);
+    text.replace_range(..cut, mark);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,5 +139,23 @@ mod tests {
         let mut text = "x".repeat(10);
         bound_in_place(&mut text, 10);
         assert_eq!(text.len(), 10, "Text within the limit is untouched");
+    }
+
+    #[test]
+    fn bounding_the_end_keeps_char_boundaries_and_one_mark() {
+        let mut text = "é".repeat(100);
+        bound_end_in_place(&mut text, 200);
+        assert_eq!(text, "é".repeat(100), "Text within the limit is untouched");
+        text.push_str("end");
+        bound_end_in_place(&mut text, 200);
+        assert!(text.len() <= 200);
+        assert!(text.starts_with(TRUNCATED_START_MARK) && text.ends_with("éend"));
+        text.push_str(&"x".repeat(100));
+        bound_end_in_place(&mut text, 200);
+        assert_eq!(text.matches("[view truncated]").count(), 1);
+
+        let mut small = "abcdef".to_owned();
+        bound_end_in_place(&mut small, 4);
+        assert_eq!(small, "def", "No room for the mark");
     }
 }

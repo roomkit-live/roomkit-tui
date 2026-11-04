@@ -55,17 +55,19 @@ impl Session {
                 run,
                 text,
                 ..
-            } if !text.trim().is_empty() => self.thinking_ends(conversation, Some(run), at),
+            } if !text.trim().is_empty() => self.run_thinking_ends(conversation, run, at),
             Event::Item {
                 conversation,
                 item: Item::Tool { run, .. },
             }
             | Event::RunFinished {
                 conversation, run, ..
-            } => self.thinking_ends(conversation, Some(run), at),
-            Event::MessageFinalized { conversation, .. } => {
-                self.thinking_ends(conversation, None, at);
-            }
+            } => self.run_thinking_ends(conversation, run, at),
+            Event::MessageFinalized {
+                conversation,
+                message,
+                ..
+            } => self.actor_thinking_ends(conversation, &message.actor, at),
             _ => {}
         }
     }
