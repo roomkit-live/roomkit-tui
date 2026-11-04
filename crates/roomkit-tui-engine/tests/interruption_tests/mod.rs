@@ -184,9 +184,9 @@ async fn a_run_tells_its_context_at_each_step_and_a_stop_keeps_it() {
     roomkit::testing::idle(&kit).await;
 }
 
-/// A turn whose call `second` makes is stopped with no message of its own, after
-/// one that had: what it is told of its usage, and what a later restore reads.
-async fn stopped_with_no_message(second: ScriptedRound) -> (Option<u64>, Option<u64>) {
+/// A turn is stopped as the call `second` makes is held, after one that answered:
+/// what it is told of its usage, and what a later restore reads.
+async fn stopped_in_its_call(second: ScriptedRound) -> (Option<u64>, Option<u64>) {
     let kit = RoomKit::new(Default::default());
     let provider = NamedProvider(ScriptedProvider::new([
         ScriptedRound::answering("Done.").with_usage(used(100)),
@@ -281,7 +281,7 @@ async fn stopped_with_no_message(second: ScriptedRound) -> (Option<u64>, Option<
 #[tokio::test]
 async fn a_stopped_turn_with_no_message_tells_what_it_used() {
     let second = ScriptedRound::calling("", [("c1", "lookup_record", "{}")]);
-    let measured = stopped_with_no_message(second.with_usage(used(5000))).await;
+    let measured = stopped_in_its_call(second.with_usage(used(5000))).await;
     assert_eq!(measured, (Some(5010), Some(5010)));
 }
 
@@ -290,7 +290,7 @@ async fn a_stopped_turn_with_no_message_tells_what_it_used() {
 #[tokio::test]
 async fn an_agent_s_call_rows_with_no_record_leave_its_measure() {
     let second = ScriptedRound::calling("Checking.", [("c1", "lookup_record", "{}")]);
-    let measured = stopped_with_no_message(second.with_usage(used(5000))).await;
+    let measured = stopped_in_its_call(second.with_usage(used(5000))).await;
     assert_eq!(measured, (Some(5010), Some(5010)));
 }
 
@@ -299,7 +299,7 @@ async fn an_agent_s_call_rows_with_no_record_leave_its_measure() {
 #[tokio::test]
 async fn a_stopped_turn_that_told_no_usage_is_not_told_the_last_one_s() {
     let second = ScriptedRound::calling("", [("c1", "lookup_record", "{}")]);
-    assert_eq!(stopped_with_no_message(second).await, (None, None));
+    assert_eq!(stopped_in_its_call(second).await, (None, None));
 }
 
 /// A view that may no longer read its room is told no measure of its record.
