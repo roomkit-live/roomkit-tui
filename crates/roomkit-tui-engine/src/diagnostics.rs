@@ -14,6 +14,11 @@ pub struct Diagnostic {
 /// lowercase error selects the entry.
 const KNOWN: &[(&[&str], &str, &str)] = &[
     (
+        &["responses api only", "takes no function tools"],
+        "provider_model_refused",
+        "This model cannot serve this request on the configured API. Choose another model or use a connection that speaks its API.",
+    ),
+    (
         &["terminal text differs"],
         "responses_text_mismatch",
         "The Responses stream and its final text disagree. Check the provider adapter and stream diagnostics.",
@@ -149,6 +154,14 @@ mod tests {
             ("the provider answered HTTP 429: secret", "quota"),
             ("HTTP 400 maximum context length secret", "context limit"),
             ("private failure secret", "Engine execution failed"),
+            (
+                "gpt-5.5-pro is served by OpenAI's Responses API only, not Chat Completions",
+                "Choose another model",
+            ),
+            (
+                "gpt-6.1-sol takes no function tools on Chat Completions",
+                "Choose another model",
+            ),
             (
                 "Responses function call has an unexpected namespace secret",
                 "unexpected namespace",
