@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use roomkit::model::{Access, ChannelCategory, EventId, EventType, RoomContext, RoomEvent};
+use roomkit::model::{
+    Access, ChannelBinding, ChannelCategory, EventId, EventType, RoomContext, RoomEvent,
+};
 use roomkit::{
     ConversationStore, GetRoomOptions, GetTimelineOptions, ListBindingsOptions, RoomKit,
 };
@@ -32,9 +34,7 @@ pub(crate) async fn snapshot<S: ConversationStore>(
         organization_id: organization.clone(),
     };
     let bindings = kit.list_bindings(&config.room, options).await?;
-    let readable = bindings.iter().any(|b| {
-        &b.channel_id == channel.id() && matches!(b.access, Access::ReadOnly | Access::ReadWrite)
-    });
+    let readable = can_read(&bindings, channel);
     let agent = bindings
         .iter()
         .any(|b| b.channel_id == config.agent && b.category == ChannelCategory::Intelligence);
@@ -76,6 +76,13 @@ pub(crate) async fn snapshot<S: ConversationStore>(
     Ok(snapshot)
 }
 
+/// Whether `channel` may read the room.
+fn can_read(bindings: &[ChannelBinding], channel: &ConversationChannel) -> bool {
+    bindings.iter().any(|b| {
+        &b.channel_id == channel.id() && matches!(b.access, Access::ReadOnly | Access::ReadWrite)
+    })
+}
+
 /// What a turn's own record measured, on the model on screen, the message it
 /// rides found by the event the turn answers: another turn's record says
 /// nothing of this one. None when the turn wrote no record.
@@ -94,6 +101,9 @@ pub(crate) async fn turn_measure<S: ConversationStore>(
         organization_id: organization.clone(),
     };
     let bindings = kit.list_bindings(&config.room, bindings).await.ok()?;
+    if !can_read(&bindings, channel) {
+        return None;
+    }
     let timeline = GetTimelineOptions {
         newest_first: true,
         limit: RESTORED_ROWS,
@@ -132,8 +142,9 @@ impl History {
                 .as_ref()
                 .map_or_else(|| row.source.channel_id.to_string(), ToString::to_string)
         });
-        // A message with no record, a person's, says nothing of the measure.
-        if matches!(row.r#type, EventType::Message) && measurements::event(row).is_some() {
+        // A person's message says nothing of the measure; an agent's replaces
+        // it, even with none: no stale measure reads as current.
+        if matches!(row.r#type, EventType::Message) && row.source.channel_id == config.agent {
             (self.context, self.usage) = measurements::restore(row, config);
         }
         if let Some(item) = projection::item(row) {

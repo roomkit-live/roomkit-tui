@@ -185,8 +185,8 @@ async fn a_run_tells_its_context_at_each_step_and_a_stop_keeps_it() {
 }
 
 /// RMK-1333: a turn stopped with no message of its own, after one that had:
-/// the record of the turn before it says nothing of this one, so the context
-/// its generation told stays.
+/// the record of the turn before it says nothing of this one. A later restore
+/// keeps the last measure, the person's message after it saying nothing of it.
 #[tokio::test]
 async fn a_stopped_turn_with_no_record_is_not_told_the_last_one_s() {
     let kit = RoomKit::new(Default::default());
@@ -218,8 +218,9 @@ async fn a_stopped_turn_with_no_record_is_not_told_the_last_one_s() {
     let mut config = config();
     config.model = Some(ModelInfo::new("local", "fixture"));
     config.context_capacity = Some(10_000);
+    let restored_config = config.clone();
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config).run(host));
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config).run(host));
     next(&client).await;
     client.try_send(request("first")).unwrap();
     collect_operation(&client).await;
@@ -257,6 +258,59 @@ async fn a_stopped_turn_with_no_record_is_not_told_the_last_one_s() {
     drop(client);
     task.await.unwrap().unwrap();
     roomkit::testing::idle(&kit).await;
+    let restored = LocalSession::new(kit.clone(), channel, restored_config)
+        .snapshot()
+        .await
+        .unwrap();
+    assert_eq!(restored.context.map(|context| context.tokens), Some(110));
+}
+
+/// A view that may no longer read its room is told no measure of its record.
+#[tokio::test]
+async fn a_view_that_may_not_read_is_told_no_usage() {
+    let kit = RoomKit::new(Default::default());
+    let provider = NamedProvider(ScriptedProvider::new([
+        ScriptedRound::calling("One.", [("c1", "lookup_record", "{}")]).with_usage(used(1000)),
+        ScriptedRound::answering("Two.").with_usage(used(2000)),
+    ]));
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    let revoking = kit.clone();
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |_: roomkit::ToolCallEvent, _| {
+            let kit = revoking.clone();
+            async move {
+                let room = RoomId::new("room").unwrap();
+                let console = ChannelId::new("console").unwrap();
+                kit.set_access(
+                    &room,
+                    &console,
+                    roomkit::model::Access::WriteOnly,
+                    Default::default(),
+                )
+                .await
+                .unwrap();
+                Ok(roomkit::model::HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("revoke-the-view"),
+    )
+    .unwrap();
+    let mut config = config();
+    config.model = Some(ModelInfo::new("local", "fixture"));
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config).run(host));
+    next(&client).await;
+    client.try_send(request("ask")).unwrap();
+    let events = collect_operation(&client).await;
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, Event::UsageUpdated { .. })),
+        "{events:#?}"
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
 }
 
 /// The kit's close hands a reading target its stream's end: the run was cut.
