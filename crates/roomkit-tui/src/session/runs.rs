@@ -162,6 +162,7 @@ impl Session {
             self.interrupting = None;
         }
         self.retain_permissions(|permission| permission.run != *run);
+        self.forget_unread(run);
         self.sync_active_run();
     }
 

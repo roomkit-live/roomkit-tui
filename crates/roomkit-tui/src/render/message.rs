@@ -85,6 +85,7 @@ pub(super) fn render(view: &View<'_>, message: &Message, cols: usize) -> Vec<Lin
 fn steering_note(steering: Steering) -> &'static str {
     match steering {
         Steering::Handed => "sent to the running turn",
+        Steering::Read => "read by the turn",
         Steering::OwnTurn => "answered in its own turn",
     }
 }

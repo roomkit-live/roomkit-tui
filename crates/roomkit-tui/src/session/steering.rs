@@ -5,6 +5,7 @@ use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 use roomkit_tui_protocol::{ConversationId, MessageId, RunId};
 
 use super::Session;
+use super::unread::Unread;
 
 /// Steered messages one view remembers. Beyond it the oldest is forgotten: a
 /// host that steers without end must not grow the view.
@@ -13,8 +14,9 @@ const MAX_STEERED: usize = 64;
 /// The messages handed to the turn under way (RMK-1311), oldest first.
 #[derive(Debug)]
 pub(super) struct Handed {
-    run: RunId,
+    pub(super) run: RunId,
     messages: Vec<MessageId>,
+    pub(super) unread: Unread,
 }
 
 /// Where a message sent during a turn went.
@@ -23,6 +25,9 @@ pub(super) struct Handed {
 pub enum Steering {
     /// Handed to the turn under way, which reads it at its next step.
     Handed,
+    /// The turn under way passed a step since: what it wrote from there on
+    /// was written with this message.
+    Read,
     /// That turn no longer read it: a turn of its own answers it.
     OwnTurn,
 }
@@ -85,11 +90,13 @@ impl Session {
                 .unwrap_or_else(|| Handed {
                     run: run.clone(),
                     messages: Vec::new(),
+                    unread: Unread::default(),
                 });
             self.handed = Some(handed);
             if let Some(handed) = &mut self.handed {
                 remember(&mut handed.messages, message.clone());
             }
+            self.hold_unread(&message);
         }
         remember(&mut self.steered, (message, steering));
     }
@@ -123,6 +130,7 @@ impl Session {
         let Some(handed) = &mut self.handed else {
             return;
         };
+        handed.unread.forget(message);
         let before = handed.messages.len();
         handed.messages.retain(|id| id != message);
         if handed.messages.len() != before {

@@ -16,6 +16,7 @@ mod steering;
 mod streaming;
 mod timing;
 mod tools;
+mod unread;
 mod usage;
 
 use roomkit_tui_protocol::*;

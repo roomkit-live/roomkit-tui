@@ -5,7 +5,8 @@ The fixture holds the model's first answer, a tool call, open while the
 person types:
 
 - Enter (RMK-1161): the message goes to the running turn, the terminal says
-  so, and the model reads it at its next step;
+  so, and the model reads it at its next step. What the turn writes until then
+  goes above the message, what follows goes below it (RMK-1317);
 - Ctrl+S, or Ctrl+Enter as a terminal with the kitty keyboard protocol
   reports it (RMK-1285): the turn is interrupted, and the message leaves
   once it stopped, in a turn of its own. The terminal's loop tries again
@@ -33,6 +34,7 @@ class Fixture(BaseHTTPRequestHandler):
 
     requests = []
     release = threading.Event()
+    silent_until_released = False
 
     def log_message(self, *_):
         pass
@@ -56,6 +58,8 @@ class Fixture(BaseHTTPRequestHandler):
 
     def answer(self, first):
         if first:
+            if Fixture.silent_until_released:
+                Fixture.release.wait(DEADLINE)
             self.chunk({"content": "Checking the record. "})
             Fixture.release.wait(DEADLINE)
             call = {"index": 0, "id": "lookup-1", "type": "function",
@@ -74,10 +78,12 @@ def said(request, text):
     return any(text in json.dumps(message) for message in request["messages"])
 
 
-def chat(port, directory):
-    """roomkit-chat against the fixture, its turn holding its first answer."""
+def chat(port, directory, silent=False):
+    """roomkit-chat against the fixture, its turn holding its first answer,
+    before any word of it when `silent`."""
     Fixture.requests = []
     Fixture.release = threading.Event()
+    Fixture.silent_until_released = silent
     env = {
         "ROOMKIT_BASE_URL": f"http://127.0.0.1:{port}/v1",
         "ROOMKIT_MODEL": "fixture",
@@ -90,7 +96,7 @@ def chat(port, directory):
     # The kitty keyboard protocol is asked for, so Ctrl+Enter is told apart.
     terminal.wait_for(b"\x1b[>1u")
     terminal.send(b"Look up record 42\r")
-    terminal.wait_for(b"Checking the record.")
+    terminal.wait_for(b"Working" if silent else b"Checking the record.")
     return terminal
 
 
@@ -106,6 +112,29 @@ def handed_to_the_running_turn(port, directory):
         require(len(Fixture.requests) == 2, f"{len(Fixture.requests)} model requests, not 2")
         require(said(Fixture.requests[1], STEERED), "The turn's next step did not read the message")
         require(not terminal.screen.ever(b"An execution is active"), "The message was refused")
+        terminal.send(b"\x04")
+        terminal.exited()
+
+
+def read_at_the_next_stop(port, directory):
+    """RMK-1317: sent before the model's first word, the message stays below
+    what the turn writes without it, and what follows its next stop goes below
+    it, as the model reads it there."""
+    with chat(port, directory, silent=True) as terminal:
+        terminal.send(STEERED.encode() + b"\r")
+        terminal.wait_for("↳ sent to the running turn".encode())
+        Fixture.release.set()
+        terminal.wait_for(b"Checking the record.")
+        terminal.wait_for(b"Record 42 is in the second ledger.")
+        written = terminal.screen.row_of(b"Checking the record.")
+        message = terminal.screen.row_of(STEERED.encode())
+        answer = terminal.screen.row_of(b"Record 42 is in the second ledger.")
+        require(written and message and answer and written < message < answer,
+                f"Written at row {written}, message at {message}, answer at {answer}")
+        terminal.wait_for("↳ read by the turn".encode())
+        require(len(Fixture.requests) == 2, f"{len(Fixture.requests)} model requests, not 2")
+        require(not said(Fixture.requests[0], STEERED), "The first request knew the message")
+        require(said(Fixture.requests[1], STEERED), "The turn's next step did not read the message")
         terminal.send(b"\x04")
         terminal.exited()
 
@@ -169,6 +198,7 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 try:
     for check in (
         handed_to_the_running_turn,
+        read_at_the_next_stop,
         lambda port, directory: sent_now(port, directory, CTRL_S),
         lambda port, directory: sent_now(port, directory, CTRL_ENTER),
         cut_for_a_message_already_handed,

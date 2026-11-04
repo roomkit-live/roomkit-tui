@@ -246,7 +246,28 @@ async fn a_message_written_during_a_tool_round_reaches_the_running_turn() {
     })
     .await;
     let sent = message(&ui, "Use the second ledger").unwrap();
-    assert_eq!(ui.steering(&sent.id), Some(Steering::Handed));
+    assert_eq!(ui.steering(&sent.id), Some(Steering::Read));
+    // RMK-1317: the call was made without the message, the answer with it.
+    let shown: Vec<_> = ui
+        .snapshot()
+        .unwrap()
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Message(message) => Some(message.text.as_str()),
+            Item::Tool { call, .. } => Some(call.name.as_str()),
+            _ => None,
+        })
+        .skip_while(|shown| *shown != "lookup_record")
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            "lookup_record",
+            "Use the second ledger",
+            "Record 42 is in the second ledger",
+        ]
+    );
     let asked = &provider.requests()[1];
     assert!(
         asked
