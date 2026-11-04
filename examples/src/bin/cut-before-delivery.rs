@@ -6,7 +6,6 @@
 //! its asking. The model's third answer shows if it does not.
 
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
 use std::thread;
@@ -121,13 +120,9 @@ async fn serve(host: Host, lane: watch::Receiver<bool>) -> Result<(), Failure> {
         kit.attach_channel(&room, channel, Default::default())
             .await?;
     }
-    let waiting = Arc::new(tokio::sync::Notify::new());
-    let hold = move |_: roomkit::ToolCallEvent, _| {
-        let waiting = waiting.clone();
-        async move {
-            waiting.notified().await;
-            Ok(HookResult::allow(Default::default()))
-        }
+    let hold = |_: roomkit::ToolCallEvent, _| async {
+        std::future::pending::<()>().await;
+        Ok(HookResult::allow(Default::default()))
     };
     let options = HookOptions {
         name: "call-waits".to_owned(),
