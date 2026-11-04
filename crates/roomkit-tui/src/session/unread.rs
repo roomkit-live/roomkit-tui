@@ -56,6 +56,7 @@ pub(super) fn is_output_of(handed: &Handed, item: &Item) -> bool {
     match item {
         Item::Tool { run, .. } => *run == handed.run,
         Item::Approval(decision) => decision.permission.run == handed.run,
+        Item::Thinking(block) => block.run == handed.run,
         _ => false,
     }
 }
@@ -180,9 +181,11 @@ impl Session {
             return false;
         };
         let wrote = last.is_some_and(|at| {
-            items[at + 1..]
-                .iter()
-                .any(|item| matches!(item, Item::Message(m) if m.actor == *actor))
+            items[at + 1..].iter().any(|item| match item {
+                Item::Message(m) => m.actor == *actor,
+                Item::Thinking(block) => block.actor == *actor,
+                _ => false,
+            })
         });
         let running = items.iter().any(|item| {
             matches!(item, Item::Tool { run: of, call, .. } if of == run && !call.state.is_settled())

@@ -14,6 +14,7 @@ mod screens;
 mod sidebar;
 mod steering;
 mod streaming;
+mod thinking;
 mod timing;
 mod tools;
 mod unread;

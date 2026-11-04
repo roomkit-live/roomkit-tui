@@ -72,6 +72,7 @@ impl Session {
     /// previous one; the draft and its history are kept.
     fn reset_view_state(&mut self) {
         self.operation = None;
+        self.forget_thoughts();
         self.previous_context = None;
         self.permission_scroll = 0;
         self.permission_choice = 0;

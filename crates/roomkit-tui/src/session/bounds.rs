@@ -55,6 +55,7 @@ pub(super) fn bound_item(item: &mut Item, limit: usize) {
         }
         Item::Message(message) => bound_in_place(&mut message.text, limit),
         Item::Tool { call, .. } => bound_tool(call, limit),
+        Item::Thinking(block) => bound_in_place(&mut block.text, limit),
         _ => {}
     }
 }

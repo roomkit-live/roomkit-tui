@@ -286,6 +286,76 @@ async fn a_message_written_during_a_tool_round_reaches_the_running_turn() {
     kit.close().await.unwrap();
 }
 
+/// RMK-1325: a model's reasoning reaches the terminal in the turn's order. Nothing
+/// stores it: a view that comes back reads what the room holds, without it.
+#[tokio::test]
+async fn a_model_s_reasoning_shows_in_order_and_no_later_view_holds_it() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([
+        ScriptedRound::calling("", [("call1", "lookup_record", "{}")])
+            .reasoning(["Which ", "record?"]),
+        ScriptedRound::answering("Record 42 is in the second ledger").reasoning(["Now answer."]),
+    ]);
+    let (_open, gate) = watch::channel(true);
+    let (console, view) = room(&kit, provider.clone(), gate).await;
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session = LocalSession::new(kit.clone(), console.clone(), view.clone());
+    let task = tokio::spawn(session.run(host));
+    let mut ui = Session::default();
+    until(&client, &mut ui, "the conversation", |ui| {
+        ui.snapshot().is_some()
+    })
+    .await;
+
+    write(&client, &mut ui, "Look up record 42");
+    until(&client, &mut ui, "the turn's answer", |ui| {
+        message(ui, "Record 42 is in the second ledger").is_some()
+    })
+    .await;
+    until(&client, &mut ui, "the room idle", |ui| {
+        ui.active_run().is_none()
+    })
+    .await;
+    let shown: Vec<_> = ui
+        .snapshot()
+        .unwrap()
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Thinking(block) => Some(block.text.as_str()),
+            Item::Tool { call, .. } => Some(call.name.as_str()),
+            Item::Message(message) => Some(message.text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            "Look up record 42",
+            "Which record?",
+            "lookup_record",
+            "Now answer.",
+            "Record 42 is in the second ledger",
+        ]
+    );
+
+    drop(client);
+    task.await.unwrap().unwrap();
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), console, view).run(host));
+    let mut later = Session::default();
+    until(&client, &mut later, "the conversation again", |ui| {
+        ui.snapshot().is_some()
+    })
+    .await;
+    let items = &later.snapshot().unwrap().items;
+    assert!(items.iter().any(|item| matches!(item, Item::Tool { .. })));
+    assert!(!items.iter().any(|item| matches!(item, Item::Thinking(_))));
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
+
 /// Hold the agent's first answer as it is stored, telling `held` once it
 /// waits: that turn's loop is over and reads no more messages.
 fn hold_first_answer(kit: &RoomKit, gate: watch::Receiver<bool>, held: Arc<Notify>) {

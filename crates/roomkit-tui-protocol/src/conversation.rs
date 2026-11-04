@@ -160,6 +160,38 @@ impl ToolCall {
     }
 }
 
+/// A model's reasoning as the host hands it. It is shown while the session
+/// runs and never stored, so no snapshot holds it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct Thinking {
+    /// Identity scoped to its run.
+    pub id: CallId,
+    /// The agent thinking.
+    pub actor: ActorId,
+    /// Owning execution.
+    pub run: RunId,
+    /// What it wrote; terminals must treat control characters as untrusted.
+    pub text: String,
+}
+
+impl Thinking {
+    /// A piece of reasoning by one actor, in one run.
+    pub fn new(
+        id: impl Into<CallId>,
+        actor: impl Into<ActorId>,
+        run: impl Into<RunId>,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            actor: actor.into(),
+            run: run.into(),
+            text: text.into(),
+        }
+    }
+}
+
 /// An item in the host's ordered conversation projection.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -178,6 +210,8 @@ pub enum Item {
         /// Latest call state.
         call: ToolCall,
     },
+    /// A model's reasoning, which a view builds from `Event::ThinkingDelta`.
+    Thinking(Thinking),
     /// An item introduced by a newer host. Terminals ignore it.
     #[serde(other)]
     Unknown,
@@ -193,6 +227,7 @@ impl Item {
                     && a.permission.run == b.permission.run
                     && a.permission.actor == b.permission.actor
             }
+            (Self::Thinking(a), Self::Thinking(b)) => a.id == b.id && a.run == b.run,
             (Self::Message(a), Self::Message(b)) => a.id == b.id && a.actor == b.actor,
             (
                 Self::Tool { actor, run, call },

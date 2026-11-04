@@ -30,6 +30,7 @@ terminal-check:
 	python3 scripts/check-sidebar.py
 	python3 scripts/check-selection.py
 	python3 scripts/check-steering.py
+	python3 scripts/check-thinking.py
 
 deps:
 	python3 scripts/check-boundaries.py

@@ -161,6 +161,17 @@ pub enum Event {
         /// New text only.
         text: String,
     },
+    /// A piece of the model's reasoning. Never stored: no snapshot holds it.
+    ThinkingDelta {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// The agent thinking.
+        actor: ActorId,
+        /// Owning execution.
+        run: RunId,
+        /// New text only.
+        text: String,
+    },
     /// Replace a streamed draft with its durable host-assigned message identity.
     MessageFinalized {
         /// Target conversation.

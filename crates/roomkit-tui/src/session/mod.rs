@@ -12,6 +12,7 @@ mod measures;
 mod runs;
 mod send_now;
 mod steering;
+mod thinking;
 mod tools;
 mod unread;
 
@@ -27,6 +28,7 @@ use roomkit_tui_protocol::{
 pub(crate) use bounds::bounded;
 pub use input::SessionError;
 pub use steering::Steering;
+pub(crate) use thinking::ThoughtState;
 
 use crate::{
     ChoicePicker, CommandMenu, FormState, OperationObservation, PanelState, SessionObserver,
@@ -134,6 +136,8 @@ pub struct Session {
     interrupting: Option<RunId>,
     /// What was handed to the turn under way, which Ctrl+S may cut.
     handed: Option<steering::Handed>,
+    /// The reasoning blocks this view shows, with their timing.
+    thoughts: thinking::Thoughts,
     /// The draft that leaves once the interrupted turn stops (Ctrl+S).
     waiting: Option<send_now::Waiting>,
     /// The waited draft's request and text, until the host answers it.
@@ -189,6 +193,7 @@ impl Session {
             answered: Vec::new(),
             interrupting: None,
             handed: None,
+            thoughts: thinking::Thoughts::default(),
             waiting: None,
             flight: None,
             deciding: BTreeSet::new(),

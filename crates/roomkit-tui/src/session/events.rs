@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use roomkit_tui_protocol::limits::MAX_OPERATION_ID_BYTES;
 use roomkit_tui_protocol::{
-    BackgroundStatus, Choice, Command, ConversationId, Event, FormSpec, ModeState, OperationId,
-    PanelSpec, Rejection, RequestId, RunOutcome, SidebarSpec,
+    BackgroundStatus, Choice, Command, ConversationId, Event, FormSpec, Item, ModeState,
+    OperationId, PanelSpec, Rejection, RequestId, RunOutcome, SidebarSpec,
 };
 
 use super::Session;
@@ -46,7 +46,32 @@ impl Session {
         }
     }
 
+    /// A run's words, a call or its end close the reasoning before them. Blanks
+    /// say nothing: a model may write them between the two.
+    fn reasoning_ended_by(&mut self, event: &Event, at: Option<Duration>) {
+        match event {
+            Event::TextDelta {
+                conversation,
+                run,
+                text,
+                ..
+            } if !text.trim().is_empty() => self.thinking_ends(conversation, Some(run), at),
+            Event::Item {
+                conversation,
+                item: Item::Tool { run, .. },
+            }
+            | Event::RunFinished {
+                conversation, run, ..
+            } => self.thinking_ends(conversation, Some(run), at),
+            Event::MessageFinalized { conversation, .. } => {
+                self.thinking_ends(conversation, None, at);
+            }
+            _ => {}
+        }
+    }
+
     fn apply_event(&mut self, event: Event, at: Option<Duration>) {
+        self.reasoning_ended_by(&event, at);
         match event {
             Event::Snapshot(snapshot) => self.on_snapshot(snapshot),
             Event::OperationStarted {
@@ -103,6 +128,12 @@ impl Session {
                 run,
                 text,
             } => self.on_text_delta(&conversation, message, actor, &run, &text),
+            Event::ThinkingDelta {
+                conversation,
+                actor,
+                run,
+                text,
+            } => self.on_thinking_delta(&conversation, (actor, &run), &text, at),
             Event::MessageFinalized {
                 conversation,
                 draft,

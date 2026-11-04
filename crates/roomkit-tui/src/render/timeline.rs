@@ -7,7 +7,7 @@ use roomkit_tui_protocol::{Item, Snapshot, ToolCall, ToolState};
 use unicode_width::UnicodeWidthStr;
 
 use super::activity::Group;
-use super::{Line, Tone, ToolTarget, View, approval, line, message, span, spinner};
+use super::{Line, Tone, ToolTarget, View, approval, line, message, span, spinner, thinking};
 
 /// Where a laid-out line comes from: the index of its segment's first item,
 /// and the line's index within that segment's block.
@@ -33,14 +33,14 @@ enum Segment<'a> {
 }
 
 #[derive(Default)]
-struct Block {
+pub(super) struct Block {
     /// Index of the segment's first item.
-    item: usize,
-    lines: Vec<Line>,
+    pub(super) item: usize,
+    pub(super) lines: Vec<Line>,
     /// Targets with rows relative to the block.
-    targets: Vec<ToolTarget>,
+    pub(super) targets: Vec<ToolTarget>,
     /// Row after the focused tool within the block, before its gap.
-    focused_end: Option<usize>,
+    pub(super) focused_end: Option<usize>,
 }
 
 /// Lay out at least `rows + scroll` lines of the newest history. With tool
@@ -155,6 +155,9 @@ fn render(view: &View<'_>, snapshot: &Snapshot, segment: &Segment<'_>, cols: usi
         },
         Segment::Item(Item::Tool { actor, run, call }) => {
             tool_block(view, snapshot, (actor, run), call, cols)
+        }
+        Segment::Item(Item::Thinking(block)) if !block.text.trim().is_empty() => {
+            thinking::block(view, snapshot, block, cols)
         }
         // Blank messages and items from a newer host take no space.
         Segment::Item(_) => return Block::default(),

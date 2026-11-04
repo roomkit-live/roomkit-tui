@@ -136,6 +136,8 @@ impl Session {
             .flat_map(|s| &s.items)
             .filter_map(|item| match item {
                 Item::Tool { actor, run, call } => Some((actor, run, &call.id)),
+                // A reasoning block opens and closes as a call's details do.
+                Item::Thinking(block) => Some((&block.actor, &block.run, &block.id)),
                 _ => None,
             })
     }

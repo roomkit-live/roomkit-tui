@@ -207,6 +207,12 @@ impl<'a> Reader<'a> {
                 text,
             }),
             StreamItem::Row(row) => self.row(&row),
+            StreamItem::Thinking(text) => self.publish(Event::ThinkingDelta {
+                conversation: self.room.into(),
+                actor: self.actor.clone(),
+                run: self.run.clone(),
+                text,
+            }),
             _ => {}
         }
     }

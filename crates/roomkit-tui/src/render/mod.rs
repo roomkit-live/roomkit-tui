@@ -16,6 +16,7 @@ mod panel;
 mod presenters;
 mod sidebar;
 mod text;
+mod thinking;
 mod timeline;
 mod tool_cache;
 mod welcome;

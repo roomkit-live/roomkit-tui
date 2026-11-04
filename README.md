@@ -335,6 +335,14 @@ The [`roomkit-tui` README](crates/roomkit-tui/README.md) describes each
 option and optional feature (sidebar, welcome screen, forms, panels, images,
 terminal status, session observation) in detail.
 
+## A model's reasoning
+
+A host sends `Event::ThinkingDelta` for what its model reasons. The view shows the
+last lines and the time while it comes, then folds it to one line once the model
+goes on, as `∴ Thought for 12.0s`; F2 or a click opens it, as a call's details
+open. The engine forwards the kit's `StreamItem::Thinking`. Nothing stores
+reasoning, so a snapshot never holds it.
+
 ## Keyboard and mouse
 
 | Key | Action |
