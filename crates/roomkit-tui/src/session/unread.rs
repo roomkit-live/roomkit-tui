@@ -81,7 +81,6 @@ impl Session {
         let stopped = self.calls_ended(&run);
         if let Some(handed) = &mut self.handed {
             let after_next_answer = stopped || handed.unread.answered;
-            handed.unread.forget(id);
             remember(
                 &mut handed.unread.messages,
                 Held {

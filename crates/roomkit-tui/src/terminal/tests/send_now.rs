@@ -948,6 +948,33 @@ fn a_cut_leaves_what_the_turn_read_as_read() {
     assert_eq!(session.steering(&"also".into()), Some(Steering::OwnTurn));
 }
 
+/// A cut speaks for the turn it cuts: a message an earlier turn left unread
+/// keeps its line.
+#[test]
+fn a_cut_leaves_a_message_of_an_earlier_turn_alone() {
+    let (mut session, client, host) = handed();
+    stopped(&mut session);
+    run_started(&mut session, "next");
+    session.apply(Event::Item {
+        conversation: "room".into(),
+        item: Item::Message(Message::new("later", "person:local", "Now this")),
+    });
+    session.apply(Event::MessageSteered {
+        conversation: "room".into(),
+        message: "later".into(),
+        run: "next".into(),
+    });
+    ctrl_s(&mut session, &client);
+    host.try_recv().unwrap();
+    run_stopped(&mut session, "next");
+    finished(&mut session);
+    assert!(pass(&mut session, &client, NOW));
+    let sent = host.try_recv().unwrap();
+    taken(&mut session, &sent, NOW);
+    assert_eq!(session.steering(&"handed".into()), Some(Steering::Handed));
+    assert_eq!(session.steering(&"later".into()), Some(Steering::OwnTurn));
+}
+
 /// A message the turn read can still be cut for: the model may go on without
 /// answering it.
 #[test]

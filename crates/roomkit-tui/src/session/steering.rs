@@ -83,7 +83,9 @@ impl Session {
         } else {
             Steering::Handed
         };
-        if steering == Steering::Handed {
+        // Its turn may have ended before the host said where it went: nothing
+        // then waits for it, and the turn under way keeps what it was handed.
+        if steering == Steering::Handed && self.is_live(run) {
             let handed = self
                 .handed
                 .take()
@@ -97,10 +99,7 @@ impl Session {
             if let Some(handed) = &mut self.handed {
                 remember(&mut handed.messages, message.clone());
             }
-            // Its turn may have ended before the host said where it went.
-            if self.is_live(run) {
-                self.hold_unread(&message);
-            }
+            self.hold_unread(&message);
         }
         remember(&mut self.steered, (message, steering));
     }

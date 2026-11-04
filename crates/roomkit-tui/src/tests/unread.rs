@@ -45,14 +45,18 @@ fn handed(session: &mut Session, id: &str) {
     });
 }
 
-fn delta(session: &mut Session, draft: &str, text: &str) {
+fn delta_of(session: &mut Session, run: &str, draft: &str, text: &str) {
     session.apply(Event::TextDelta {
         conversation: "room-a".into(),
         message: draft.into(),
         actor: "agent".into(),
-        run: RUN.into(),
+        run: run.into(),
         text: text.into(),
     });
+}
+
+fn delta(session: &mut Session, draft: &str, text: &str) {
+    delta_of(session, RUN, draft, text);
 }
 
 fn finalized(session: &mut Session, draft: &str, id: &str) {
@@ -277,13 +281,7 @@ fn the_next_turn_writes_below_what_the_last_one_did_not_read() {
     finished(&mut session, RunOutcome::Completed);
     assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
     started(&mut session, "agent:other");
-    session.apply(Event::TextDelta {
-        conversation: "room-a".into(),
-        message: "d9".into(),
-        actor: "agent".into(),
-        run: "agent:other".into(),
-        text: "Another".into(),
-    });
+    delta_of(&mut session, "agent:other", "d9", "Another");
     assert_eq!(order(&session), ["a0", "sent", "d9"]);
 }
 
@@ -399,6 +397,62 @@ fn what_another_run_does_neither_reads_nor_goes_above() {
     assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
 }
 
+/// Review of 583e681: a call another run has under way says nothing of this
+/// turn's calls.
+#[test]
+fn a_call_another_run_has_running_hides_no_stop() {
+    let mut session = turn();
+    hand(&mut session, "sent");
+    call(&mut session, "c1", ToolState::Running);
+    call(&mut session, "c1", ToolState::Succeeded);
+    call_of(&mut session, "other", "x", ToolState::Running);
+    delta(&mut session, "d1", "The answer");
+    assert_eq!(order(&session), ["c1", "sent", "x", "d1"]);
+    assert_eq!(steering(&session, "sent"), Some(Steering::Read));
+}
+
+#[test]
+fn the_text_of_another_run_goes_below() {
+    let mut session = turn();
+    hand(&mut session, "sent");
+    started(&mut session, "agent:other");
+    delta_of(&mut session, "agent:other", "d9", "Words");
+    assert_eq!(order(&session), ["sent", "d9"]);
+}
+
+#[test]
+fn a_decision_of_another_run_goes_below() {
+    let mut session = turn();
+    hand(&mut session, "sent");
+    let permission = Permission::new("p1", "agent", "other", "Read a record", "Record 42");
+    let decision = PermissionDecision::new(permission, Decision::Allow, "person:alice");
+    session.apply(Event::Item {
+        conversation: "room-a".into(),
+        item: Item::Approval(decision),
+    });
+    assert_eq!(order(&session), ["sent", "other"]);
+}
+
+/// Review of 583e681: the host says where a message went once the hooks that
+/// admit it returned, which the next turn may outlast. That turn keeps what it
+/// was handed.
+#[test]
+fn a_message_handed_to_a_turn_that_ended_takes_nothing_from_the_next_one() {
+    let mut session = turn();
+    written(&mut session, "late");
+    finished(&mut session, RunOutcome::Completed);
+    started(&mut session, "agent:next");
+    written(&mut session, "sent");
+    session.apply(Event::MessageSteered {
+        conversation: "room-a".into(),
+        message: "sent".into(),
+        run: "agent:next".into(),
+    });
+    handed(&mut session, "late");
+    delta_of(&mut session, "agent:next", "d9", "Words");
+    assert_eq!(order(&session), ["late", "d9", "sent"]);
+}
+
 #[test]
 fn what_people_write_after_the_calls_hides_no_stop() {
     let mut session = turn();
@@ -447,13 +501,7 @@ fn a_message_handed_to_a_turn_that_ended_holds_nothing() {
     finished(&mut session, RunOutcome::Completed);
     handed(&mut session, "sent");
     started(&mut session, "agent:other");
-    session.apply(Event::TextDelta {
-        conversation: "room-a".into(),
-        message: "d9".into(),
-        actor: "agent".into(),
-        run: "agent:other".into(),
-        text: "Another".into(),
-    });
+    delta_of(&mut session, "agent:other", "d9", "Another");
     finalized(&mut session, "d8", "a8");
     assert_eq!(order(&session), ["sent", "d9", "a8"]);
 }
