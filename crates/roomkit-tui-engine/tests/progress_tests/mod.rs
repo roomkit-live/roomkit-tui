@@ -20,9 +20,9 @@ async fn round(decision: Option<Decision>) -> Vec<Seen> {
         ScriptedRound::calling(
             "Checking",
             [
-                ("auto1", "lookup_record", "{}"),
-                ("ask", "lookup_record", "{}"),
-                ("auto2", "lookup_record", "{}"),
+                ("auto1", "lookup_record", r#"{"id": 1}"#),
+                ("ask", "lookup_record", r#"{"id": 2}"#),
+                ("auto2", "lookup_record", r#"{"id": 3}"#),
             ],
         ),
         ScriptedRound::answering("Done"),

@@ -74,12 +74,16 @@ async fn prepare_as<S: ConversationStore>(
     let lookup = AiTool {
         name: "lookup_record".to_owned(),
         description: "Read a fictional record".to_owned(),
-        parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
+        parameters: json!({
+            "type": "object",
+            "properties": {"id": {"type": "integer"}},
+            "additionalProperties": false,
+        }),
         tags: Vec::new(),
     };
     let handler = ToolHandler::new(move |_, arguments| {
         assert!(
-            arguments.is_empty(),
+            arguments.keys().all(|key| key == "id"),
             "Only business arguments reach the handler"
         );
         calls.fetch_add(1, Ordering::SeqCst);
