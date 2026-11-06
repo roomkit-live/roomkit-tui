@@ -81,7 +81,7 @@ fn usage_is_scoped_restored_and_cleared_before_a_new_execution() {
         .lines
         .join("\n");
     assert!(screen.contains("context 200/1000 · 80.0% left"));
-    assert!(screen.contains("turn 350 in / 20 out"));
+    assert!(screen.contains("turn 350 in (100 cached) / 20 out"));
     assert!(!screen.contains("last report"));
     started(&mut session, "run-2");
     session.apply(update);
@@ -192,4 +192,58 @@ fn a_stopped_run_keeps_what_its_generations_told() {
     let screen = draw(&session);
     assert!(screen.contains("context 200/1000"), "{screen}");
     assert!(!screen.contains("last report"), "{screen}");
+}
+
+/// RMK-1461: the turn's cache reads and writes, and the conversation's cost,
+/// which a new execution keeps and another conversation never sets.
+#[test]
+fn the_cache_and_the_conversation_s_cost_show_and_outlive_a_new_execution() {
+    let mut session = session();
+    session.apply(Event::SidebarChanged {
+        conversation: "room-a".into(),
+        sidebar: Some(sidebar_spec()),
+    });
+    started(&mut session, "run-1");
+    let mut usage = TokenUsage::complete(15_080, 85, 14_785);
+    usage.cache_write_input_tokens = 300;
+    session.apply(Event::UsageUpdated {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+        provider: "local".into(),
+        model: "model-a".into(),
+        context: Some(ContextUsage::new(15_165).with_capacity(128_000)),
+        usage,
+    });
+    let cost = |conversation: &str, micros, complete| Event::CostUpdated {
+        conversation: conversation.into(),
+        cost: ConversationCost::new(micros, "USD", complete),
+    };
+    session.apply(cost("room-a", 420_000, true));
+    session.apply(cost("room-b", 1, true));
+    // Wide with the sidebar hidden, the footer shows the usage; at 140
+    // columns, the sidebar does.
+    let draw = |session: &mut Session, width| {
+        session.sidebar_visible = Some(width != 230);
+        render::screen(session, width, 30, &Renderers::default())
+            .lines
+            .join("\n")
+    };
+    assert!(
+        draw(&mut session, 230)
+            .contains("turn 15080 in (14785 cached, 300 written) / 85 out · ≈ $0.42")
+    );
+    let sidebar = draw(&mut session, 140);
+    assert!(sidebar.contains("Turn: 15080 in / 85 out"));
+    assert!(sidebar.contains("Cache: 14785 read, 300 written"));
+    assert!(sidebar.contains("Conversation: ≈ $0.42"));
+    started(&mut session, "run-2");
+    assert!(session.usage().is_none());
+    assert_eq!(session.cost().map(|cost| cost.micros), Some(420_000));
+    // Below a cent, four decimals; a turn with no price makes it partial.
+    session.apply(cost("room-a", 2_870, false));
+    assert!(draw(&mut session, 230).contains("· ≈ $0.0029 (partial)"));
+    assert!(draw(&mut session, 140).contains("Some turns have no price"));
+    session.apply(Event::Snapshot(snapshot()));
+    assert!(session.cost().is_none());
+    assert!(!draw(&mut session, 230).contains('≈'));
 }

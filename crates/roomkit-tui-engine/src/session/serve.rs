@@ -17,6 +17,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use super::requests::Step;
 use super::{AdapterError, CommandHandler, LocalSession};
 use crate::approvals;
+use crate::cost::Costs;
 use crate::execution::Interrupter;
 use crate::progress::ToolProgress;
 
@@ -41,6 +42,8 @@ pub(super) struct View<'h, S: ConversationStore, H> {
     pub approvals: approvals::View,
     /// Calls in flight, shown running or waiting for a decision.
     progress: ToolProgress,
+    /// The conversation's priced turns, whose cost each usage report updates.
+    costs: Costs,
     /// A replacement conversation is being restored. Room events wait in
     /// the receiver meanwhile, then reach the view the switch selects.
     pub switching: bool,
@@ -55,7 +58,7 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
     handler: &H,
 ) -> Result<(), AdapterError> {
     let mut broadcast = session.channel.events.subscribe();
-    let snapshot = session.snapshot().await?;
+    let (snapshot, costs) = session.attachment().await?;
     let (requests, host) = host.split();
     let approvals = session
         .channel
@@ -69,11 +72,12 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
         steering: Vec::new(),
         approvals,
         progress: ToolProgress::default(),
+        costs: Costs::default(),
         switching: false,
         updates: None,
         queue: VecDeque::new(),
     };
-    view.attached(snapshot)?;
+    view.attached(snapshot, costs)?;
     let mut incoming = read_requests(requests);
     let mut pending: Option<Pending<'_>> = None;
     loop {
@@ -113,7 +117,9 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
     pub fn attached(
         &mut self,
         snapshot: roomkit_tui_protocol::Snapshot,
+        costs: Costs,
     ) -> Result<(), AdapterError> {
+        self.costs = costs;
         if let Some(lifecycle) = &self.session.lifecycle {
             lifecycle.attached(&self.session.config);
         }
@@ -139,7 +145,9 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         match frame {
             Ok((room, mut event)) if room == self.session.config.conversation() => {
                 crate::measurements::for_view(&mut event, &self.session.config);
-                let events = self.progress.apply(event);
+                let cost = self.costs.record(&event, &self.session.config);
+                let mut events = self.progress.apply(event);
+                events.extend(cost);
                 self.send_all(events)?;
                 Ok(true)
             }

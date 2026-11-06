@@ -182,6 +182,10 @@ fn every_event_round_trips() {
             context: Some(ContextUsage::new(10).with_capacity(100)),
             usage: TokenUsage::complete(8, 2, 1),
         },
+        Event::CostUpdated {
+            conversation: room.clone(),
+            cost: ConversationCost::new(2_870, "USD", false),
+        },
         Event::Notice {
             conversation: room,
             text: "Check the provider".into(),
@@ -408,4 +412,27 @@ fn steering_keeps_its_wire_shape() {
     snapshot.as_object_mut().unwrap().remove("can_steer");
     let snapshot: Snapshot = serde_json::from_value(snapshot).unwrap();
     assert!(!snapshot.can_steer, "an older host does not steer");
+}
+
+/// RMK-1461: an older host states neither cache writes nor a cost, which
+/// read as none.
+#[test]
+fn an_older_host_s_usage_and_snapshot_read_without_cache_writes_or_cost() {
+    let usage: TokenUsage = serde_json::from_value(serde_json::json!({
+        "input_tokens": 8,
+        "output_tokens": 2,
+        "cached_input_tokens": 1,
+        "complete": true,
+    }))
+    .unwrap();
+    assert_eq!(usage, TokenUsage::complete(8, 2, 1));
+    let snapshot = Snapshot::new("room", "Title", Actor::new("agent", "Agent"));
+    let mut older = serde_json::to_value(&snapshot).unwrap();
+    assert!(older.get("cost").is_none(), "No cost is omitted");
+    older.as_object_mut().unwrap().remove("cost");
+    let read: Snapshot = serde_json::from_value(older).unwrap();
+    assert_eq!(read.cost, None);
+    let mut priced = snapshot;
+    priced.cost = Some(ConversationCost::new(420_000, "USD", true));
+    round_trip(&priced);
 }

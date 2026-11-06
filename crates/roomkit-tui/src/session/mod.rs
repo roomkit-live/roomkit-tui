@@ -21,8 +21,9 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use roomkit_tui_protocol::{
-    ActorId, BackgroundStatus, CallId, Command, ContextUsage, ConversationId, ImageUpload,
-    MessageId, Permission, PermissionId, RequestId, RunId, RunOutcome, Snapshot, TokenUsage,
+    ActorId, BackgroundStatus, CallId, Command, ContextUsage, ConversationCost, ConversationId,
+    ImageUpload, MessageId, Permission, PermissionId, RequestId, RunId, RunOutcome, Snapshot,
+    TokenUsage,
 };
 
 pub(crate) use bounds::bounded;
@@ -258,6 +259,12 @@ impl Session {
     /// Provider-reported consumption of the latest execution.
     pub fn usage(&self) -> Option<&TokenUsage> {
         self.snapshot.as_ref()?.usage.as_ref()
+    }
+
+    /// The conversation's cost at its model's list price, when the host
+    /// states one.
+    pub fn cost(&self) -> Option<&ConversationCost> {
+        self.snapshot.as_ref()?.cost.as_ref()
     }
 
     /// The current bounded, user-visible diagnostic; empty when there is none.

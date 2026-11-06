@@ -19,12 +19,12 @@ roomkit.workspace = true
 roomkit-core.workspace = true
 roomkit-tui-protocol.workspace = true
 roomkit-tui-transport.workspace = true
+roomkit-ai.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-roomkit-ai.workspace = true
 roomkit-sqlite.workspace = true
 uuid.workspace = true
 

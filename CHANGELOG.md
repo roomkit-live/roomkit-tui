@@ -8,6 +8,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The turn's prompt cache and the conversation's cost (RMK-1461).
+  `TokenUsage::cache_write_input_tokens` counts what a turn wrote to the cache.
+  `SessionConfig::pricing` takes the configured model's list price, the kit's
+  `ModelPricing`: a snapshot then holds `Snapshot::cost`, every turn of the
+  conversation read again, and each turn's report sends `Event::CostUpdated`
+  (`ConversationCost`, in millionths of its currency). `conversation_cost` and
+  `turn_cost` give a host the same figures. The footer reads
+  `turn 15080 in (14785 cached, 300 written) / 85 out · ≈ $0.42`, the sidebar
+  `Cache: 14785 read, 300 written` and `Conversation: ≈ $0.42`; a turn with no
+  price makes the cost `(partial)`.
+
 - The context follows a long turn (RMK-1333): the engine sends
   `Event::ContextUpdated`, from the kit's `StreamItem::Usage`, after each
   generation, in the capacity the session configured; a stopped run keeps what its

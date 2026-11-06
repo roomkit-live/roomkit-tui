@@ -218,6 +218,20 @@ record, or one on another model, the snapshot restores no measurement.
 New runs and model changes clear old measurements. Hosts configuring OpenAI
 use the provider identity `OpenAIAIProvider`, matching the engine's attribution.
 
+`TokenUsage` counts the tokens a turn read from the prompt cache and, apart, those
+it wrote there (`cache_creation_input_tokens`), both inside its input.
+
+`SessionConfig::pricing` is the configured model's list price, the kit's
+`ModelPricing`. With it, a snapshot holds the conversation's cost, every turn of its
+history read again, and each turn's report sends `Event::CostUpdated`: the whole
+conversation's cost, in millionths of the price's currency. A turn of another model,
+or one with no whole report, has no price and leaves the cost partial.
+`conversation_cost` gives a host the same figure, for an exit report, and
+`turn_cost` one turn's. A price that changes past a request's input, such as
+OpenAI's long-context rate, applies to the whole turn when its last request went
+past it, and to none of it otherwise: such a turn's cost is an estimate. No price,
+no cost: a host leaves it unset for a subscription billed by plan.
+
 
 `CommandHandler` also receives `SubmitForm` for advertised commands, with the
 same conversation and idle checks as other configuration controls. It must

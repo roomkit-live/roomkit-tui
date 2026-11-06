@@ -13,6 +13,7 @@ use super::serve::{CatchUnwind, Pending, View, send};
 use super::{AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig};
 use crate::CommandExecution;
 use crate::activity::{Active, Work};
+use crate::cost::Costs;
 use crate::execution::Interrupter;
 
 /// What application code returned for a request.
@@ -32,7 +33,7 @@ pub(crate) enum Step {
     },
     Switched {
         request: Request,
-        replacement: Result<(SessionConfig, Snapshot), AdapterError>,
+        replacement: Result<(SessionConfig, Snapshot, Costs), AdapterError>,
     },
 }
 
@@ -310,8 +311,9 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         self.switching = true;
         Ok(Some(Box::pin(async move {
             let replacement = LocalSession::new(kit, channel, config);
-            let snapshot = replacement.snapshot().await;
-            let replacement = snapshot.map(|snapshot| (replacement.config, snapshot));
+            let attachment = replacement.attachment().await;
+            let replacement =
+                attachment.map(|(snapshot, costs)| (replacement.config, snapshot, costs));
             Step::Switched {
                 request,
                 replacement,
@@ -322,10 +324,10 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
     fn switched(
         &mut self,
         request: &Request,
-        replacement: Result<(SessionConfig, Snapshot), AdapterError>,
+        replacement: Result<(SessionConfig, Snapshot, Costs), AdapterError>,
     ) -> Result<(), AdapterError> {
         self.switching = false;
-        let (config, snapshot) = match replacement {
+        let (config, snapshot, costs) = match replacement {
             Ok(replacement) => replacement,
             Err(error) => return self.reply(request, Some(refused_switch(&error))),
         };
@@ -333,7 +335,7 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         self.approvals = approvals.attach(config.conversation(), config.agent.as_str());
         self.session.config = config;
         self.reply(request, None)?;
-        self.attached(snapshot)
+        self.attached(snapshot, costs)
     }
 }
 

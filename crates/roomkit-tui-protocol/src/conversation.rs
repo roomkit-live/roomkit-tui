@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    ActorId, CallId, CommandSpec, ContextUsage, ConversationId, InputAction, MessageId, ModeState,
-    ModelInfo, Permission, PermissionDecision, RunId, TokenUsage,
+    ActorId, CallId, CommandSpec, ContextUsage, ConversationCost, ConversationId, InputAction,
+    MessageId, ModeState, ModelInfo, Permission, PermissionDecision, RunId, TokenUsage,
 };
 
 /// An identified participant supplied by the host.
@@ -266,6 +266,10 @@ pub struct Snapshot {
     /// Consumption of the latest execution, never a session-wide estimate.
     #[serde(default)]
     pub usage: Option<TokenUsage>,
+    /// The conversation's cost at its model's list price; absent when the
+    /// host states no price. Older hosts omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<ConversationCost>,
     /// Host commands available in this conversation.
     pub commands: Vec<CommandSpec>,
     /// Optional application-owned composer actions. Older hosts advertise none.
@@ -314,6 +318,7 @@ impl Snapshot {
             model: None,
             context: None,
             usage: None,
+            cost: None,
             commands: Vec::new(),
             input_actions: Vec::new(),
             can_attach_images: false,

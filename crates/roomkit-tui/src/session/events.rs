@@ -189,6 +189,7 @@ impl Session {
                 model,
                 usage,
             } => self.on_context(&conversation, &run, (&provider, &model), usage),
+            Event::CostUpdated { conversation, cost } => self.on_cost(&conversation, cost),
             _ => {}
         }
     }

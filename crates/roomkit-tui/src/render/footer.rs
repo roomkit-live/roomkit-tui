@@ -216,8 +216,16 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
             .output_tokens
             .map_or_else(|| "?".into(), |n| n.to_string());
         let partial = if usage.complete { "" } else { " (partial)" };
+        let cache = super::context::cache_note(usage);
         parts.push(span(
-            format!(" · turn {input} in / {output} out{partial}"),
+            format!(" · turn {input} in{cache} / {output} out{partial}"),
+            Tone::Muted,
+        ));
+    }
+    if let Some(cost) = session.cost() {
+        let partial = if cost.complete { "" } else { " (partial)" };
+        parts.push(span(
+            format!(" · {}{partial}", super::context::amount(cost)),
             Tone::Muted,
         ));
     }

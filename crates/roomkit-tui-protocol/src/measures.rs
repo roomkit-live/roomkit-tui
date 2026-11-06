@@ -91,6 +91,10 @@ pub struct TokenUsage {
     pub output_tokens: Option<u64>,
     /// Cached subset of input tokens reported by the provider.
     pub cached_input_tokens: u64,
+    /// Subset of input tokens the provider wrote to its prompt cache, which
+    /// some providers bill apart; 0 when it reported none. Older hosts omit it.
+    #[serde(default)]
+    pub cache_write_input_tokens: u64,
     /// False when at least one generation lacked counts or failed.
     pub complete: bool,
 }
@@ -102,7 +106,33 @@ impl TokenUsage {
             input_tokens: Some(input_tokens),
             output_tokens: Some(output_tokens),
             cached_input_tokens,
+            cache_write_input_tokens: 0,
             complete: true,
+        }
+    }
+}
+
+/// What a conversation's turns cost at the list price the host states for
+/// its model: an estimate, never an invoice.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ConversationCost {
+    /// The amount, in millionths of `currency`.
+    pub micros: u64,
+    /// The ISO 4217 code of the price's currency, such as `USD`.
+    pub currency: String,
+    /// False when a turn of the conversation has no price: another model
+    /// answered it, or its usage was not reported.
+    pub complete: bool,
+}
+
+impl ConversationCost {
+    /// `micros` millionths of `currency`, every turn priced or not.
+    pub fn new(micros: u64, currency: impl Into<String>, complete: bool) -> Self {
+        Self {
+            micros,
+            currency: currency.into(),
+            complete,
         }
     }
 }

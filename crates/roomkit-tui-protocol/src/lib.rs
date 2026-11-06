@@ -33,7 +33,7 @@ pub use ids::{
 };
 pub use images::{ImageMessage, ImageUpload};
 pub use limits::{MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MAX_IMAGES};
-pub use measures::{ContextUsage, ModelInfo, TokenUsage};
+pub use measures::{ContextUsage, ConversationCost, ModelInfo, TokenUsage};
 pub use panels::{BackgroundStatus, PanelSpec};
 pub use permissions::{Decision, Permission, PermissionDecision};
 pub use rejection::{ErrorCode, Rejection};

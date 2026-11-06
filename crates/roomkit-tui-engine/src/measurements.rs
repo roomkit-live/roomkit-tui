@@ -17,6 +17,7 @@ pub(crate) fn event(row: &RoomEvent) -> Option<Event> {
         usage.input_tokens = input_of(total);
         usage.output_tokens = total.get("output_tokens").and_then(Value::as_u64);
         usage.cached_input_tokens = counter(total, "cache_read_input_tokens");
+        usage.cache_write_input_tokens = counter(total, "cache_creation_input_tokens");
         usage.complete = metadata
             .get("ai_usage_complete")
             .and_then(Value::as_bool)

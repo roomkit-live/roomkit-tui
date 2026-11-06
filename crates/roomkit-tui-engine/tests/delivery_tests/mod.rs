@@ -526,3 +526,79 @@ async fn context_and_turn_consumption_survive_streaming_and_buffered_restart() {
         kit.close().await.unwrap();
     }
 }
+
+/// RMK-1461: a priced view tells the conversation's cost after each turn, and
+/// a restore sums every turn of its history again.
+#[tokio::test]
+async fn a_priced_conversation_tells_its_cost_and_restores_it() {
+    let usage = |counters: serde_json::Value| counters.as_object().unwrap().clone();
+    let kit = RoomKit::new(Default::default());
+    let provider = NamedProvider(ScriptedProvider::new([
+        ScriptedRound::answering("One.").with_usage(usage(json!({
+            "input_tokens": 1000,
+            "cache_read_input_tokens": 200,
+            "cache_creation_input_tokens": 300,
+            "output_tokens": 10,
+        }))),
+        ScriptedRound::answering("Two.")
+            .with_usage(usage(json!({"input_tokens": 500, "output_tokens": 20}))),
+    ]));
+    let channel = prepare(&kit, provider, Arc::new(AtomicUsize::new(0)), false).await;
+    let mut config = config();
+    config.model = Some(ModelInfo::new("local", "fixture"));
+    let mut pricing =
+        roomkit_ai::ModelPricing::new(2.0, 10.0, roomkit_ai::Date::new(2026, 9, 30).unwrap())
+            .unwrap();
+    pricing.cache_read_per_million = Some(0.1);
+    pricing.cache_write_per_million = Some(2.5);
+    config.pricing = Some(pricing);
+    let adapter = LocalSession::new(kit.clone(), channel.clone(), config.clone());
+    let (client, host) = connection(NonZeroUsize::new(128).unwrap());
+    let task = tokio::spawn(adapter.run(host));
+    let Event::Snapshot(snapshot) = next(&client).await else {
+        unreachable!("A view starts from its snapshot");
+    };
+    assert_eq!(snapshot.cost, Some(ConversationCost::new(0, "USD", true)));
+    let told = |events: &[Event]| {
+        events.iter().find_map(|event| match event {
+            Event::CostUpdated { cost, .. } => Some(cost.clone()),
+            _ => None,
+        })
+    };
+    // 1,000 × 2.0 + 200 × 0.1 + 300 × 2.5 + 10 × 10.0 millionths of a dollar.
+    client.try_send(request("one")).unwrap();
+    let events = collect_operation(&client).await;
+    assert_eq!(
+        told(&events),
+        Some(ConversationCost::new(2_870, "USD", true))
+    );
+    // And 500 × 2.0 + 20 × 10.0.
+    client.try_send(request("two")).unwrap();
+    let events = collect_operation(&client).await;
+    assert_eq!(
+        told(&events),
+        Some(ConversationCost::new(4_070, "USD", true))
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
+    roomkit::testing::idle(&kit).await;
+    let restored = LocalSession::new(kit.clone(), channel.clone(), config.clone())
+        .snapshot()
+        .await
+        .unwrap();
+    assert_eq!(
+        restored.cost,
+        Some(ConversationCost::new(4_070, "USD", true))
+    );
+    let cost = roomkit_tui_engine::conversation_cost(&kit, &config)
+        .await
+        .unwrap();
+    assert_eq!(cost, restored.cost);
+    config.pricing = None;
+    let unpriced = LocalSession::new(kit.clone(), channel, config)
+        .snapshot()
+        .await
+        .unwrap();
+    assert_eq!(unpriced.cost, None);
+    kit.close().await.unwrap();
+}

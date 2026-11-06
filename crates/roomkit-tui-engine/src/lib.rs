@@ -10,6 +10,7 @@ mod approval_history;
 mod approvals;
 mod cancellation;
 mod channel;
+mod cost;
 mod diagnostics;
 mod execution;
 mod lifecycle;
@@ -22,6 +23,7 @@ mod stream;
 
 pub use approvals::PermissionRequest;
 pub use channel::ConversationChannel;
+pub use cost::{conversation_cost, turn_cost};
 pub use diagnostics::Diagnostic;
 pub use execution::{CommandExecution, ExecutionContext};
 pub use lifecycle::{LifecycleFuture, SessionLifecycle, TurnOutcome};

@@ -1,10 +1,12 @@
 //! Model settings and usage measurements, only for the model on screen.
 
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
-use roomkit_tui_protocol::{ContextUsage, ConversationId, ModelInfo, RunId, TokenUsage};
+use roomkit_tui_protocol::{
+    ContextUsage, ConversationCost, ConversationId, ModelInfo, RunId, TokenUsage,
+};
 
 use super::Session;
-use super::bounds::{bound_model, bounded};
+use super::bounds::{bound_in_place, bound_model, bounded};
 
 impl Session {
     pub(super) fn on_model_changed(&mut self, conversation: &ConversationId, mut model: ModelInfo) {
@@ -70,6 +72,18 @@ impl Session {
             && let Some(snapshot) = &mut self.snapshot
         {
             snapshot.context = Some(usage);
+        }
+    }
+
+    /// The conversation's cost, which a new execution keeps: it sums every
+    /// turn of the conversation, not the latest one.
+    pub(super) fn on_cost(&mut self, conversation: &ConversationId, mut cost: ConversationCost) {
+        if !self.is_current(conversation) {
+            return;
+        }
+        bound_in_place(&mut cost.currency, MAX_LABEL_BYTES);
+        if let Some(snapshot) = &mut self.snapshot {
+            snapshot.cost = Some(cost);
         }
     }
 }

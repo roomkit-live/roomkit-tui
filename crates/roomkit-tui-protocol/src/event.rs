@@ -3,9 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ActorId, BackgroundStatus, Choice, ContextUsage, ConversationId, FormSpec, Item, Message,
-    MessageId, ModeState, ModelInfo, OperationId, PanelSpec, Permission, PermissionId, Rejection,
-    RequestId, RunId, SidebarSpec, Snapshot, TokenUsage,
+    ActorId, BackgroundStatus, Choice, ContextUsage, ConversationCost, ConversationId, FormSpec,
+    Item, Message, MessageId, ModeState, ModelInfo, OperationId, PanelSpec, Permission,
+    PermissionId, Rejection, RequestId, RunId, SidebarSpec, Snapshot, TokenUsage,
 };
 
 /// How an execution actually ended.
@@ -259,6 +259,14 @@ pub enum Event {
         context: Option<ContextUsage>,
         /// Execution consumption, replacing any earlier report for this run.
         usage: TokenUsage,
+    },
+    /// Replace the conversation's cost at its model's list price: every turn
+    /// it holds, those of earlier sessions included.
+    CostUpdated {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// The whole conversation's cost so far.
+        cost: ConversationCost,
     },
     /// The host handed a message to a run already under way, which reads it
     /// at its next step instead of starting a turn of its own. Told as the

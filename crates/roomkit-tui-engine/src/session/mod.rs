@@ -54,6 +54,9 @@ pub struct SessionConfig {
     pub can_attach_images: bool,
     /// Optional host-owned interaction mode, independent of engine/model state.
     pub mode: Option<ModeState>,
+    /// The configured model's list price, which prices the conversation's
+    /// turns; none shows no cost. A subscription billed by plan states none.
+    pub pricing: Option<roomkit_ai::ModelPricing>,
 }
 
 impl SessionConfig {
@@ -73,6 +76,7 @@ impl SessionConfig {
             input_actions: Vec::new(),
             can_attach_images: false,
             mode: None,
+            pricing: None,
         }
     }
 
@@ -258,12 +262,20 @@ impl<S: ConversationStore> LocalSession<S> {
     /// Fails with [`AdapterError::InvalidSnapshot`] when a terminal would
     /// refuse the result, so attaching and switching never send one.
     pub async fn snapshot(&self) -> Result<Snapshot, AdapterError> {
+        self.attachment().await.map(|(snapshot, _)| snapshot)
+    }
+
+    /// The snapshot a view attaches with, and the priced turns its cost sums,
+    /// which later reports of those turns replace rather than add to.
+    pub(crate) async fn attachment(&self) -> Result<(Snapshot, crate::cost::Costs), AdapterError> {
         if self.channel.busy(self.config.conversation()) {
             return Err(AdapterError::Busy);
         }
-        let snapshot = restore::snapshot(&self.kit, &self.channel, &self.config).await?;
+        let mut snapshot = restore::snapshot(&self.kit, &self.channel, &self.config).await?;
+        let costs = crate::cost::restore(&self.kit, &self.config).await?;
+        snapshot.cost = costs.total(&self.config);
         snapshot.validate()?;
-        Ok(snapshot)
+        Ok((snapshot, costs))
     }
 
     /// Stores the decisions this view's room collected, for work that runs

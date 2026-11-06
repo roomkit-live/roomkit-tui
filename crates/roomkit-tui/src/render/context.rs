@@ -1,7 +1,7 @@
 //! The sidebar's context section: the displayed measurement, its gauge or
 //! its split into host-estimated parts, and the turn's consumption.
 
-use roomkit_tui_protocol::{ContextUsage, MeterSegment};
+use roomkit_tui_protocol::{ContextUsage, ConversationCost, MeterSegment, TokenUsage};
 
 use super::meter::{self, Fill, Part};
 use super::text::wrap_words;
@@ -18,6 +18,7 @@ pub(super) fn context(session: &Session, inner: usize) -> Vec<Line> {
         lines.extend(gauge(percent, inner));
     }
     lines.extend(turn_usage(session));
+    lines.extend(conversation_cost(session));
     lines
 }
 
@@ -39,6 +40,7 @@ pub(super) fn breakdown(
         Some(usage) => lines.extend(measured(usage, &rows, inner, monochrome)),
     }
     lines.extend(turn_usage(session));
+    lines.extend(conversation_cost(session));
     lines
 }
 
@@ -138,8 +140,57 @@ fn turn_usage(session: &Session) -> Vec<Line> {
         format!("Turn: {input} in / {output} out"),
         Tone::Muted,
     )];
+    match (usage.cached_input_tokens, usage.cache_write_input_tokens) {
+        (0, 0) => {}
+        (read, 0) => lines.push(line(format!("Cache: {read} read"), Tone::Muted)),
+        (0, written) => lines.push(line(format!("Cache: {written} written"), Tone::Muted)),
+        (read, written) => lines.push(line(
+            format!("Cache: {read} read, {written} written"),
+            Tone::Muted,
+        )),
+    }
     if !usage.complete {
         lines.push(line("Partial usage report", Tone::Warning));
     }
     lines
+}
+
+/// The conversation's cost at its model's list price, when the host states
+/// one, and whether a turn of it has none.
+fn conversation_cost(session: &Session) -> Vec<Line> {
+    let Some(cost) = session.cost() else {
+        return Vec::new();
+    };
+    let mut lines = vec![line(format!("Conversation: {}", amount(cost)), Tone::Muted)];
+    if !cost.complete {
+        lines.push(line("Some turns have no price", Tone::Warning));
+    }
+    lines
+}
+
+/// ` (14785 cached)`, ` (14785 cached, 300 written)`: what the provider read
+/// from its prompt cache and wrote to it, when it reported either.
+pub(super) fn cache_note(usage: &TokenUsage) -> String {
+    match (usage.cached_input_tokens, usage.cache_write_input_tokens) {
+        (0, 0) => String::new(),
+        (read, 0) => format!(" ({read} cached)"),
+        (0, written) => format!(" ({written} written)"),
+        (read, written) => format!(" ({read} cached, {written} written)"),
+    }
+}
+
+/// `≈ $0.42`, a list price's estimate, never an invoice; below a cent, four
+/// decimals, so a cheap turn does not read as free.
+pub(super) fn amount(cost: &ConversationCost) -> String {
+    let value = cost.micros as f64 / 1_000_000.0;
+    let digits = if cost.micros == 0 || cost.micros >= 10_000 {
+        2
+    } else {
+        4
+    };
+    let value = format!("{value:.digits$}");
+    match cost.currency.as_str() {
+        "USD" => format!("≈ ${value}"),
+        currency => format!("≈ {value} {currency}"),
+    }
 }
