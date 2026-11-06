@@ -1,6 +1,7 @@
 //! RMK-1371: a message is committed, and told steered, before its delivery
-//! reaches the running turn. A turn cut in between never takes it, and RoomKit
-//! gives it a turn of its own, which `RunStarted` names.
+//! reaches the running turn. A turn cut in between, and over by the delivery,
+//! never takes it, and RoomKit gives it a turn of its own, which `RunStarted`
+//! names. A turn still being cut would take it, and never read it.
 
 use super::lifecycle::run_finished;
 use super::*;
