@@ -84,7 +84,8 @@ impl ContextUsage {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct TokenUsage {
-    /// All input tokens, including cached input, across reported generations.
+    /// All input tokens, including what was read from or written to the
+    /// prompt cache, across reported generations.
     pub input_tokens: Option<u64>,
     /// Output tokens across reported generations.
     pub output_tokens: Option<u64>,

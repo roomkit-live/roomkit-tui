@@ -12,18 +12,11 @@ pub(crate) fn event(row: &RoomEvent) -> Option<Event> {
     }
     let provider = metadata.get("ai_provider")?.as_str()?.to_owned();
     let model = metadata.get("ai_model")?.as_str()?.to_owned();
-    let cached = total
-        .get("cache_read_input_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
     let usage = {
         let mut usage = TokenUsage::default();
-        usage.input_tokens = total
-            .get("input_tokens")
-            .and_then(Value::as_u64)
-            .map(|input| input.saturating_add(cached));
+        usage.input_tokens = input_of(total);
         usage.output_tokens = total.get("output_tokens").and_then(Value::as_u64);
-        usage.cached_input_tokens = cached;
+        usage.cached_input_tokens = counter(total, "cache_read_input_tokens");
         usage.complete = metadata
             .get("ai_usage_complete")
             .and_then(Value::as_bool)
@@ -56,19 +49,30 @@ pub(crate) fn told(room: &str, run: &RunId, marker: &UsageMarker) -> Option<Even
     })
 }
 
-/// The context a request filled, as what it reported: its input, cached
-/// included, and its output.
+/// The context a request filled, as what it reported: its whole input and
+/// its output.
 fn context_of(last: &Metadata) -> Option<ContextUsage> {
-    let input = last.get("input_tokens")?.as_u64()?;
-    let cached = last
-        .get("cache_read_input_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
     Some(ContextUsage::new(
-        input
-            .checked_add(cached)?
-            .checked_add(last.get("output_tokens")?.as_u64()?)?,
+        input_of(last)?.checked_add(last.get("output_tokens")?.as_u64()?)?,
     ))
+}
+
+/// A report's whole input: what it billed uncached, what it read from the
+/// prompt cache and what it wrote there, which a Chat Completions usage
+/// reports apart from its `input_tokens` since roomkit-rs f86cbb1; none when
+/// it reported no input.
+fn input_of(report: &Metadata) -> Option<u64> {
+    let input = report.get("input_tokens")?.as_u64()?;
+    Some(
+        ["cache_read_input_tokens", "cache_creation_input_tokens"]
+            .into_iter()
+            .fold(input, |sum, key| sum.saturating_add(counter(report, key))),
+    )
+}
+
+/// A counter of a report, 0 when it reported none.
+fn counter(report: &Metadata, key: &str) -> u64 {
+    report.get(key).and_then(Value::as_u64).unwrap_or(0)
 }
 
 pub(crate) fn for_view(event: &mut Event, config: &SessionConfig) {
@@ -152,5 +156,44 @@ mod tests {
         };
         assert_eq!(run, crate::projection::run_id(&agent, "evt_1"));
         assert!(run.as_str().len() <= MAX_LABEL_BYTES);
+    }
+
+    /// RMK-1457: since roomkit-rs f86cbb1 a Chat Completions usage reports the
+    /// tokens a prompt wrote to the cache apart from its `input_tokens`, and
+    /// the turn's input and the context read them short.
+    #[test]
+    fn a_prompt_s_cache_writes_count_in_its_input_and_its_context() {
+        let report = json!({
+            "input_tokens": 5000,
+            "cache_read_input_tokens": 2000,
+            "cache_creation_input_tokens": 3000,
+            "output_tokens": 10,
+        });
+        let mut row = RoomEvent::new(
+            RoomId::new("room").unwrap(),
+            EventSource::new(ChannelId::new("agent").unwrap(), ChannelType::AI),
+            TextContent::new("Done"),
+        );
+        row.responds_to = Some(EventId::new("evt_1").unwrap());
+        row.metadata.insert("ai_provider".into(), json!("openai"));
+        row.metadata.insert("ai_model".into(), json!("model"));
+        row.metadata.insert("ai_usage".into(), report.clone());
+        row.metadata.insert("ai_last_usage".into(), report.clone());
+        let Some(Event::UsageUpdated { context, usage, .. }) = event(&row) else {
+            unreachable!("The row reports usage");
+        };
+        assert_eq!(usage.input_tokens, Some(10_000));
+        assert_eq!(usage.cached_input_tokens, 2000);
+        assert_eq!(context.map(|context| context.tokens), Some(10_010));
+        let marker = UsageMarker {
+            provider: Some("openai".into()),
+            model: Some("model".into()),
+            usage: report.as_object().unwrap().clone(),
+        };
+        let run = crate::projection::run_id(&row.source.channel_id, "evt_1");
+        let Some(Event::ContextUpdated { usage, .. }) = told("room", &run, &marker) else {
+            unreachable!("The generation told its counters");
+        };
+        assert_eq!(usage.tokens, 10_010);
     }
 }

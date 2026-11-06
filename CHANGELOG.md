@@ -26,6 +26,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The engine follows roomkit-rs f86cbb1, whose channel, hook and AI APIs it uses
+  unchanged (RMK-1460).
 - The engine follows roomkit-rs c30375c, whose channel, hook and AI APIs it uses
   unchanged (RMK-1324). A model the kit refuses before any request, for the API
   or the tools it serves, reads as `provider_model_refused`.
@@ -42,6 +44,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A prompt's cache writes count in the turn's input and in the context
+  (RMK-1457). Since roomkit-rs f86cbb1 a Chat Completions usage reports them
+  apart from `input_tokens`, as `cache_creation_input_tokens`: a prompt of 10,000
+  tokens that wrote 3,000 to the cache read 7,000 in the footer and the sidebar.
 - A turn stopped with no message of its own keeps its measure (RMK-1344): its record
   rides its last row since roomkit-rs b96ca1e, and both the stop and a later
   restore read it there; a turn that told no usage leaves no measure, not the last
