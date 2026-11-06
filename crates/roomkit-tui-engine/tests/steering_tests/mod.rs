@@ -95,6 +95,30 @@ fn hold_tools(kit: &RoomKit, gate: watch::Receiver<bool>, entered: Arc<Notify>) 
     .unwrap();
 }
 
+/// Tell `delivered` once the delivery of the message `text` is over: the turn
+/// under way took it, or RoomKit has it wait a turn of its own. The host says a
+/// message went to a turn as it is committed, before that (RMK-1371).
+fn tell_when_delivered(kit: &RoomKit, text: &'static str, delivered: Arc<Notify>) {
+    let options = roomkit::HookOptions {
+        execution: roomkit::HookExecution::Async,
+        ..hook_options("delivered")
+    };
+    let tell = move |event: RoomEvent, _| {
+        if roomkit_core::rules::transcoding::text_of(&event.content) == text {
+            delivered.notify_one();
+        }
+        async {}
+    };
+    kit.hook(roomkit::HookTrigger::AfterBroadcast, tell, options)
+        .unwrap();
+}
+
+/// Returns once `told` says a message's delivery is over.
+async fn delivery_ended(told: &Notify) {
+    let ended = tokio::time::timeout(Duration::from_secs(5), told.notified());
+    ended.await.expect("The message's delivery ends");
+}
+
 fn submit(id: u64, operation: &str, text: &str) -> Request {
     let command = Command::Submit {
         agent: "agent".into(),
@@ -133,6 +157,8 @@ async fn a_message_during_a_tool_round_goes_to_the_running_turn() {
     let (open, gate) = watch::channel(false);
     let entered = Arc::new(Notify::new());
     hold_tools(&kit, gate, entered.clone());
+    let delivered = Arc::new(Notify::new());
+    tell_when_delivered(&kit, "Use the second ledger", delivered.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
     assert!(matches!(next(&client).await, Event::Snapshot(snapshot) if snapshot.can_steer));
@@ -155,6 +181,7 @@ async fn a_message_during_a_tool_round_goes_to_the_running_turn() {
         }
     };
     assert_eq!(Some(steered_into), turn, "Handed to the running turn");
+    delivery_ended(&delivered).await;
     open.send_replace(true);
     let events = collect_operation(&client).await;
     assert!(

@@ -836,50 +836,36 @@ fn a_draft_goes_before_the_handed_message() {
 }
 
 /// Review of aa33d7c: RoomKit may give the message its own turn instead of
-/// handing it over. That turn is the answer: the wait must not cut it.
+/// handing it over. That turn is the answer: the wait must not cut it. RMK-1371:
+/// nor ask again, when the host refused the answer while it held the message,
+/// neither while that turn runs nor after it.
 #[test]
 fn a_turn_of_its_own_for_the_message_ends_the_wait() {
-    let (mut session, client, host) = handed();
-    ctrl_s(&mut session, &client);
-    host.try_recv().unwrap();
-    stopped(&mut session);
-    session.apply(Event::RunStarted {
-        conversation: "room".into(),
-        run: "own".into(),
-        answers: Some("handed".into()),
-    });
-    assert!(!session.sends_after_interruption());
-    assert!(!pass(&mut session, &client, NOW));
-    assert!(host.try_recv().is_err(), "The message's own turn was cut");
-}
-
-/// RMK-1371: the cut came before the turn took the message, so the host holds
-/// it and refuses the answer. Its own turn starts: that is the answer, and the
-/// wait asks no more, while the turn runs or after it.
-#[test]
-fn a_refused_answer_is_not_asked_again_once_the_message_has_its_own_turn() {
-    let (mut session, client, host) = handed();
-    ctrl_s(&mut session, &client);
-    host.try_recv().unwrap();
-    stopped(&mut session);
-    finished(&mut session);
-    assert!(pass(&mut session, &client, NOW));
-    let sent = host.try_recv().unwrap();
-    assert_eq!(sent.command, answer());
-    refused(&mut session, &sent, busy(), LATER);
-
-    session.apply(Event::RunStarted {
-        conversation: "room".into(),
-        run: "own".into(),
-        answers: Some("handed".into()),
-    });
-    run_stopped(&mut session, "own");
-    finished(&mut session);
-    assert!(!pass(&mut session, &client, LATER * 2));
-    assert!(
-        host.try_recv().is_err(),
-        "The message would be answered twice"
-    );
+    for asked_first in [false, true] {
+        let (mut session, client, host) = handed();
+        ctrl_s(&mut session, &client);
+        host.try_recv().unwrap();
+        stopped(&mut session);
+        if asked_first {
+            finished(&mut session);
+            assert!(pass(&mut session, &client, NOW));
+            let sent = host.try_recv().unwrap();
+            assert_eq!(sent.command, answer());
+            refused(&mut session, &sent, busy(), LATER);
+        }
+        session.apply(Event::RunStarted {
+            conversation: "room".into(),
+            run: "own".into(),
+            answers: Some("handed".into()),
+        });
+        assert!(!session.sends_after_interruption());
+        assert!(!pass(&mut session, &client, LATER * 2));
+        assert!(host.try_recv().is_err(), "The message's own turn was cut");
+        run_stopped(&mut session, "own");
+        finished(&mut session);
+        assert!(!pass(&mut session, &client, LATER * 3));
+        assert!(host.try_recv().is_err(), "Answered twice");
+    }
 }
 
 /// Review of aa33d7c: a turn that ends by itself read what it was handed:

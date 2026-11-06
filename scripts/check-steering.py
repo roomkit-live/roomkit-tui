@@ -27,6 +27,10 @@ from pathlib import Path
 from terminal_pty import DEADLINE, Terminal, binary, require
 
 STEERED = "Use the second ledger"
+# The terminal says a message went to the turn as the host commits it, and its
+# delivery follows (RMK-1371). Nothing on the screen says when it reached the
+# turn, so a check that lets the turn go on gives it this many seconds.
+DELIVERY = 0.2
 CTRL_S = b"\x13"
 CTRL_ENTER = b"\x1b[13;5u"
 
@@ -118,6 +122,7 @@ def handed_to_the_running_turn(port, directory):
     with chat(port, directory) as terminal:
         terminal.send(STEERED.encode() + b"\r")
         terminal.wait_for("↳ sent to the running turn".encode())
+        terminal.pump(DELIVERY)
         Fixture.release.set()
         terminal.wait_for(b"Record 42 is in the second ledger.")
         written, message = terminal.screen.row_of(b"Checking the record."), terminal.screen.row_of(STEERED.encode())
@@ -137,6 +142,7 @@ def read_at_the_next_stop(port, directory):
     with chat(port, directory, silent=True) as terminal:
         terminal.send(STEERED.encode() + b"\r")
         terminal.wait_for("↳ sent to the running turn".encode())
+        terminal.pump(DELIVERY)
         Fixture.release.set()
         terminal.wait_for(b"Checking the record.")
         terminal.wait_for(b"Record 42 is in the second ledger.")
@@ -163,6 +169,7 @@ def blanks_of_the_next_answer_read_nothing(port, directory):
         terminal.wait_until(lambda: len(Fixture.requests) == 2, "the model's next answer")
         terminal.send(STEERED.encode() + b"\r")
         terminal.wait_for("↳ sent to the running turn".encode())
+        terminal.pump(DELIVERY)
         Fixture.next_answer.set()
         terminal.wait_for(b"Going on without it.")
         terminal.wait_for(b"Record 42 is in the second ledger.")
@@ -238,7 +245,7 @@ def cut_before_the_message_reached_the_turn():
     which the host refused while it held the message. That turn ends its asking:
     the person sees one answer, however long they wait."""
     with Terminal([binary("cut-before-delivery")], rows=60) as terminal:
-        terminal.wait_for(b"Enter send")
+        terminal.wait_for(b"Start a conversation")
         terminal.send(b"Look up record 42\r")
         terminal.wait_for(b"Checking")
         terminal.send(STEERED.encode() + b"\r")

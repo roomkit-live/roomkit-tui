@@ -169,6 +169,8 @@ async fn a_message_handed_to_the_running_turn_starts_nothing() {
     let (open, gate) = watch::channel(false);
     let entered = Arc::new(Notify::new());
     hold_tools(&kit, gate, entered.clone());
+    let delivered = Arc::new(Notify::new());
+    tell_when_delivered(&kit, "Use the second ledger", delivered.clone());
     let lifecycle = Recording::new(provider.clone(), None);
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let session =
@@ -183,6 +185,7 @@ async fn a_message_handed_to_the_running_turn_starts_nothing() {
         .try_send(submit(2, "two", "Use the second ledger"))
         .unwrap();
     while !matches!(next(&client).await, Event::MessageSteered { .. }) {}
+    delivery_ended(&delivered).await;
     open.send_replace(true);
     collect_operation(&client).await;
     let calls = lifecycle.finished("two").await;
