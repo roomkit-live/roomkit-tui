@@ -97,7 +97,7 @@ impl<'a> Group<'a> {
         let mut status = String::new();
         for (count, label) in [
             (failed, "failed"),
-            (denied, "declined"),
+            (denied, "refused"),
             (cancelled, "cancelled"),
         ] {
             if count > 0 {

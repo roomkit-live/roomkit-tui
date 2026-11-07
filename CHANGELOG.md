@@ -42,6 +42,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The engine follows roomkit-rs c30375c, whose channel, hook and AI APIs it uses
   unchanged (RMK-1324). A model the kit refuses before any request, for the API
   or the tools it serves, reads as `provider_model_refused`.
+- A call the engine refused reads "refused", in its group and its details, in
+  place of "declined" and "denied": a rule or its own arguments refuse it as
+  often as a person does.
 
 ### Added
 

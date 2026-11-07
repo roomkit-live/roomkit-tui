@@ -254,7 +254,7 @@ fn tool_state(view: &View<'_>, state: ToolState) -> (&'static str, &'static str,
         ToolState::Running => (spinner(view.options, view.elapsed), "running", Tone::Accent),
         ToolState::Succeeded => ("✓", "completed", Tone::Success),
         ToolState::Failed => ("×", "failed", Tone::Error),
-        ToolState::Denied => ("⊘", "denied", Tone::Warning),
+        ToolState::Denied => ("⊘", "refused", Tone::Warning),
         ToolState::Cancelled => ("−", "cancelled", Tone::Muted),
         _ => ("?", "unknown state", Tone::Muted),
     }

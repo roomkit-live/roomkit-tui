@@ -360,3 +360,20 @@ fn cached_tool_layout_matches_fresh_rendering_after_data_and_size_changes() {
         assert_eq!(cached, fresh);
     }
 }
+
+/// A call the engine refused, whether a rule blocked it or its arguments did
+/// not fit its tool, reads "refused" in its details: nobody declined it.
+#[test]
+fn a_refused_call_reads_refused() {
+    let mut session = session();
+    session.apply(tool("only", ToolState::Denied));
+    session.toggle_tool();
+    let text = render::screen(&session, 100, 30, &Renderers::default())
+        .lines
+        .join("\n");
+    assert!(text.contains("· refused"), "{text}");
+    assert!(
+        !text.contains("declined") && !text.contains("denied"),
+        "{text}"
+    );
+}

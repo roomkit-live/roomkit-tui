@@ -152,7 +152,7 @@ fn failures_refusals_and_cancellations_are_not_hidden_by_later_success() {
         session.apply(call(id, Some("Processing the request"), state));
     }
     let text = draw(&session, 100).lines.join("\n");
-    for label in ["1 failed", "1 declined", "1 cancelled"] {
+    for label in ["1 failed", "1 refused", "1 cancelled"] {
         assert!(text.contains(label));
     }
     let narrow = draw(&session, 32);
