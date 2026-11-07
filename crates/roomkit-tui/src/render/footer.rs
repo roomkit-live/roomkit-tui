@@ -199,10 +199,10 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
             let estimate = if usage.estimated { "~" } else { "" };
             // Put freshness before the numbers so clipping a narrow footer
             // cannot make an earlier report look like a current measurement,
-            // nor hide that the latest request was refused.
+            // nor hide that the latest request was refused. A refused request
+            // was never measured: whatever is shown predates it.
             let label = match (refused, previous) {
-                (true, true) => "context refused (last report)",
-                (true, false) => "context refused",
+                (true, _) => "context refused (last report)",
                 (false, true) => "context (last report)",
                 (false, false) => "context",
             };

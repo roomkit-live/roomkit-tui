@@ -388,3 +388,24 @@ fn a_refusal_before_any_measurement_replaces_the_wait() {
         "{rows:#?}"
     );
 }
+
+/// A refusal after an earlier step of the same run measured: that step's
+/// measure is the last report, not the refused request's.
+#[test]
+fn a_refusal_after_an_earlier_step_shows_that_step_as_the_last_report() {
+    let mut s = session();
+    s.apply(sidebar(breakdown(fixed_parts())));
+    started(&mut s, "run-1");
+    s.apply(measure("run-1", 5_000));
+    s.apply(exceeded("run-1"));
+    let rows = side(&s);
+    let refused = rows
+        .iter()
+        .position(|r| r == "Refused: over capacity")
+        .unwrap_or_else(|| unreachable!("No refusal: {rows:#?}"));
+    let next: Vec<&str> = rows[refused + 1..refused + 3]
+        .iter()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(next, ["Last report", "5000 / 131072 tokens"]);
+}

@@ -84,10 +84,12 @@ fn breakdown_parts<'a>(
 
 /// Freshness and `tokens / capacity` of the displayed measurement, after a
 /// refusal past the context window when the latest request had one: that
-/// request has no measurement to wait for.
+/// request has no measurement to wait for, and whatever is shown, even an
+/// earlier step of the same run, predates it.
 fn measurement(session: &Session) -> Vec<Line> {
+    let refused = session.context_exceeded();
     let mut lines = Vec::new();
-    if session.context_exceeded() {
+    if refused {
         lines.push(line("Refused: over capacity", Tone::Warning));
     }
     let Some((usage, previous)) = session.displayed_context() else {
@@ -96,7 +98,7 @@ fn measurement(session: &Session) -> Vec<Line> {
         }
         return lines;
     };
-    if previous {
+    if previous || refused {
         lines.push(line("Last report", Tone::Muted));
     }
     let estimate = if usage.estimated { "~" } else { "" };

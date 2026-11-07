@@ -274,3 +274,28 @@ fn a_refused_request_leads_the_footer_context_until_the_model_changes() {
     let screen = draw(&session);
     assert!(!screen.contains("refused") && screen.contains("context ?"));
 }
+
+/// The refused run's earlier step is the footer's last report too.
+#[test]
+fn a_refusal_after_an_earlier_step_reads_as_a_last_report_in_the_footer() {
+    let mut session = session();
+    started(&mut session, "run-1");
+    session.apply(Event::ContextUpdated {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+        provider: "local".into(),
+        model: "model-a".into(),
+        usage: ContextUsage::new(500).with_capacity(1000),
+    });
+    session.apply(Event::ContextExceeded {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+    });
+    let screen = render::screen(&session, 230, 30, &Renderers::default())
+        .lines
+        .join("\n");
+    assert!(
+        screen.contains("context refused (last report) 500/1000"),
+        "{screen}"
+    );
+}
