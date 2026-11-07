@@ -37,7 +37,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- The engine follows roomkit-rs f86cbb1, whose channel, hook and AI APIs it uses
+- The engine follows roomkit-rs ee5d724, whose channel, hook and AI APIs it uses
   unchanged (RMK-1460).
 - The engine follows roomkit-rs c30375c, whose channel, hook and AI APIs it uses
   unchanged (RMK-1324). A model the kit refuses before any request, for the API
