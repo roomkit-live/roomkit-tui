@@ -263,7 +263,14 @@ impl<'a> Reader<'a> {
 
     fn fail(&mut self, error: &str) {
         self.outcome = RunOutcome::Failed;
-        self.notice(crate::diagnostics::explain(error));
+        let diagnostic = crate::diagnostics::Diagnostic::classify(error);
+        self.notice(diagnostic.summary);
+        if diagnostic.exceeds_context() {
+            self.publish(Event::ContextExceeded {
+                conversation: self.room.into(),
+                run: self.run.clone(),
+            });
+        }
     }
 
     /// End the run, unless an accepted interruption reports it once the

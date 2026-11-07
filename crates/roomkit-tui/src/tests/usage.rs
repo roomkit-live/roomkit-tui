@@ -247,3 +247,30 @@ fn the_cache_and_the_conversation_s_cost_show_and_outlive_a_new_execution() {
     assert!(session.cost().is_none());
     assert!(!draw(&mut session, 230).contains('≈'));
 }
+
+/// A refused request names itself before the numbers, so clipping a narrow
+/// footer cannot hide it, and a model change clears it.
+#[test]
+fn a_refused_request_leads_the_footer_context_until_the_model_changes() {
+    let mut initial = snapshot();
+    initial.context = Some(ContextUsage::new(120).with_capacity(1000));
+    let mut session = session();
+    session.apply(Event::Snapshot(initial));
+    started(&mut session, "run-1");
+    session.apply(Event::ContextExceeded {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+    });
+    let draw = |session: &Session| {
+        render::screen(session, 230, 30, &Renderers::default())
+            .lines
+            .join("\n")
+    };
+    assert!(draw(&session).contains("context refused (last report) 120/1000"));
+    session.apply(Event::ModelChanged {
+        conversation: "room-a".into(),
+        model: ModelInfo::new("local", "model-b"),
+    });
+    let screen = draw(&session);
+    assert!(!screen.contains("refused") && screen.contains("context ?"));
+}

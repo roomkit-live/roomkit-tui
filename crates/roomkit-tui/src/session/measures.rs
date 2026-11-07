@@ -20,6 +20,7 @@ impl Session {
             snapshot.usage = None;
         }
         self.previous_context = None;
+        self.context_exceeded = false;
     }
 
     fn measures_current_model(
@@ -72,6 +73,14 @@ impl Session {
             && let Some(snapshot) = &mut self.snapshot
         {
             snapshot.context = Some(usage);
+        }
+    }
+
+    /// A refusal past the context window, kept only for the latest run,
+    /// like its measurements.
+    pub(super) fn on_context_exceeded(&mut self, conversation: &ConversationId, run: &RunId) {
+        if self.is_current(conversation) && self.last_run.as_ref() == Some(run) {
+            self.context_exceeded = true;
         }
     }
 

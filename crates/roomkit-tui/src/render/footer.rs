@@ -185,16 +185,26 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
         };
     }
     let mut settings = std::mem::take(&mut parts);
+    let refused = session.context_exceeded();
     let context = session.displayed_context().map_or_else(
-        || "context ?".into(),
+        || {
+            if refused {
+                "context refused"
+            } else {
+                "context ?"
+            }
+            .into()
+        },
         |(usage, previous)| {
             let estimate = if usage.estimated { "~" } else { "" };
             // Put freshness before the numbers so clipping a narrow footer
-            // cannot make an earlier report look like a current measurement.
-            let label = if previous {
-                "context (last report)"
-            } else {
-                "context"
+            // cannot make an earlier report look like a current measurement,
+            // nor hide that the latest request was refused.
+            let label = match (refused, previous) {
+                (true, true) => "context refused (last report)",
+                (true, false) => "context refused",
+                (false, true) => "context (last report)",
+                (false, false) => "context",
             };
             match usage.percent() {
                 Some(percent) => format!(

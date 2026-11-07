@@ -10,9 +10,12 @@ pub struct Diagnostic {
     pub summary: &'static str,
 }
 
-/// Known failures, most specific first: any listed fragment of the
-/// lowercase error selects the entry.
-const KNOWN: &[(&[&str], &str, &str)] = &[
+/// Failures known by fragments: any listed fragment of the lowercase error
+/// selects the entry.
+type Known = &'static [(&'static [&'static str], &'static str, &'static str)];
+
+/// Known failures read before a context refusal, most specific first.
+const KNOWN: Known = &[
     (
         &["responses api only", "takes no function tools"],
         "provider_model_refused",
@@ -82,11 +85,19 @@ const KNOWN: &[(&[&str], &str, &str)] = &[
         "provider_quota",
         "Provider rate limit or quota reached. Check your quota and retry later.",
     ),
-    (
-        &["context_length", "context window", "maximum context"],
-        "context_limit",
-        "The model's context limit was exceeded. Start a new session or use a model with more capacity.",
-    ),
+];
+
+/// A refusal past the model's context window: read after access and quota
+/// failures, and before the generic rejection it usually comes with. Tools
+/// often fill the window more than the conversation, so a new conversation
+/// is not the only remedy.
+const CONTEXT_LIMIT: (&str, &str) = (
+    "context_limit",
+    "The request exceeds the model's context limit. Disconnect tools, compact the conversation or start a new one, or use a model with more capacity.",
+);
+
+/// Known failures read after a context refusal, most specific first.
+const AFTER_CONTEXT: Known = &[
     (
         &["http 400", "http 422"],
         "provider_request_rejected",
@@ -123,18 +134,34 @@ impl Diagnostic {
     /// Classify an engine error without copying arbitrary upstream text.
     pub fn classify(error: &str) -> Self {
         let lower = error.to_ascii_lowercase();
-        let (code, summary) = KNOWN
-            .iter()
-            .find(|(fragments, ..)| fragments.iter().any(|f| lower.contains(f)))
-            .map_or(
-                (
-                    "engine_failed",
-                    "Engine execution failed. Check the host diagnostics; completed tool actions may remain.",
-                ),
-                |(_, code, summary)| (*code, *summary),
-            );
+        let known = |table: Known| {
+            table
+                .iter()
+                .find(|(fragments, ..)| fragments.iter().any(|f| lower.contains(f)))
+                .map(|(_, code, summary)| (*code, *summary))
+        };
+        let (code, summary) = known(KNOWN)
+            .or_else(|| reads_as_context_overflow(&lower).then_some(CONTEXT_LIMIT))
+            .or_else(|| known(AFTER_CONTEXT))
+            .unwrap_or((
+                "engine_failed",
+                "Engine execution failed. Check the host diagnostics; completed tool actions may remain.",
+            ));
         Self { code, summary }
     }
+
+    /// Whether the provider refused the request as past the model's context
+    /// window.
+    pub(crate) fn exceeds_context(&self) -> bool {
+        self.code == CONTEXT_LIMIT.0
+    }
+}
+
+/// Whether `lower` is a refusal past the model's context window as the kit
+/// reads one, or the kit's own failure when its compaction cannot make room
+/// ("Context too large but …").
+fn reads_as_context_overflow(lower: &str) -> bool {
+    lower.contains("context too large") || roomkit_ai::is_context_overflow_message(lower)
 }
 
 pub(crate) fn explain(error: &str) -> &'static str {
@@ -188,5 +215,27 @@ mod tests {
             assert!(rendered.contains(expected));
             assert!(!rendered.contains("secret") && !rendered.contains("private.invalid"));
         }
+    }
+
+    /// The kit's own failure when compaction cannot make room, and the
+    /// wordings it reads as a context refusal, name the context limit, with
+    /// the tools among the remedies.
+    #[test]
+    fn a_context_refusal_reads_as_the_kit_reads_it() {
+        for raw in [
+            "Context too large but cannot compact further (<=4 messages)",
+            "Context too large but nothing left to compact before the turn's input",
+            "the provider answered HTTP 400: prompt is too long: 210000 tokens > 200000 maximum",
+            "the provider answered HTTP 400: This model's maximum context length is 131072 tokens",
+        ] {
+            let diagnostic = super::Diagnostic::classify(raw);
+            assert!(diagnostic.exceeds_context(), "{raw}");
+            assert!(diagnostic.summary.contains("Disconnect tools"));
+            assert!(!diagnostic.summary.contains("Start a new session"));
+        }
+        // A rate limit on tokens per minute stays a quota, worth a later retry.
+        let limit =
+            "the provider answered HTTP 429: Request too large for gpt-4o on tokens per min";
+        assert_eq!(super::Diagnostic::classify(limit).code, "provider_quota");
     }
 }

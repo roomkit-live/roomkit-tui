@@ -336,6 +336,9 @@ long model names do not hide them. Context is the host's last measurement;
 missing capacity or counters stay unknown, and estimated values show `~`.
 While awaiting a new measurement, the footer retains the previous context with
 a `last report` label, and clears it when the model or conversation changes.
+When the host reports the latest request refused past the model's context
+window (`Event::ContextExceeded`), the sidebar shows `Refused: over capacity`
+above that measurement and the footer `context refused`, until the next run.
 These indicators do not implement compaction or account for the next unsent
 message.
 

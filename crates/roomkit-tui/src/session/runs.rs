@@ -168,6 +168,7 @@ impl Session {
 
     /// Usage and context describe the latest run.
     fn measure_latest_run(&mut self) {
+        self.context_exceeded = false;
         if let Some(snapshot) = &mut self.snapshot {
             if let Some(previous) = snapshot.context.take() {
                 self.previous_context = Some(previous);

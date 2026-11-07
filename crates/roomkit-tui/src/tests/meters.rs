@@ -337,3 +337,54 @@ fn a_breakdown_in_the_sidebar_replaces_the_footer_context() {
         footer(&s)
     );
 }
+
+fn exceeded(run: &str) -> Event {
+    Event::ContextExceeded {
+        conversation: "room-a".into(),
+        run: run.into(),
+    }
+}
+
+/// A request refused past the window: the sidebar says so above the last
+/// measurement, which it shows as an earlier report, until the next run.
+#[test]
+fn a_refused_request_marks_the_last_measurement_until_the_next_run() {
+    let mut s = session();
+    s.apply(sidebar(breakdown(fixed_parts())));
+    started(&mut s, "run-1");
+    s.apply(measure("run-1", 12_544));
+    started(&mut s, "run-2");
+    s.apply(exceeded("run-2"));
+    let rows = side(&s);
+    let refused = rows
+        .iter()
+        .position(|r| r == "Refused: over capacity")
+        .unwrap_or_else(|| unreachable!("No refusal: {rows:#?}"));
+    assert_eq!(
+        rows.get(refused + 1).map(String::as_str),
+        Some("Last report")
+    );
+    assert!(rows.iter().any(|r| r == "12544 / 131072 tokens"));
+    started(&mut s, "run-3");
+    assert!(!side(&s).iter().any(|r| r == "Refused: over capacity"));
+    s.apply(exceeded("run-2"));
+    assert!(
+        !side(&s).iter().any(|r| r == "Refused: over capacity"),
+        "an earlier run's refusal is not the latest run's"
+    );
+}
+
+/// The very first request refused: no measurement will come to wait for.
+#[test]
+fn a_refusal_before_any_measurement_replaces_the_wait() {
+    let mut s = session();
+    s.apply(sidebar(breakdown(fixed_parts())));
+    started(&mut s, "run-1");
+    s.apply(exceeded("run-1"));
+    let rows = side(&s);
+    assert!(rows.iter().any(|r| r == "Refused: over capacity"));
+    assert!(
+        !rows.iter().any(|r| r == "Awaiting usage report"),
+        "{rows:#?}"
+    );
+}

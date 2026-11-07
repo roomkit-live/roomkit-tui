@@ -245,6 +245,15 @@ pub enum Event {
         /// Context measurement.
         usage: ContextUsage,
     },
+    /// The provider refused a request of this execution as past the model's
+    /// context window, and compaction could not make room. No measurement
+    /// comes with it: the last one shown predates the refusal.
+    ContextExceeded {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// Execution whose request was refused.
+        run: RunId,
+    },
     /// Replace measurements for one execution and its actual model.
     UsageUpdated {
         /// Target conversation.

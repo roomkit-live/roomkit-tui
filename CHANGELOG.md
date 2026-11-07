@@ -55,6 +55,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A request refused past the model's context window says so. The kit's own
+  failure when its compaction cannot make room, `Context too large but …`, read
+  as `Engine execution failed`: it now reads as `context_limit`, as does every
+  wording `roomkit_ai::is_context_overflow_message` reads as a refusal, such as
+  `prompt is too long`. The notice no longer sends the person to a new session
+  only: `Disconnect tools, compact the conversation or start a new one, or use a
+  model with more capacity.` The engine also sends `Event::ContextExceeded` with
+  the refused run, and the view shows `Refused: over capacity` above the last
+  measurement in the sidebar, `context refused (last report)` in the footer,
+  until the next run or a model change. Before, the gauge kept an earlier
+  measurement, such as 9.6% used, beside the refusal.
 - A prompt's cache writes count in the turn's input and in the context
   (RMK-1457). Since roomkit-rs f86cbb1 a Chat Completions usage reports them
   apart from `input_tokens`, as `cache_creation_input_tokens`: a prompt of 10,000

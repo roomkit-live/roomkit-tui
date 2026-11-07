@@ -9,7 +9,7 @@ use roomkit_tui_protocol::limits::{
     MAX_IMAGE_BASE64_BYTES, MAX_IMAGE_NAME_BYTES, MAX_IMAGE_PIXELS, MAX_IMAGES, MAX_TEXT_BYTES,
 };
 use roomkit_tui_protocol::{
-    Command, Event, ImageMessage, OperationId, Rejection, Request, RunOutcome,
+    Command, Event, ImageMessage, OperationId, Rejection, Request, RunId, RunOutcome,
 };
 
 use super::buffered::Buffered;
@@ -253,13 +253,14 @@ impl<S: ConversationStore> Turn<S> {
         let buffered = Buffered::start(&self.channel, &room, announced);
         let mut failure = None;
         let mut interrupted = false;
-        if let (Some(delivery), Some(run)) = (admitted.delivery.clone(), run) {
+        if let (Some(delivery), Some(waiting)) = (admitted.delivery.clone(), run.clone()) {
             let waited =
-                cancellation::wait(delivery, run, &room, &self.channel, &mut self.controls).await;
+                cancellation::wait(delivery, waiting, &room, &self.channel, &mut self.controls)
+                    .await;
             interrupted = waited.1;
             match waited.0 {
                 Ok(done) => admitted = done,
-                Err(error) => failure = Some(crate::diagnostics::explain(&error.to_string())),
+                Err(error) => failure = Some(self.failed(run.as_ref(), &error.to_string())),
             }
         }
         let cancelled = admitted.cancellation_reason.as_deref();
@@ -269,7 +270,7 @@ impl<S: ConversationStore> Turn<S> {
             RunOutcome::Completed
         };
         if let Some(error) = &admitted.error {
-            failure = Some(crate::diagnostics::explain(&error.message));
+            failure = Some(self.failed(run.as_ref(), &error.message));
         } else if admitted.blocked {
             failure =
                 Some("The engine blocked this message. Check the room state and host policy.");
@@ -288,6 +289,24 @@ impl<S: ConversationStore> Turn<S> {
             failure,
             blocked: admitted.blocked,
         }
+    }
+
+    /// Explain `error`. A refusal past the model's context window is also
+    /// told with its `run`, before the run ends; a streamed run tells it from
+    /// its stream.
+    fn failed(&self, run: Option<&RunId>, error: &str) -> &'static str {
+        let diagnostic = crate::diagnostics::Diagnostic::classify(error);
+        if diagnostic.exceeds_context()
+            && !self.channel.streams()
+            && let Some(run) = run
+        {
+            let room = self.config.conversation();
+            let conversation = room.into();
+            let run = run.clone();
+            self.channel
+                .publish(room, Event::ContextExceeded { conversation, run });
+        }
+        diagnostic.summary
     }
 }
 

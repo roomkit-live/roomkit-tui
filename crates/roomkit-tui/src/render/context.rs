@@ -82,12 +82,20 @@ fn breakdown_parts<'a>(
     rows
 }
 
-/// Freshness and `tokens / capacity` of the displayed measurement.
+/// Freshness and `tokens / capacity` of the displayed measurement, after a
+/// refusal past the context window when the latest request had one: that
+/// request has no measurement to wait for.
 fn measurement(session: &Session) -> Vec<Line> {
-    let Some((usage, previous)) = session.displayed_context() else {
-        return vec![line("Awaiting usage report", Tone::Muted)];
-    };
     let mut lines = Vec::new();
+    if session.context_exceeded() {
+        lines.push(line("Refused: over capacity", Tone::Warning));
+    }
+    let Some((usage, previous)) = session.displayed_context() else {
+        if lines.is_empty() {
+            lines.push(line("Awaiting usage report", Tone::Muted));
+        }
+        return lines;
+    };
     if previous {
         lines.push(line("Last report", Tone::Muted));
     }

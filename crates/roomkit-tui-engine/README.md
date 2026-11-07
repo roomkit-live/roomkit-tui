@@ -201,7 +201,10 @@ pinned revision from `roomkit-rs/main`; no adjacent checkout is required.
 
 Each `StreamItem::Usage` becomes an `Event::ContextUpdated` for the running turn.
 A stopped turn keeps what its generations told: its record reaches the view as
-`Event::UsageUpdated`, and a later restore reads it again.
+`Event::UsageUpdated`, and a later restore reads it again. A run whose request
+the provider refused past the model's context window, which the kit's
+compaction could not fix, sends `Event::ContextExceeded` before it ends, with
+its `context_limit` notice: no measurement of that request comes.
 
 `SessionConfig.context_capacity` is the host-confirmed capacity of its configured
 model. With matching `ai_model`/`ai_provider` metadata, `ai_last_usage` supplies

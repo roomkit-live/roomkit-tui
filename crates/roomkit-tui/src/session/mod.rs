@@ -120,6 +120,8 @@ pub struct Session {
     /// The head permission's card and when a frame first showed it.
     pub(crate) approval_drawn: Option<(PermissionId, Duration)>,
     previous_context: Option<ContextUsage>,
+    /// The latest run's request was refused past the model's context window.
+    context_exceeded: bool,
     limits: Limits,
     next_request: u64,
     pending: BTreeMap<RequestId, Command>,
@@ -184,6 +186,7 @@ impl Session {
             permission_choice: 0,
             approval_drawn: None,
             previous_context: None,
+            context_exceeded: false,
             limits,
             next_request: 0,
             pending: BTreeMap::new(),
