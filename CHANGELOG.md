@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `ToolRenderer::activity`: a call without a public intention reads, on the
+  activity line, as its renderer says from its arguments (`Read src/main.rs`),
+  and as its tool's name only when the renderer says nothing.
 - The turn's prompt cache and the conversation's cost (RMK-1461).
   `TokenUsage::cache_write_input_tokens` counts what a turn wrote to the cache.
   `SessionConfig::pricing` takes the configured model's list price, the kit's

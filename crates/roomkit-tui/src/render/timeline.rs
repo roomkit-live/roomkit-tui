@@ -169,7 +169,7 @@ fn render(view: &View<'_>, snapshot: &Snapshot, segment: &Segment<'_>, cols: usi
 
 fn group_block(view: &View<'_>, snapshot: &Snapshot, group: &Group<'_>, cols: usize) -> Block {
     let focused = group.focused(view.session);
-    let row = group.render(cols, view.options, view.elapsed, focused);
+    let row = group.render(cols, view.options, view.renderers, view.elapsed, focused);
     let mut block = Block::default();
     if view.options.selection == crate::SelectionMode::CopyOnSelect {
         block

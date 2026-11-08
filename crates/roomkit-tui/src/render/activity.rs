@@ -6,7 +6,7 @@ use roomkit_tui_protocol::{ActorId, ConversationId, Item, RunId, ToolCall, ToolS
 use unicode_width::UnicodeWidthStr;
 
 use super::text::fit;
-use super::{Line, Tone, ToolTarget, span, spinner};
+use super::{Line, Renderers, Tone, ToolTarget, span, spinner};
 use crate::{Session, UiOptions};
 
 pub(super) struct Group<'a> {
@@ -73,6 +73,7 @@ impl<'a> Group<'a> {
         &self,
         cols: usize,
         options: &UiOptions,
+        renderers: &Renderers,
         elapsed: Duration,
         focused: bool,
     ) -> Line {
@@ -110,14 +111,8 @@ impl<'a> Group<'a> {
         let hint = if cols >= 48 { " · F2 details" } else { "" };
         // Reserve the outcome before clipping the public label on small screens.
         let status = fit(&status, cols.saturating_sub(6));
-        let current = self.current();
-        let label = current
-            .intent
-            .as_deref()
-            .filter(|text| !text.trim().is_empty())
-            .unwrap_or(&current.name);
         let label = fit(
-            label,
+            &self.label(renderers),
             cols.saturating_sub(6 + status.width() + hint.width()),
         );
         vec![
@@ -136,6 +131,19 @@ impl<'a> Group<'a> {
         ]
     }
 
+    /// What the row says of its current call: its intention, what its
+    /// renderer reads from its arguments, or its tool's name.
+    fn label(&self, renderers: &Renderers) -> String {
+        let said = |text: &String| !text.trim().is_empty();
+        let current = self.current();
+        current
+            .intent
+            .clone()
+            .filter(said)
+            .or_else(|| renderers.activity(current).filter(said))
+            .unwrap_or_else(|| current.name.clone())
+    }
+
     pub fn target(&self, conversation: &ConversationId, row: usize, line: &Line) -> ToolTarget {
         ToolTarget {
             conversation: conversation.clone(),
@@ -146,5 +154,80 @@ impl<'a> Group<'a> {
             run: self.run.clone(),
             call: self.current().id.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "a broken fixture must fail the test")]
+mod tests {
+    use roomkit_tui_protocol::{ActorId, Item, RunId, ToolCall, ToolState};
+    use serde_json::json;
+
+    use super::*;
+    use crate::render::ToolRenderer;
+
+    struct Reading;
+
+    impl ToolRenderer for Reading {
+        fn render(&self, _call: &ToolCall) -> Vec<String> {
+            Vec::new()
+        }
+
+        fn activity(&self, call: &ToolCall) -> Option<String> {
+            call.arguments["path"]
+                .as_str()
+                .map(|path| format!("Read {path}"))
+        }
+    }
+
+    struct Blank;
+
+    impl ToolRenderer for Blank {
+        fn render(&self, _call: &ToolCall) -> Vec<String> {
+            Vec::new()
+        }
+
+        fn activity(&self, _call: &ToolCall) -> Option<String> {
+            Some("   ".to_owned())
+        }
+    }
+
+    fn row(call: ToolCall, renderers: &Renderers) -> String {
+        let items = [Item::Tool {
+            actor: ActorId::from("agent"),
+            run: RunId::from("run"),
+            call,
+        }];
+        let group = Group::from_items(&items).unwrap();
+        let line = group.render(100, &UiOptions::default(), renderers, Duration::ZERO, false);
+        line.iter().map(|part| part.text.as_str()).collect()
+    }
+
+    #[test]
+    fn a_call_reads_as_its_intention_then_its_renderer_then_its_name() {
+        let mut renderers = Renderers::default();
+        renderers.register("read", Reading);
+        let read = || {
+            ToolCall::new(
+                "c1",
+                "read",
+                json!({ "path": "src/main.rs" }),
+                ToolState::Running,
+            )
+        };
+
+        assert!(row(read(), &renderers).contains("Read src/main.rs"));
+        let intended = read().with_intent("Je lis le point d'entrée");
+        assert!(row(intended, &renderers).contains("Je lis le point d'entrée"));
+        let plain = ToolCall::new(
+            "c2",
+            "shell",
+            json!({ "command": "ls" }),
+            ToolState::Running,
+        );
+        assert!(row(plain, &renderers).contains("shell"));
+        let blank = ToolCall::new("c3", "read", json!({ "path": " " }), ToolState::Running);
+        renderers.register("read", Blank);
+        assert!(row(blank, &renderers).contains("read"));
     }
 }

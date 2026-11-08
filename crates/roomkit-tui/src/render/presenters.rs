@@ -42,6 +42,12 @@ pub trait ToolRenderer: Send + Sync {
     fn has_expanded_details(&self, call: &ToolCall) -> bool {
         self.render_styled(call, false) != self.render_styled(call, true)
     }
+    /// The call in a few words, read from its arguments, for the activity line
+    /// of a call that carries no public intention. `None` or a blank text shows
+    /// the tool's name. Called on each frame, uncached: keep it cheap.
+    fn activity(&self, _call: &ToolCall) -> Option<String> {
+        None
+    }
 }
 
 /// Optional presentations keyed by tool name. Unknown tools use generic output.
@@ -68,6 +74,11 @@ impl Renderers {
             .tool_cache
             .get_mut()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = tool_cache::Cache::default();
+    }
+
+    /// What the activity line shows of a call without a public intention.
+    pub(super) fn activity(&self, call: &ToolCall) -> Option<String> {
+        self.tools.get(&call.name)?.activity(call)
     }
 
     pub(super) fn tool_details(

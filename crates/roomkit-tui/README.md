@@ -80,7 +80,8 @@ one updating public intention and current tool preview per actor/run sequence.
 Messages, approval receipts and reasoning blocks separate sequences. F2 or a click
 reveals the technical timeline, reasoning included; F2 returns to the compact view. This changes presentation
 only: calls and outcomes remain available, including failures and unfinished
-parallel work. Without an intention, the current tool's actual name is shown.
+parallel work. Without an intention, the line reads what the tool's renderer
+says from the call's arguments (`ToolRenderer::activity`), or else the tool's name.
 The default keeps individual cards.
 
 ## Runs and timing
