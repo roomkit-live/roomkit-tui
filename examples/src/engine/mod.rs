@@ -164,6 +164,7 @@ async fn assemble(
         description: "Read a fictional record by reference".to_owned(),
         parameters: schema,
         tags: Vec::new(),
+        changes_state: false,
     };
     let handler = ToolHandler::new(move |_, arguments| {
         calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

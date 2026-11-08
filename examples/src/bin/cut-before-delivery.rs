@@ -84,6 +84,7 @@ fn agent(id: ChannelId) -> Result<AiChannel<ScriptedProvider>, Failure> {
         description: "Read a record".to_owned(),
         parameters: json!({"type":"object"}),
         tags: Vec::new(),
+        changes_state: false,
     };
     let options = AiChannelOptions {
         tools: vec![ToolEntry::Definition(lookup)],
