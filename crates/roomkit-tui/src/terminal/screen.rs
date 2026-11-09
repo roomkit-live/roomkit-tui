@@ -189,6 +189,12 @@ fn appearance(tone: Tone, theme: &crate::Theme, colors: bool) -> style::ContentS
 fn foreground(tone: Tone, theme: &crate::Theme) -> crate::Color {
     match tone {
         Tone::Primary => theme.primary,
+        // A theme of the terminal's own colors stays so.
+        Tone::Mark(crate::Color::Rgb { .. })
+            if !matches!(theme.primary, crate::Color::Rgb { .. }) =>
+        {
+            theme.primary
+        }
         Tone::Mark(color) => color,
         Tone::Accent | Tone::InputPrompt => theme.accent,
         Tone::Muted | Tone::Placeholder => theme.muted,
@@ -270,6 +276,16 @@ impl Drop for Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_true_color_mark_follows_a_theme_of_the_terminal_s_own_colors() {
+        let mark = crate::Color::rgb(99, 102, 241);
+        let terminal = crate::Theme::terminal();
+        assert_eq!(foreground(Tone::Mark(mark), &terminal), terminal.primary);
+        assert_eq!(foreground(Tone::Mark(mark), &crate::Theme::dark()), mark);
+        let named = crate::Color::Magenta;
+        assert_eq!(foreground(Tone::Mark(named), &terminal), named);
+    }
 
     #[test]
     fn meter_slots_take_the_theme_series_and_vanish_without_colors() {

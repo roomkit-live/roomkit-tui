@@ -356,3 +356,54 @@ fn a_logo_of_colored_pieces_keeps_its_colors() {
         .with_logo(vec!["AB".into()]);
     assert!(plain.logo_tiles.is_empty());
 }
+
+/// A frame's first row, with `branding` in its header.
+fn header_row(branding: crate::Branding) -> String {
+    let options = crate::UiOptions {
+        branding,
+        welcome: None,
+        ..crate::UiOptions::default()
+    };
+    let session_on = session();
+    let frame = render::screen_with_options(
+        &session_on,
+        140,
+        40,
+        &Renderers::default(),
+        &options,
+        std::time::Duration::ZERO,
+    );
+    frame.lines[0].clone()
+}
+
+#[test]
+fn colored_pieces_stay_within_the_width_a_plain_logo_gets() {
+    use crate::{Branding, LogoTile};
+    let color = crate::Color::rgb(1, 2, 3);
+    let (left, right) = ("A".repeat(10), "B".repeat(10));
+    let tiles = Branding::new("Code").with_logo_tiles(vec![vec![
+        LogoTile::colored(left.clone(), color),
+        LogoTile::gap("  "),
+        LogoTile::colored(right.clone(), color),
+    ]]);
+    let plain = Branding::new("Code").with_logo(vec![format!("{left}  {right}")]);
+
+    assert_eq!(header_row(tiles), header_row(plain));
+}
+
+#[test]
+fn a_logo_written_after_its_pieces_is_the_one_drawn() {
+    use crate::{Branding, LogoTile};
+    let color = crate::Color::rgb(1, 2, 3);
+    let mut branding = Branding::new("Code").with_logo_tiles(vec![vec![
+        LogoTile::colored("AA", color),
+        LogoTile::gap(" "),
+        LogoTile::colored("BB", color),
+    ]]);
+    branding.logo = vec!["XYZWV".into()];
+
+    let row = header_row(branding);
+
+    assert!(row.contains("XYZWV"), "{row:?}");
+    assert!(!row.contains("AA"), "{row:?}");
+}

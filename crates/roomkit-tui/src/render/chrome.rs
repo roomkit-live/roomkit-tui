@@ -7,23 +7,22 @@ use unicode_width::UnicodeWidthStr;
 use super::text::{fit, format_duration, pad};
 use super::{BackToBottomTarget, Line, Tone, View, frame, line, span, spinner};
 use crate::LogoTile;
-/// A logo's row, `width` columns wide: its colored pieces when it has some,
-/// else its text in the branding tone.
+/// A logo's row, `width` columns wide: its colored pieces when they spell
+/// `text`, else `text` in the branding tone.
 pub(super) fn logo_row(text: &str, tiles: Option<&Vec<LogoTile>>, width: usize) -> Line {
-    let Some(tiles) = tiles else {
+    let spelled =
+        |tiles: &&Vec<LogoTile>| tiles.iter().map(|t| t.text.as_str()).collect::<String>() == text;
+    let Some(tiles) = tiles.filter(spelled) else {
         return vec![span(pad(text, width), Tone::Primary)];
     };
-    let mut row: Line = tiles
-        .iter()
-        .map(|tile| {
-            span(
-                fit(&tile.text, width),
-                tile.color.map_or(Tone::Text, Tone::Mark),
-            )
-        })
-        .collect();
-    let used: usize = row.iter().map(|piece| piece.text.width()).sum();
-    row.push(span(" ".repeat(width.saturating_sub(used)), Tone::Text));
+    let mut left = width;
+    let mut row = Line::with_capacity(tiles.len() + 1);
+    for tile in tiles {
+        let piece = fit(&tile.text, left);
+        left = left.saturating_sub(piece.width());
+        row.push(span(piece, tile.color.map_or(Tone::Text, Tone::Mark)));
+    }
+    row.push(span(" ".repeat(left), Tone::Text));
     row
 }
 
