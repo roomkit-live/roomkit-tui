@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A conversation's total with the work related to it (RMK-1536).
+  `Event::RelatedCostUpdated` states what the tasks its agents handed over
+  cost; the footer and the sidebar then show the total beside the
+  conversation's own cost, partial when something has no price.
 - `ToolRenderer::activity`: a call without a public intention reads, on the
   activity line, as its renderer says from its arguments (`Read src/main.rs`),
   and as its tool's name only when the renderer says nothing.

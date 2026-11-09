@@ -270,6 +270,33 @@ impl Session {
         self.snapshot.as_ref()?.cost.as_ref()
     }
 
+    /// The conversation's cost with what the work related to it cost, once
+    /// the host states any. What cannot be added, the conversation having no
+    /// price or another currency, leaves the total partial.
+    pub fn total_cost(&self) -> Option<ConversationCost> {
+        let snapshot = self.snapshot.as_ref()?;
+        let related = snapshot.related_cost.as_ref()?;
+        let Some(own) = &snapshot.cost else {
+            return Some(ConversationCost::new(
+                related.micros,
+                related.currency.clone(),
+                false,
+            ));
+        };
+        let same = own.currency == related.currency;
+        let micros = if same {
+            own.micros.saturating_add(related.micros)
+        } else {
+            own.micros
+        };
+        let complete = same && own.complete && related.complete;
+        Some(ConversationCost::new(
+            micros,
+            own.currency.clone(),
+            complete,
+        ))
+    }
+
     /// The current bounded, user-visible diagnostic; empty when there is none.
     pub fn notice(&self) -> &str {
         &self.notice

@@ -277,6 +277,15 @@ pub enum Event {
         /// The whole conversation's cost so far.
         cost: ConversationCost,
     },
+    /// Replace what the work related to the conversation cost at its list
+    /// price, beside its own cost: the tasks its agents handed over. A client
+    /// shows the two together as a total.
+    RelatedCostUpdated {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// What the related work cost so far; `None` when there is none.
+        cost: Option<ConversationCost>,
+    },
     /// The host handed a message to a run already under way, which reads it
     /// at its next step instead of starting a turn of its own. Told as the
     /// message is committed, before its delivery reaches the run: should the

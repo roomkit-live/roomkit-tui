@@ -186,6 +186,10 @@ fn every_event_round_trips() {
             conversation: room.clone(),
             cost: ConversationCost::new(2_870, "USD", false),
         },
+        Event::RelatedCostUpdated {
+            conversation: room.clone(),
+            cost: Some(ConversationCost::new(880_000, "USD", true)),
+        },
         Event::ContextExceeded {
             conversation: room.clone(),
             run: "run".into(),

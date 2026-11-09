@@ -239,6 +239,13 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
             Tone::Muted,
         ));
     }
+    if let Some(total) = session.total_cost() {
+        let partial = if total.complete { "" } else { " (partial)" };
+        parts.push(span(
+            format!(" · total {}{partial}", super::context::amount(&total)),
+            Tone::Muted,
+        ));
+    }
     let combined_width: usize = settings
         .iter()
         .chain(&parts)

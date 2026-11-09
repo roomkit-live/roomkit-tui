@@ -248,6 +248,80 @@ fn the_cache_and_the_conversation_s_cost_show_and_outlive_a_new_execution() {
     assert!(!draw(&mut session, 230).contains('≈'));
 }
 
+fn related(conversation: &str, cost: Option<ConversationCost>) -> Event {
+    Event::RelatedCostUpdated {
+        conversation: conversation.into(),
+        cost,
+    }
+}
+
+/// The conversation's own cost and its total with the tasks its agents handed
+/// over are two figures; there is no total before a task cost anything.
+#[test]
+fn the_total_adds_what_the_related_work_cost_to_the_conversation() {
+    let mut session = session();
+    session.apply(Event::SidebarChanged {
+        conversation: "room-a".into(),
+        sidebar: Some(sidebar_spec()),
+    });
+    session.apply(Event::CostUpdated {
+        conversation: "room-a".into(),
+        cost: ConversationCost::new(420_000, "USD", true),
+    });
+    let draw = |session: &mut Session, width| {
+        session.sidebar_visible = Some(width != 230);
+        render::screen(session, width, 30, &Renderers::default())
+            .lines
+            .join("\n")
+    };
+    assert!(!draw(&mut session, 230).contains("total"));
+    assert!(!draw(&mut session, 140).contains("Total:"));
+
+    let usd = |micros, complete| Some(ConversationCost::new(micros, "USD", complete));
+    session.apply(related("room-a", usd(880_000, true)));
+    assert!(draw(&mut session, 230).contains("≈ $0.42 · total ≈ $1.30"));
+    let sidebar = draw(&mut session, 140);
+    assert!(sidebar.contains("Conversation: ≈ $0.42"));
+    assert!(sidebar.contains("Total: ≈ $1.30"));
+    assert!(!sidebar.contains("Some turns have no price"));
+
+    // A task with no price leaves the total partial, not the conversation.
+    session.apply(related("room-a", usd(880_000, false)));
+    assert!(draw(&mut session, 230).contains("≈ $0.42 · total ≈ $1.30 (partial)"));
+    assert!(draw(&mut session, 140).contains("Some turns have no price"));
+
+    // Another currency is not added: what the total lacks reads partial.
+    session.apply(related(
+        "room-a",
+        Some(ConversationCost::new(880_000, "EUR", true)),
+    ));
+    assert!(draw(&mut session, 230).contains("total ≈ $0.42 (partial)"));
+
+    // Another conversation's figure is not this one's.
+    session.apply(related("room-b", usd(1, true)));
+    assert_eq!(session.total_cost().unwrap().currency, "USD");
+    assert_eq!(session.total_cost().unwrap().micros, 420_000);
+
+    session.apply(related("room-a", None));
+    assert!(session.total_cost().is_none());
+    session.apply(related("room-a", usd(880_000, true)));
+    session.apply(Event::Snapshot(snapshot()));
+    assert!(session.total_cost().is_none());
+}
+
+/// A conversation whose own model has no price still shows what its tasks
+/// cost, as a total that cannot be whole.
+#[test]
+fn a_conversation_with_no_price_totals_its_related_work_as_partial() {
+    let mut session = session();
+    session.apply(related(
+        "room-a",
+        Some(ConversationCost::new(880_000, "USD", true)),
+    ));
+    let total = session.total_cost().unwrap();
+    assert_eq!((total.micros, total.complete), (880_000, false));
+}
+
 /// A refused request names itself before the numbers, so clipping a narrow
 /// footer cannot hide it, and a model change clears it.
 #[test]

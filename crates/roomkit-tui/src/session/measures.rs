@@ -95,4 +95,22 @@ impl Session {
             snapshot.cost = Some(cost);
         }
     }
+
+    /// What the work related to the conversation cost, which the next total
+    /// adds to its own.
+    pub(super) fn on_related_cost(
+        &mut self,
+        conversation: &ConversationId,
+        mut cost: Option<ConversationCost>,
+    ) {
+        if !self.is_current(conversation) {
+            return;
+        }
+        if let Some(cost) = &mut cost {
+            bound_in_place(&mut cost.currency, MAX_LABEL_BYTES);
+        }
+        if let Some(snapshot) = &mut self.snapshot {
+            snapshot.related_cost = cost;
+        }
+    }
 }

@@ -166,13 +166,18 @@ fn turn_usage(session: &Session) -> Vec<Line> {
 }
 
 /// The conversation's cost at its model's list price, when the host states
-/// one, and whether a turn of it has none.
+/// one, its total with the work related to it, and whether a turn of either
+/// has no price.
 fn conversation_cost(session: &Session) -> Vec<Line> {
-    let Some(cost) = session.cost() else {
-        return Vec::new();
-    };
-    let mut lines = vec![line(format!("Conversation: {}", amount(cost)), Tone::Muted)];
-    if !cost.complete {
+    let (cost, total) = (session.cost(), session.total_cost());
+    let mut lines = Vec::new();
+    if let Some(cost) = cost {
+        lines.push(line(format!("Conversation: {}", amount(cost)), Tone::Muted));
+    }
+    if let Some(total) = &total {
+        lines.push(line(format!("Total: {}", amount(total)), Tone::Muted));
+    }
+    if cost.is_some_and(|cost| !cost.complete) || total.is_some_and(|total| !total.complete) {
         lines.push(line("Some turns have no price", Tone::Warning));
     }
     lines

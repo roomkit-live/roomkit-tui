@@ -193,6 +193,9 @@ impl Session {
                 self.on_context_exceeded(&conversation, &run);
             }
             Event::CostUpdated { conversation, cost } => self.on_cost(&conversation, cost),
+            Event::RelatedCostUpdated { conversation, cost } => {
+                self.on_related_cost(&conversation, cost);
+            }
             _ => {}
         }
     }

@@ -270,6 +270,12 @@ pub struct Snapshot {
     /// host states no price. Older hosts omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<ConversationCost>,
+    /// What the work related to the conversation cost, such as the tasks its
+    /// agents handed over; a host states it with
+    /// [`Event::RelatedCostUpdated`](crate::Event::RelatedCostUpdated). Older
+    /// hosts omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_cost: Option<ConversationCost>,
     /// Host commands available in this conversation.
     pub commands: Vec<CommandSpec>,
     /// Optional application-owned composer actions. Older hosts advertise none.
@@ -319,6 +325,7 @@ impl Snapshot {
             context: None,
             usage: None,
             cost: None,
+            related_cost: None,
             commands: Vec::new(),
             input_actions: Vec::new(),
             can_attach_images: false,
