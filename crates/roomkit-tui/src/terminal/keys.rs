@@ -93,21 +93,7 @@ pub(super) fn handle_key(
 /// to be read; navigation and interruption stay immediate.
 fn permission_key(session: &mut Session, client: &Client, key: KeyEvent, now: Duration) {
     if is_cancel(key) {
-        if session.permission_elsewhere().is_some() {
-            // A card from another room: refuses this action, stops nothing.
-            answer_card(session, client, Decision::Deny);
-            return;
-        }
-        // The card's run, which may be a later one than the view's own work.
-        if let Some(run) = session.permissions().first().map(|p| p.run.clone()) {
-            interrupt_run(session, client, run);
-        }
-        return;
-    }
-    if key.code == KeyCode::Char('o')
-        && let Some(command) = session.open_permission_room()
-    {
-        send(session, client, command, false);
+        cancel_card(session, client, now);
         return;
     }
     let Some(permission) = session.permissions().first() else {
@@ -116,9 +102,43 @@ fn permission_key(session: &mut Session, client: &Client, key: KeyEvent, now: Du
     if session.deciding(&permission.id) || key.kind == KeyEventKind::Repeat {
         return;
     }
+    let plain = !key
+        .modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+    if plain && key.code == KeyCode::Char('o') && session.approval_armed(now) {
+        if let Some(command) = session.open_permission_room() {
+            send(session, client, command, false);
+        }
+        return;
+    }
+    let decision = card_decision(session, key, plain);
+    if let Some(decision) = decision.filter(|_| session.approval_armed(now))
+        && let Some(command) = session.decide(decision)
+    {
+        send(session, client, command, false);
+    }
+}
+
+/// Esc or Ctrl+C on a card. Where stopping its run would stop more than this
+/// action, it refuses the action instead, once the card can have been read.
+fn cancel_card(session: &mut Session, client: &Client, now: Duration) {
+    if session.card_refuses_on_cancel() {
+        if session.approval_armed(now) {
+            answer_card(session, client, Decision::Deny);
+        }
+        return;
+    }
+    // The card's run, which may be a later one than the view's own work.
+    if let Some(run) = session.permissions().first().map(|p| p.run.clone()) {
+        interrupt_run(session, client, run);
+    }
+}
+
+/// What `key` answers on the card, moving the selection or its detail if it
+/// answers nothing.
+fn card_decision(session: &mut Session, key: KeyEvent, plain: bool) -> Option<Decision> {
     let control = key.modifiers.contains(KeyModifiers::CONTROL);
-    let plain = !control && !key.modifiers.contains(KeyModifiers::ALT);
-    let decision = match key.code {
+    match key.code {
         KeyCode::Enter if plain => Some(if session.permission_choice == 0 {
             Decision::Allow
         } else {
@@ -147,11 +167,6 @@ fn permission_key(session: &mut Session, client: &Client, key: KeyEvent, now: Du
             None
         }
         _ => None,
-    };
-    if let Some(decision) = decision.filter(|_| session.approval_armed(now))
-        && let Some(command) = session.decide(decision)
-    {
-        send(session, client, command, false);
     }
 }
 

@@ -176,6 +176,7 @@ impl View {
     fn ticking(&self) -> bool {
         !self.frozen()
             && (self.session.is_executing()
+                || self.session.permission_elsewhere().is_some()
                 || (self.terminal.options.animations && self.session.has_running_tool()))
     }
 
@@ -303,7 +304,10 @@ impl View {
             && (matches!(
                 key.code,
                 KeyCode::Enter | KeyCode::Tab | KeyCode::Up | KeyCode::Down
-            ) || ['y', 'n', 's'].into_iter().any(|c| keys::is_ctrl(key, c)))
+            ) || ['y', 'n', 's'].into_iter().any(|c| keys::is_ctrl(key, c))
+                || (self.session.card_refuses_on_cancel()
+                    && !self.session.permissions().is_empty()
+                    && matches!(key.code, KeyCode::Esc | KeyCode::Char('o'))))
         {
             return true;
         }

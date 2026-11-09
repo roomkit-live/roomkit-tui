@@ -5,7 +5,7 @@ use roomkit_tui_protocol::{Event, Rejection, Request, Snapshot};
 use tokio::sync::broadcast;
 
 use super::requests::Step;
-use super::serve::{Parked, Pending, View};
+use super::serve::{Parked, Pending, View, decides};
 use super::{AdapterError, CommandHandler, LocalSession, SessionConfig};
 use crate::cost::Costs;
 
@@ -18,7 +18,8 @@ fn queued_frames(frames: &mut Frames, target: &str) -> Vec<(String, Event)> {
     let mut kept = Vec::new();
     loop {
         match frames.try_recv() {
-            Ok((room, _)) if room == target => {}
+            // Decisions are the current view's too, and shown once by id.
+            Ok((room, event)) if room == target && !decides(&event) => {}
             Ok(frame) => kept.push(frame),
             Err(broadcast::error::TryRecvError::Lagged(_)) => {}
             Err(_) => return kept,

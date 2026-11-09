@@ -461,6 +461,8 @@ async fn a_view_answers_for_a_room_of_its_group_it_never_showed() {
     let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
     let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
     next(&client).await;
+    drop(elsewhere);
+    other_task.await.unwrap().unwrap();
     let (room, agent) = (RoomId::new("other").unwrap(), config().agent);
     let asker = channel.clone();
     let asked = tokio::spawn(async move {
@@ -482,15 +484,14 @@ async fn a_view_answers_for_a_room_of_its_group_it_never_showed() {
         .unwrap();
     assert_eq!(asked.await.unwrap(), Decision::Deny);
     open.send_replace(true);
-    drop((client, elsewhere));
+    drop(client);
     task.await.unwrap().unwrap();
-    other_task.await.unwrap().unwrap();
 }
 
 /// A conversation left for one of another group is not reachable from it:
-/// no card comes there.
+/// no card comes there, only a notice that it waits.
 #[tokio::test]
-async fn an_approval_outside_the_group_is_not_told() {
+async fn an_approval_outside_the_group_only_leaves_a_notice() {
     let kit = RoomKit::new(Default::default());
     let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
     let channel = prepare(&kit, provider, Arc::default(), false).await;
@@ -515,13 +516,14 @@ async fn an_approval_outside_the_group_is_not_told() {
             PermissionRequest::new("Allow it?", "d", Duration::from_secs(30)).with_group("room");
         asker.ask_permission(&room, &agent, request).await
     });
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    while let Ok(event) = client.try_recv() {
-        assert!(
-            !matches!(event, Event::PermissionRequested { .. }),
-            "{event:?}"
-        );
-    }
+    let notice = loop {
+        match next(&client).await {
+            Event::Notice { text, .. } => break text,
+            Event::PermissionRequested { .. } => panic!("A card crossed the group"),
+            _ => {}
+        }
+    };
+    assert!(notice.contains("/resume"), "{notice}");
     asked.abort();
     open.send_replace(true);
     drop(client);

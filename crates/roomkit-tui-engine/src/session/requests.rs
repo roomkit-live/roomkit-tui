@@ -124,6 +124,9 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                     *decision,
                     &config.sender,
                 );
+                if let Ok(room) = &answer {
+                    self.store_decisions_of(room);
+                }
                 self.reply(&request, answer.err())?;
                 Ok(None)
             }
@@ -143,6 +146,24 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 self.reply(&request, Some(error)).map(|()| None)
             }
         }
+    }
+
+    /// Stores what was decided for `room`, unless it is a turn of this view,
+    /// which stores its decisions as it ends: another run has no such end, and
+    /// no view may ever open that room.
+    fn store_decisions_of(&self, room: &str) {
+        let Ok(room) = roomkit::model::RoomId::new(room) else {
+            return;
+        };
+        if room.as_str() == self.session.config.conversation() && self.work.is_some() {
+            return;
+        }
+        let (kit, channel) = (self.session.kit.clone(), self.session.channel.clone());
+        let mut config = self.session.config.clone();
+        config.room = room;
+        tokio::spawn(async move {
+            let _ = crate::approval_history::persist(&kit, &channel, &config).await;
+        });
     }
 
     /// Answer from a separate task: a stopping engine can take a moment.

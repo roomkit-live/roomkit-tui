@@ -20,6 +20,7 @@ pub(crate) async fn persist<S: ConversationStore>(
     channel: &ConversationChannel,
     config: &SessionConfig,
 ) -> Result<(), AdapterError> {
+    let _storing = channel.storing_decisions.lock().await;
     for saved in channel.approvals.receipts(config.room.as_str()) {
         let receipt = saved.decision;
         let mut source =

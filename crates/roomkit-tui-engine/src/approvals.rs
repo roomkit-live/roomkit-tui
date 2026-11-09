@@ -3,9 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use roomkit_tui_protocol::{
-    ActorId, Decision, Event, Item, Permission, PermissionDecision, PermissionId, Rejection, RunId,
-};
+use roomkit_tui_protocol::{Decision, Event, Permission, PermissionDecision, PermissionId, RunId};
 use tokio::sync::{Notify, broadcast, oneshot};
 
 /// Decisions recorded but not yet stored before new requests are refused.
@@ -14,6 +12,7 @@ const MAX_UNSTORED_RECEIPTS: usize = 512;
 type Scope = (String, String);
 
 mod admission;
+mod decide;
 mod guards;
 mod request;
 
@@ -103,6 +102,15 @@ pub(crate) struct Approvals {
     events: broadcast::Sender<(String, Event)>,
 }
 
+/// The room name notices for every view are published under.
+pub(crate) const EVERY_VIEW: &str = "\0every-view";
+
+/// The room name notices for the views of `group` are published under: not
+/// the group's own, whose notices stay in its room.
+pub(crate) fn group_notices(group: &str) -> String {
+    format!("\0group:{group}")
+}
+
 impl Approvals {
     pub fn new(events: broadcast::Sender<(String, Event)>) -> Self {
         Self {
@@ -160,80 +168,6 @@ impl Approvals {
             scope,
             token,
         }
-    }
-
-    /// Answer one pending request. The decision is recorded only once the
-    /// waiting action has received it.
-    #[cfg(test)]
-    pub fn decide(
-        &self,
-        scope: (&str, &str),
-        id: &PermissionId,
-        decision: Decision,
-        sender: &str,
-    ) -> Result<(), Rejection> {
-        self.decide_in(scope, scope.0, id, decision, sender)
-    }
-
-    /// [`Self::decide`] from a view in `group`, which also answers what is
-    /// asked in the group's other rooms.
-    pub fn decide_in(
-        &self,
-        (view_room, agent): (&str, &str),
-        group: &str,
-        id: &PermissionId,
-        decision: Decision,
-        sender: &str,
-    ) -> Result<(), Rejection> {
-        let mut state = self.lock();
-        let Some(pending) = state.pending.get(id) else {
-            return Err(Rejection::unavailable("This approval is no longer pending"));
-        };
-        let own = pending.scope == (view_room.into(), agent.into());
-        if !own && pending.group.as_deref() != Some(group) {
-            return Err(Rejection::invalid("Approval belongs to another view"));
-        }
-        if pending
-            .run
-            .requester
-            .as_deref()
-            .is_some_and(|r| r != sender)
-        {
-            return Err(Rejection::refused(
-                "Only the person who started this request can answer it",
-            ));
-        }
-        let (room, published) = (pending.scope.0.clone(), pending.published_in());
-        let settled = self.settle(&mut state, id, decision);
-        let Some(settled) = settled.filter(|settled| settled.delivered) else {
-            drop(state);
-            self.resolved(&published, id);
-            return Err(Rejection::unavailable("This approval has expired"));
-        };
-        let decided_by = ActorId::new(format!("person:{sender}"));
-        let record = PermissionDecision::new(settled.permission, decision, decided_by);
-        let receipt = Receipt {
-            decision: record.clone(),
-            tool_call_id: settled.tool_call_id,
-        };
-        state
-            .receipts
-            .entry(room.clone())
-            .or_default()
-            .push(receipt);
-        drop(state);
-        // Publish only explicit, delivered answers. Timeout and withdrawal
-        // settle directly and must never look like a human refusal.
-        let item = Item::Approval(record);
-        self.publish(
-            &room,
-            Event::Item {
-                conversation: room.as_str().into(),
-                item,
-            },
-        );
-        self.resolved(&published, id);
-        Ok(())
     }
 
     /// The decisions a view of `(room, agent)` in `group` answers.

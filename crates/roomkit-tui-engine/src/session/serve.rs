@@ -197,10 +197,37 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
                 self.send_all(events)?;
                 Ok(true)
             }
+            // A conversation the view left still waits on the person.
+            Ok((room, Event::PermissionRequested { .. })) if self.left_group(&room) => {
+                self.send(Event::Notice {
+                    conversation: here.as_str().into(),
+                    text: "An agent of a conversation you left is waiting for your approval: /resume it to answer".into(),
+                })?;
+                Ok(true)
+            }
+            Ok((room, Event::Notice { text, .. })) if self.tells_notices_of(&room) => {
+                self.send(Event::Notice {
+                    conversation: here.as_str().into(),
+                    text,
+                })?;
+                Ok(true)
+            }
             Ok(_) => Ok(true),
             Err(broadcast::error::RecvError::Lagged(_)) => Err(AdapterError::Lagged),
             Err(broadcast::error::RecvError::Closed) => Ok(false),
         }
+    }
+
+    /// Whether `group` is another group this view left, whose work runs on.
+    fn left_group(&self, group: &str) -> bool {
+        group != self.session.config.group_name()
+            && self.parked.values().any(|left| left.group == group)
+    }
+
+    /// Whether notices published under `room` are for this view.
+    fn tells_notices_of(&self, room: &str) -> bool {
+        room == crate::approvals::EVERY_VIEW
+            || room == crate::approvals::group_notices(self.session.config.group_name())
     }
 
     /// Keep a request until the pending one completes, within a bound.
@@ -305,7 +332,7 @@ impl<F: Future> Future for CatchUnwind<F> {
 }
 
 /// Whether `event` is a decision being asked or settled.
-fn decides(event: &Event) -> bool {
+pub(super) fn decides(event: &Event) -> bool {
     matches!(
         event,
         Event::PermissionRequested { .. } | Event::PermissionResolved { .. }

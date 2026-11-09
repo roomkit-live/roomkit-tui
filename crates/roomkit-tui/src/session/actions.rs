@@ -61,9 +61,21 @@ impl Session {
         (*origin != snapshot.conversation).then_some(origin)
     }
 
-    /// The command that opens the room the card on screen was asked in.
+    /// Whether Esc on the card on screen refuses its action rather than
+    /// stopping its run: it was asked elsewhere, or stopping the run here
+    /// would stop more than the turn.
+    pub fn card_refuses_on_cancel(&self) -> bool {
+        self.permission_elsewhere().is_some()
+            || self.snapshot.as_ref().is_some_and(|s| !s.can_cut_to_send)
+    }
+
+    /// The command that opens the room the card on screen was asked in, with
+    /// nothing being written that would follow the person there.
     pub fn open_permission_room(&self) -> Option<Command> {
         let name = self.snapshot.as_ref()?.cycle_command.clone()?;
+        if !self.editor.text().is_empty() || !self.images().is_empty() {
+            return None;
+        }
         let room = self.permission_elsewhere()?;
         Some(Command::Invoke {
             name,

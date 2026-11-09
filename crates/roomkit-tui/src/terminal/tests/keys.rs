@@ -315,28 +315,30 @@ fn alt_arrows_leave_an_image_waiting_in_the_composer() {
     assert_eq!(session.images().len(), 1);
 }
 
+/// A card asked in room `origin`, on screen since time zero.
+fn card_from(session: &mut Session, origin: &str) {
+    let snapshot = session.snapshot.as_mut().unwrap();
+    snapshot.cycle_command = Some("tasks".into());
+    let conversation = snapshot.conversation.clone();
+    let permission = Permission::new("p1", "review", "worker-run", "Review asks", "write a file")
+        .with_origin(origin);
+    session.apply(Event::PermissionRequested {
+        conversation,
+        permission,
+    });
+    draw(session, Duration::ZERO);
+}
+
 /// A card asked in another room shows here though its run is not this view's;
 /// Esc refuses that one action, and `o` asks for its room.
 #[test]
 fn a_card_from_another_room_is_refused_or_followed_from_here() {
     let (mut session, client, host) = fixture(false);
-    let snapshot = session.snapshot.as_mut().unwrap();
-    snapshot.cycle_command = Some("tasks".into());
-    let conversation = snapshot.conversation.clone();
-    let permission = Permission::new("p1", "review", "worker-run", "Review asks", "write a file")
-        .with_origin("room-b");
-    session.apply(Event::PermissionRequested {
-        conversation,
-        permission,
-    });
+    card_from(&mut session, "room-b");
     assert_eq!(session.permissions().len(), 1);
+    let armed = APPROVAL_ARMING_DELAY;
 
-    press(
-        &mut session,
-        &client,
-        key(KeyCode::Char('o')),
-        Duration::ZERO,
-    );
+    press(&mut session, &client, key(KeyCode::Char('o')), armed);
     let opened = host.try_recv().unwrap();
     assert_eq!(
         opened.command,
@@ -350,7 +352,7 @@ fn a_card_from_another_room_is_refused_or_followed_from_here() {
         error: None,
     });
 
-    press(&mut session, &client, key(KeyCode::Esc), Duration::ZERO);
+    press(&mut session, &client, key(KeyCode::Esc), armed);
     let refused = host.try_recv().unwrap();
     assert!(
         matches!(
@@ -362,6 +364,76 @@ fn a_card_from_another_room_is_refused_or_followed_from_here() {
         ),
         "{refused:?}"
     );
+}
+
+/// Keys typed for the composer answer nothing before the card can be read.
+#[test]
+fn a_card_from_another_room_takes_no_key_before_it_can_be_read() {
+    let (mut session, client, host) = fixture(false);
+    card_from(&mut session, "room-b");
+    for code in [KeyCode::Char('o'), KeyCode::Esc] {
+        press(&mut session, &client, key(code), Duration::ZERO);
+    }
+    assert!(host.try_recv().is_err());
+}
+
+/// A card from elsewhere starts on Refuse: Enter, typed for the composer once
+/// the card can be read, must not approve it.
+#[test]
+fn enter_on_a_card_from_another_room_refuses_it_by_default() {
+    let (mut session, client, host) = fixture(false);
+    card_from(&mut session, "room-b");
+    press(
+        &mut session,
+        &client,
+        key(KeyCode::Enter),
+        APPROVAL_ARMING_DELAY,
+    );
+    assert!(matches!(
+        host.try_recv().unwrap().command,
+        Command::Decide {
+            decision: Decision::Deny,
+            ..
+        }
+    ));
+}
+
+/// Something being written would follow the person to the agent's room.
+#[test]
+fn a_draft_keeps_o_from_opening_the_card_s_room() {
+    let (mut session, client, host) = fixture(false);
+    card_from(&mut session, "room-b");
+    session.insert("Hell");
+    press(
+        &mut session,
+        &client,
+        key(KeyCode::Char('o')),
+        APPROVAL_ARMING_DELAY,
+    );
+    assert!(host.try_recv().is_err());
+}
+
+/// In the room of a running task, Esc on a card refuses it: stopping the run
+/// would stop the whole task.
+#[test]
+fn esc_on_a_card_refuses_it_where_stopping_the_run_stops_more() {
+    let (mut session, client, host) = fixture(false);
+    let here = session.snapshot.as_ref().unwrap().conversation.clone();
+    session.snapshot.as_mut().unwrap().can_cut_to_send = false;
+    card_from(&mut session, here.as_str());
+    press(
+        &mut session,
+        &client,
+        key(KeyCode::Esc),
+        APPROVAL_ARMING_DELAY,
+    );
+    assert!(matches!(
+        host.try_recv().unwrap().command,
+        Command::Decide {
+            decision: Decision::Deny,
+            ..
+        }
+    ));
 }
 
 /// A card with no origin still needs its run to be live here.

@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "Test fixture failures are assertions")]
 use super::admission::Registration;
 use super::*;
+use roomkit_tui_protocol::Item;
 use roomkit_tui_protocol::limits::MAX_PENDING_PERMISSIONS;
 use std::time::Duration;
 
@@ -458,4 +459,62 @@ fn the_last_run_of_a_room_is_kept_while_a_view_watches_it() {
     );
     drop(second);
     assert_eq!(broker.last_run("room"), None, "The last view detached");
+}
+
+/// Nobody of a group left to answer: the action is refused at once, and every
+/// view hears of it, whichever conversation it shows.
+#[tokio::test]
+async fn a_request_no_view_of_its_group_can_answer_is_told_everywhere() {
+    let (events, mut received) = broadcast::channel(16);
+    let broker = Approvals::new(events);
+    let _running = broker.start("room", "agent", "run".into(), None);
+    let details = Details {
+        title: "Change file".into(),
+        detail: "Concrete action".into(),
+        group: Some("group".into()),
+        room: "room".into(),
+        ..Default::default()
+    };
+    let decision = broker
+        .ask("room", "agent", details, Duration::from_secs(30))
+        .await;
+    assert_eq!(decision, Decision::Deny);
+    let (room, event) = received.recv().await.unwrap();
+    assert_eq!(room, EVERY_VIEW);
+    assert!(
+        matches!(&event, Event::Notice { text, .. } if text.contains("conversation you left")),
+        "{event:?}"
+    );
+}
+
+/// A view of the group is enough for a request of a room it does not show;
+/// when the last one goes, the request is withdrawn.
+#[tokio::test]
+async fn the_last_view_of_a_group_withdraws_what_it_was_asked() {
+    let (events, mut received) = broadcast::channel(16);
+    let broker = Approvals::new(events);
+    let _running = broker.start("worker-room", "worker", "run".into(), None);
+    let view = broker.attach_in("main", "code", "main");
+    let asker = broker.clone();
+    let asked = tokio::spawn(async move {
+        let details = Details {
+            title: "Change file".into(),
+            detail: "Concrete action".into(),
+            group: Some("main".into()),
+            room: "worker-room".into(),
+            ..Default::default()
+        };
+        asker
+            .ask("worker-room", "worker", details, Duration::from_secs(30))
+            .await
+    });
+    let (room, event) = received.recv().await.unwrap();
+    assert_eq!(room, "main");
+    assert!(
+        matches!(event, Event::PermissionRequested { .. }),
+        "{event:?}"
+    );
+    drop(view);
+    let answer = tokio::time::timeout(Duration::from_secs(2), asked).await;
+    assert_eq!(answer.unwrap().unwrap(), Decision::Deny);
 }

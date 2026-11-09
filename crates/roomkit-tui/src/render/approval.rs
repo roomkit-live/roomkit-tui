@@ -54,6 +54,8 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
             detail.len(),
             if session.permission_elsewhere().is_some() {
                 "Esc refuse · o open its room"
+            } else if session.card_refuses_on_cancel() {
+                "Esc refuse"
             } else {
                 "Esc interrupt"
             }

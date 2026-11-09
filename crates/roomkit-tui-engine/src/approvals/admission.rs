@@ -8,7 +8,8 @@ use roomkit_tui_protocol::{Decision, Event, Permission};
 use tokio::sync::oneshot;
 
 use super::{
-    Approvals, Details, MAX_UNSTORED_RECEIPTS, Pending, Run, Scope, State, Waiting, notice,
+    Approvals, Details, EVERY_VIEW, MAX_UNSTORED_RECEIPTS, Pending, Run, Scope, State, Waiting,
+    notice,
 };
 
 impl Approvals {
@@ -53,7 +54,7 @@ impl Approvals {
             .as_ref()
             .is_some_and(|group| state.groups.contains_key(group));
         if !watched && !state.views.contains_key(scope) {
-            return Registration::Refused;
+            return self.unwatched(&mut state, scope, details);
         }
         // A refusal is told once the run has started: a terminal clears its
         // notice when the run starts.
@@ -68,7 +69,7 @@ impl Approvals {
             return Registration::Refused;
         }
         if let Some(reason) = refusal(&state, room) {
-            return self.refuse(&mut state, scope, run.token, reason);
+            return self.refuse(&mut state, scope, run.token, reason, told_in(details));
         }
         let Some(sequence) = state.sequence.checked_add(1) else {
             return Registration::Refused;
@@ -76,10 +77,22 @@ impl Approvals {
         state.sequence = sequence;
         let Some(permission) = details.permission(&run.id, agent, sequence) else {
             let reason = "An approval was too large to show in full; it was refused.";
-            return self.refuse(&mut state, scope, run.token, reason);
+            return self.refuse(&mut state, scope, run.token, reason, told_in(details));
         };
         let pending = (run, permission, details.tool_call_id.clone());
         self.enqueue(&mut state, scope, pending, details.group.clone())
+    }
+
+    /// A request nobody can answer: refused, and in a group the person
+    /// hears of it wherever they are.
+    fn unwatched(&self, state: &mut State, scope: &Scope, details: &Details) -> Registration {
+        match (&details.group, state.run(scope, details.run).cloned()) {
+            (Some(_), Some(run)) => {
+                let told_in = Some(EVERY_VIEW.to_owned());
+                self.refuse(state, scope, run.token, UNWATCHED, told_in)
+            }
+            _ => Registration::Refused,
+        }
     }
 
     /// Hold `permission` until it is answered, and show it to the views.
@@ -126,12 +139,14 @@ impl Approvals {
         scope: &Scope,
         token: u64,
         reason: &'static str,
+        told_in: Option<String>,
     ) -> Registration {
         let first = state
             .run_mut(scope, token)
             .is_some_and(|run| run.announced.insert(reason));
         if first {
-            self.publish(&scope.0, notice(&scope.0, reason));
+            let room = told_in.unwrap_or_else(|| scope.0.clone());
+            self.publish(&room, notice(&scope.0, reason));
         }
         Registration::Refused
     }
@@ -152,6 +167,16 @@ fn refusal(state: &State, room: &str) -> Option<&'static str> {
         None
     }
 }
+
+/// Where a refusal of a request in a group is told: to the views of its
+/// group, none of which may be showing the room it was asked in.
+fn told_in(details: &Details) -> Option<String> {
+    details.group.as_deref().map(super::group_notices)
+}
+
+/// Told when a request of a group finds no view of it: the person is
+/// elsewhere.
+const UNWATCHED: &str = "An agent of a conversation you left asked for an approval: it was refused. Reopen that conversation for it to ask.";
 
 pub(super) enum Registration {
     Refused,

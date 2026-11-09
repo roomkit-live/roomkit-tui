@@ -62,8 +62,10 @@ impl Session {
         }
     }
 
+    /// A new card on screen starts on Allow, unless it came from another room,
+    /// over whatever the person was writing: Enter must not approve it unseen.
     fn show_next_permission(&mut self) {
         self.permission_scroll = 0;
-        self.permission_choice = 0;
+        self.permission_choice = usize::from(self.permission_elsewhere().is_some());
     }
 }
