@@ -200,6 +200,11 @@ impl ConversationChannel {
         self.activity.busy(room)
     }
 
+    /// Whether work runs in `room`: a turn, a delivery or the host's own.
+    pub fn is_busy(&self, room: &RoomId) -> bool {
+        self.busy(room.as_str())
+    }
+
     pub(crate) fn reserve(&self, room: &str, work: Work) -> Result<Active, Held> {
         self.activity.reserve(room, work)
     }

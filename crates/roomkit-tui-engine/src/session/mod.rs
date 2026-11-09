@@ -6,6 +6,7 @@ mod requests;
 mod restore;
 mod serve;
 mod steer;
+mod switching;
 mod turn;
 
 use std::collections::BTreeMap;
@@ -55,6 +56,12 @@ pub struct SessionConfig {
     /// The advertised command a terminal invokes with `next` or `previous`
     /// to move between this conversation and the rooms related to it.
     pub cycle_command: Option<String>,
+    /// The conversation this room belongs to, when it is another's: a view
+    /// moving between the rooms of one group keeps their approvals open.
+    pub group: Option<String>,
+    /// Whether a message may cut the run under way to be sent at once. False
+    /// where stopping the run stops more than the turn, such as a task.
+    pub can_cut_to_send: bool,
     /// Host-confirmed image support for this attachment and selected agent.
     pub can_attach_images: bool,
     /// Optional host-owned interaction mode, independent of engine/model state.
@@ -80,6 +87,8 @@ impl SessionConfig {
             commands: Vec::new(),
             input_actions: Vec::new(),
             cycle_command: None,
+            group: None,
+            can_cut_to_send: true,
             can_attach_images: false,
             mode: None,
             pricing: None,
@@ -88,6 +97,11 @@ impl SessionConfig {
 
     pub(crate) fn conversation(&self) -> &str {
         self.room.as_str()
+    }
+
+    /// The group this room is in: its own conversation, unless another's.
+    pub(crate) fn group_name(&self) -> &str {
+        self.group.as_deref().unwrap_or_else(|| self.conversation())
     }
 
     fn advertises(&self, command: &str) -> bool {
@@ -242,8 +256,8 @@ pub enum AdapterError {
 
 /// Local bridge to an existing kit; independent of the terminal library.
 ///
-/// It serves one selected agent, messages and restoration of an idle
-/// conversation. Applications can register commands and switch idle views
+/// It serves one selected agent, messages and restoration of a
+/// conversation. Applications can register commands and switch views
 /// through `run_with_commands`. Provider metadata supplies context
 /// measurements; scoped interruption uses the active delivery handle.
 /// Approval brokerage is opt-in through the host's tool hooks. It never
@@ -328,7 +342,7 @@ impl<S: ConversationStore> LocalSession<S> {
         self.run_with_commands(host, NoCommands).await
     }
 
-    /// Serve the view with application-owned commands and idle view switching.
+    /// Serve the view with application-owned commands and view switching.
     /// A failed replacement leaves the original attachment intact. Commands
     /// never enter model history or implicitly interrupt an accepted execution.
     pub async fn run_with_commands(

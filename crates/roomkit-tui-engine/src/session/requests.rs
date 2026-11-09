@@ -8,10 +8,10 @@ use roomkit_tui_protocol::limits::{
     MAX_OPERATION_ID_BYTES, MAX_TEXT_BYTES,
 };
 use roomkit_tui_protocol::{Command, ErrorCode, Event, Rejection, Request, RunId, Snapshot};
-use tokio::sync::broadcast;
 
-use super::serve::{CatchUnwind, Parked, Pending, View, send};
-use super::{AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig, StopRun};
+use super::serve::{CatchUnwind, Pending, View, send};
+use super::switching::Frames;
+use super::{AdapterError, CommandHandler, CommandResult, SessionConfig, StopRun};
 use crate::CommandExecution;
 use crate::activity::{Active, Work};
 use crate::cost::Costs;
@@ -39,9 +39,6 @@ pub(crate) enum Step {
         catch_up: Vec<Event>,
     },
 }
-
-/// The room events a view reads.
-pub(super) type Frames = broadcast::Receiver<(String, Event)>;
 
 /// Requests answered without waiting for application code.
 pub(super) fn is_control(request: &Request) -> bool {
@@ -326,110 +323,6 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         let work = execution.start(channel, &self.session.config, operation, reserved, persist);
         self.work = Some(work);
         Ok(None)
-    }
-
-    fn switch(
-        &mut self,
-        request: Request,
-        config: SessionConfig,
-        frames: &mut Frames,
-    ) -> Result<Option<Pending<'h>>, AdapterError> {
-        let catch_up = self.place_among_frames(config.conversation(), frames)?;
-        let (kit, channel) = (self.session.kit.clone(), self.session.channel.clone());
-        self.switching = true;
-        Ok(Some(Box::pin(async move {
-            let replacement = LocalSession::new(kit, channel, config);
-            let attachment = replacement.attachment_of_work().await;
-            let replacement =
-                attachment.map(|(snapshot, costs)| (replacement.config, snapshot, costs));
-            Step::Switched {
-                request,
-                replacement,
-                catch_up,
-            }
-        })))
-    }
-
-    /// What `target`'s view must be told of the work under way there, read
-    /// at a known place among the events: the frames queued until then are
-    /// served to the current view, or dropped for `target`, whose snapshot
-    /// and these runs count them; the frames that follow, kept while the
-    /// snapshot is read, count from here. Anything but a frame of `target`
-    /// is the current view's, which stays on screen until the switch ends.
-    fn place_among_frames(
-        &mut self,
-        target: &str,
-        frames: &mut Frames,
-    ) -> Result<Vec<Event>, AdapterError> {
-        let channel = self.session.channel.clone();
-        let runs = channel.live_runs.lock();
-        loop {
-            match frames.try_recv() {
-                Ok((room, _)) if room == target => {}
-                Ok(frame) => {
-                    self.forward(Ok(frame))?;
-                }
-                Err(broadcast::error::TryRecvError::Lagged(_)) => {}
-                Err(_) => break,
-            }
-        }
-        Ok(runs.catch_up(target))
-    }
-
-    fn switched(
-        &mut self,
-        request: &Request,
-        replacement: Result<(SessionConfig, Snapshot, Costs), AdapterError>,
-        catch_up: Vec<Event>,
-    ) -> Result<(), AdapterError> {
-        self.switching = false;
-        let (config, snapshot, costs) = match replacement {
-            Ok(replacement) => replacement,
-            Err(error) => return self.reply(request, Some(refused_switch(&error))),
-        };
-        self.change_rooms(&config);
-        self.session.config = config;
-        self.reply(request, None)?;
-        self.attached(snapshot, costs)?;
-        self.caught_up(catch_up)
-    }
-
-    /// Sets the view's approvals to `target`, and what stops work to what it
-    /// left there. A room left while work runs is kept until the view returns
-    /// or the work ends: dropping its approvals would withdraw its decisions.
-    fn change_rooms(&mut self, target: &SessionConfig) {
-        let channel = self.session.channel.clone();
-        let approvals = channel
-            .approvals
-            .attach(target.conversation(), target.agent.as_str());
-        let leaving = self.session.config.conversation().to_owned();
-        let left = std::mem::replace(&mut self.approvals, approvals);
-        if leaving != target.conversation() {
-            let returned = self.parked.remove(target.conversation());
-            let (work, steering) = returned.map_or((None, Vec::new()), |p| (p.work, p.steering));
-            let parked = Parked {
-                work: std::mem::replace(&mut self.work, work),
-                steering: std::mem::replace(&mut self.steering, steering),
-                _approvals: left,
-            };
-            if channel.busy(&leaving) {
-                self.parked.insert(leaving, parked);
-            }
-        }
-        self.parked.retain(|room, _| channel.busy(room));
-    }
-}
-
-/// Why a replacement view was not adopted: invalid when the terminal would
-/// refuse its snapshot, unavailable for any other failure.
-fn refused_switch(error: &AdapterError) -> Rejection {
-    match error {
-        AdapterError::InvalidSnapshot(reason) => {
-            Rejection::invalid(format!("{reason}; the current session is unchanged"))
-        }
-        _ => Rejection::unavailable(
-            "The requested conversation is unavailable; the current session is unchanged",
-        ),
     }
 }
 

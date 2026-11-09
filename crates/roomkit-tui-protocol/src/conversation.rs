@@ -242,6 +242,11 @@ impl Item {
     }
 }
 
+/// What a snapshot of an older host holds.
+fn cuts_to_send() -> bool {
+    true
+}
+
 /// The host's authoritative initial or replacement state for one conversation.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -286,6 +291,10 @@ pub struct Snapshot {
     /// Alt+Right and Alt+Left with an empty composer. Older hosts omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cycle_command: Option<String>,
+    /// Whether a message may cut the run under way to be sent at once; false
+    /// where stopping the run stops more than the turn. Older hosts omit it.
+    #[serde(default = "cuts_to_send")]
+    pub can_cut_to_send: bool,
     /// Whether the selected agent and host accept image attachments.
     #[serde(default)]
     pub can_attach_images: bool,
@@ -334,6 +343,7 @@ impl Snapshot {
             commands: Vec::new(),
             input_actions: Vec::new(),
             cycle_command: None,
+            can_cut_to_send: true,
             can_attach_images: false,
             can_steer: false,
             can_answer: false,

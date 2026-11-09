@@ -275,6 +275,46 @@ fn alt_arrows_move_between_related_rooms_with_an_empty_composer() {
     assert!(host.try_recv().is_err());
 }
 
+/// Where stopping the run stops more than the turn, Ctrl+S sends the message
+/// as Enter does instead of cutting what runs.
+#[test]
+fn a_message_never_cuts_a_run_the_host_says_it_must_not() {
+    let (mut session, client, host) = fixture(false);
+    session.snapshot.as_mut().unwrap().can_cut_to_send = false;
+    let conversation = session.snapshot.as_ref().unwrap().conversation.clone();
+    session.apply(Event::RunStarted {
+        conversation,
+        run: "worker-run".into(),
+        answers: None,
+    });
+    assert!(session.snapshot.as_ref().unwrap().active_run.is_some());
+    session.insert("Look at the tests too");
+    let send_now = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL);
+    press(&mut session, &client, send_now, Duration::ZERO);
+    assert!(
+        !host
+            .try_recv()
+            .is_ok_and(|sent| matches!(sent.command, Command::Interrupt { .. })),
+        "Ctrl+S cut the run"
+    );
+}
+
+/// An image waiting in the composer stays there: an empty text is not an
+/// empty composer.
+#[test]
+fn alt_arrows_leave_an_image_waiting_in_the_composer() {
+    let (mut session, client, host) = fixture(false);
+    let snapshot = session.snapshot.as_mut().unwrap();
+    snapshot.can_attach_images = true;
+    snapshot.cycle_command = Some("tasks".into());
+    let image = roomkit_tui_protocol::ImageUpload::png("clipboard.png", "AQIDBA==", 1, 1);
+    session.add_image(image).unwrap();
+    let alt_right = KeyEvent::new(KeyCode::Right, KeyModifiers::ALT);
+    press(&mut session, &client, alt_right, Duration::ZERO);
+    assert!(host.try_recv().is_err());
+    assert_eq!(session.images().len(), 1);
+}
+
 #[test]
 fn image_removal_and_submission_keep_the_draft_until_host_acknowledgment() {
     let (mut session, client, host) = fixture(false);

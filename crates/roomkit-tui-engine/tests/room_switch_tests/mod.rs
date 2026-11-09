@@ -34,6 +34,8 @@ impl CommandHandler for Go {
             return Err("Unsupported".into());
         };
         view.room = RoomId::new(&arguments).unwrap();
+        // "alone" is a conversation of its own; the others are one group.
+        view.group = (arguments == "other").then(|| "room".to_owned());
         Ok(CommandResult::Switch(Box::new(view)))
     }
 }
@@ -60,7 +62,11 @@ fn hold_answers(kit: &RoomKit, gate: watch::Receiver<bool>, held: Arc<Notify>) {
 }
 
 async fn with_other_room(kit: &RoomKit, channel: &ConversationChannel) {
-    let room = RoomId::new("other").unwrap();
+    with_room(kit, channel, "other").await;
+}
+
+async fn with_room(kit: &RoomKit, channel: &ConversationChannel, name: &str) {
+    let room = RoomId::new(name).unwrap();
     kit.create_room(CreateRoomOptions {
         room_id: Some(room.clone()),
         ..Default::default()
@@ -323,6 +329,126 @@ async fn a_run_the_view_did_not_start_is_stopped_by_the_host() {
     };
     assert_eq!(reply, None);
     assert!(stopped.load(Ordering::SeqCst));
+    drop(client);
+    task.await.unwrap().unwrap();
+}
+
+/// The person looks at a worker while the delegating agent's room is idle:
+/// what that agent asks next, handing back a result, waits for them rather
+/// than being refused. Past the group, nobody can answer it any more.
+#[tokio::test]
+async fn a_group_s_room_left_idle_keeps_its_approvals_open() {
+    let kit = RoomKit::new(Default::default());
+    let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
+    with_other_room(&kit, &channel).await;
+    with_room(&kit, &channel, "alone").await;
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+    let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
+    next(&client).await;
+    let ask = |wait: u64| {
+        let (room, agent, asker) = (config().room, config().agent, channel.clone());
+        async move {
+            let request = PermissionRequest::new("Allow it?", "d", Duration::from_millis(wait));
+            let started = std::time::Instant::now();
+            let decision = asker.ask_permission(&room, &agent, request).await;
+            (decision, started.elapsed())
+        }
+    };
+
+    client.try_send(go("room", "other")).unwrap();
+    until_snapshot(&client, "other").await;
+    let (_, waited) = ask(150).await;
+    assert!(
+        waited >= Duration::from_millis(120),
+        "Refused at once: {waited:?}"
+    );
+
+    client.try_send(go("other", "alone")).unwrap();
+    until_snapshot(&client, "alone").await;
+    let (decision, waited) = ask(150).await;
+    assert_eq!(decision, Decision::Deny);
+    assert!(
+        waited < Duration::from_millis(100),
+        "Still kept: {waited:?}"
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
+}
+
+/// An approval asked in a room left, while the view is in another room of
+/// its group, is told there: nothing else would say the agent is waiting.
+#[tokio::test]
+async fn an_approval_in_a_room_left_is_told_in_the_room_shown() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    with_other_room(&kit, &channel).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_answers(&kit, gate, held.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+    let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
+    next(&client).await;
+    client.try_send(request("ask")).unwrap();
+    started_run(&client).await;
+    held.notified().await;
+    client.try_send(go("room", "other")).unwrap();
+    until_snapshot(&client, "other").await;
+
+    let (room, agent) = (config().room, config().agent);
+    let asker = channel.clone();
+    let asked = tokio::spawn(async move {
+        let request = PermissionRequest::new("Allow it?", "d", Duration::from_secs(30));
+        asker.ask_permission(&room, &agent, request).await
+    });
+    let notice = loop {
+        if let Event::Notice { conversation, text } = next(&client).await {
+            assert_eq!(conversation.as_str(), "other");
+            break text;
+        }
+    };
+    assert!(notice.contains("waiting for your approval"), "{notice}");
+    asked.abort();
+    open.send_replace(true);
+    drop(client);
+    task.await.unwrap().unwrap();
+}
+
+/// A conversation left for one of another group is not reachable from it:
+/// nothing there says an agent of "this conversation" is waiting.
+#[tokio::test]
+async fn an_approval_outside_the_group_is_not_told() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    with_room(&kit, &channel, "alone").await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_answers(&kit, gate, held.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+    let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
+    next(&client).await;
+    client.try_send(request("ask")).unwrap();
+    started_run(&client).await;
+    held.notified().await;
+    client.try_send(go("room", "alone")).unwrap();
+    until_snapshot(&client, "alone").await;
+
+    let (room, agent) = (config().room, config().agent);
+    let asker = channel.clone();
+    let asked = tokio::spawn(async move {
+        let request = PermissionRequest::new("Allow it?", "d", Duration::from_secs(30));
+        asker.ask_permission(&room, &agent, request).await
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    while let Ok(event) = client.try_recv() {
+        assert!(!matches!(event, Event::Notice { .. }), "{event:?}");
+    }
+    asked.abort();
+    open.send_replace(true);
     drop(client);
     task.await.unwrap().unwrap();
 }

@@ -171,6 +171,7 @@ impl History {
         snapshot.commands.clone_from(&config.commands);
         snapshot.input_actions.clone_from(&config.input_actions);
         snapshot.cycle_command.clone_from(&config.cycle_command);
+        snapshot.can_cut_to_send = config.can_cut_to_send;
         snapshot.can_attach_images = config.can_attach_images;
         snapshot.mode.clone_from(&config.mode);
         snapshot.items = self.items;

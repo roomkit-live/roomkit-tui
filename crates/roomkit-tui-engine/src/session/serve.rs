@@ -30,9 +30,12 @@ const READER_POLL: Duration = Duration::from_millis(100);
 /// Application code awaited on behalf of one request.
 pub(super) type Pending<'h> = Pin<Box<dyn Future<Output = Step> + Send + 'h>>;
 
-/// What a view keeps of a room it left while work runs there: what stops
-/// that work when it returns, and what keeps the room's decisions open.
+/// What a view keeps of a room it left, while work runs there or the view
+/// stays in its group: what stops that work when it returns, and what keeps
+/// the room's decisions open.
 pub(super) struct Parked {
+    /// The group it was left in.
+    pub group: String,
     pub work: Option<Interrupter>,
     pub steering: Vec<Interrupter>,
     /// Held only: dropped, it withdraws the room's decisions.
@@ -49,7 +52,7 @@ pub(super) struct View<'h, S: ConversationStore, H> {
     /// them one: this view may stop them too.
     pub steering: Vec<Interrupter>,
     pub approvals: approvals::View,
-    /// The rooms it left while work runs there, by room.
+    /// The rooms it left and still answers for, by room.
     pub parked: BTreeMap<String, Parked>,
     /// Calls in flight, shown running or waiting for a decision.
     progress: ToolProgress,
@@ -182,10 +185,25 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
                 self.send_all(events)?;
                 Ok(true)
             }
+            Ok((room, Event::PermissionRequested { .. })) if self.in_group(&room) => {
+                self.send(Event::Notice {
+                    conversation: self.session.config.conversation().into(),
+                    text: "An agent of this conversation is waiting for your approval in another room: Alt+arrows go there".into(),
+                })?;
+                Ok(true)
+            }
             Ok(_) => Ok(true),
             Err(broadcast::error::RecvError::Lagged(_)) => Err(AdapterError::Lagged),
             Err(broadcast::error::RecvError::Closed) => Ok(false),
         }
+    }
+
+    /// Whether `room` is a room of the shown one's group the view has left.
+    fn in_group(&self, room: &str) -> bool {
+        let shown = self.session.config.group_name();
+        self.parked
+            .get(room)
+            .is_some_and(|left| left.group == shown)
     }
 
     /// Keep a request until the pending one completes, within a bound.

@@ -139,7 +139,11 @@ fn send_now(session: &mut Session, client: &Client) {
         .trim_start()
         .starts_with(session.command_prefix)
         || session.input_action().is_some();
-    if command {
+    let can_cut = session
+        .snapshot
+        .as_ref()
+        .is_none_or(|snapshot| snapshot.can_cut_to_send);
+    if command || !can_cut {
         submit(session, client);
         return;
     }

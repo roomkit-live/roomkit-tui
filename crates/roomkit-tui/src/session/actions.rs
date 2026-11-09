@@ -59,6 +59,7 @@ impl Session {
     pub fn cycle_room(&self, next: bool) -> Option<Command> {
         let name = self.snapshot.as_ref()?.cycle_command.clone()?;
         if !self.editor.text().is_empty()
+            || !self.images().is_empty()
             || self.pending.values().any(
                 |command| matches!(command, Command::Invoke { name: sent, .. } if *sent == name),
             )
