@@ -392,6 +392,38 @@ fn colored_pieces_stay_within_the_width_a_plain_logo_gets() {
 }
 
 #[test]
+fn a_welcome_logo_cut_to_its_width_keeps_its_colors() {
+    use crate::render::Tone;
+    use crate::{Color, LogoTile, UiOptions, WelcomeScreen};
+    let (wide, unsafe_text) = (Color::rgb(1, 2, 3), Color::rgb(4, 5, 6));
+    let rows = vec![
+        vec![LogoTile::colored("A".repeat(30), wide)],
+        vec![LogoTile::colored("\x1b[2JBB", unsafe_text)],
+    ];
+    let options = UiOptions {
+        welcome: Some(WelcomeScreen::default().with_logo_tiles(rows)),
+        ..UiOptions::default()
+    };
+    let session_on = session();
+    let frame = render::screen_with_options(
+        &session_on,
+        140,
+        40,
+        &Renderers::default(),
+        &options,
+        std::time::Duration::ZERO,
+    );
+    let spans = || frame.spans.iter().flatten();
+
+    assert!(spans().any(|span| span.tone == Tone::Mark(unsafe_text)));
+    let widths: Vec<_> = spans()
+        .filter(|span| span.tone == Tone::Mark(wide))
+        .map(|span| span.text.width())
+        .collect();
+    assert_eq!(widths, [24]);
+}
+
+#[test]
 fn a_logo_written_after_its_pieces_is_the_one_drawn() {
     use crate::{Branding, LogoTile};
     let color = crate::Color::rgb(1, 2, 3);

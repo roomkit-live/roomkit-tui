@@ -120,9 +120,10 @@ fn artwork(welcome: &crate::WelcomeScreen, name: &str, width: usize) -> Vec<Line
             let letters = row
                 .checked_sub((rows - mark.len()) / 2)
                 .and_then(|i| mark.get(i));
-            let tiles = row
-                .checked_sub((rows - logo.len()) / 2)
-                .and_then(|i| welcome.logo_tiles.get(i));
+            let tiles = row.checked_sub((rows - logo.len()) / 2).and_then(|i| {
+                let written = welcome.logo.get(i)?;
+                super::chrome::spelling(welcome.logo_tiles.get(i), written)
+            });
             let mut line = vec![span(" ".repeat(left), Tone::Text)];
             line.extend(super::chrome::logo_row(
                 symbol.map_or("", String::as_str),

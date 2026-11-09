@@ -7,12 +7,19 @@ use unicode_width::UnicodeWidthStr;
 use super::text::{fit, format_duration, pad};
 use super::{BackToBottomTarget, Line, Tone, View, frame, line, span, spinner};
 use crate::LogoTile;
-/// A logo's row, `width` columns wide: its colored pieces when they spell
-/// `text`, else `text` in the branding tone.
+/// A logo row's colored pieces, when they spell `written`, the row as the
+/// application set it: a row written after its pieces is drawn as text.
+pub(super) fn spelling<'t>(
+    tiles: Option<&'t Vec<LogoTile>>,
+    written: &str,
+) -> Option<&'t Vec<LogoTile>> {
+    tiles.filter(|tiles| tiles.iter().map(|t| t.text.as_str()).collect::<String>() == written)
+}
+
+/// A logo's row, `width` columns wide: its colored pieces when it has some,
+/// else `text` in the branding tone.
 pub(super) fn logo_row(text: &str, tiles: Option<&Vec<LogoTile>>, width: usize) -> Line {
-    let spelled =
-        |tiles: &&Vec<LogoTile>| tiles.iter().map(|t| t.text.as_str()).collect::<String>() == text;
-    let Some(tiles) = tiles.filter(spelled) else {
+    let Some(tiles) = tiles else {
         return vec![span(pad(text, width), Tone::Primary)];
     };
     let mut left = width;
@@ -46,7 +53,8 @@ pub(super) fn header(view: &View<'_>, cols: usize, rows: usize) -> Vec<Line> {
                 _ => (String::new(), Tone::Muted),
             };
             let mut row = vec![span(" ", Tone::Primary)];
-            row.extend(logo_row(mark, brand.logo_tiles.get(index), logo_width));
+            let tiles = spelling(brand.logo_tiles.get(index), mark);
+            row.extend(logo_row(mark, tiles, logo_width));
             row.push(span(format!("   {detail}"), tone));
             lines.push(row);
         }
