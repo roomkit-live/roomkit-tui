@@ -44,6 +44,8 @@ pub enum Tone {
     Text,
     /// Branding and agent headings.
     Primary,
+    /// A piece of a logo, in the color its application gave it.
+    Mark(crate::Color),
     /// Activity and secondary accents.
     Accent,
     /// Secondary information.

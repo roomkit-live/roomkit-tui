@@ -6,7 +6,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::composer::{self, Layout};
 use super::footer::{hints, settings};
-use super::text::{fit, pad, wrap};
+use super::text::{fit, wrap};
 use super::{Frame, Line, Tone, View, frame, line, span};
 use crate::Session;
 use crate::session::Focus;
@@ -120,15 +120,18 @@ fn artwork(welcome: &crate::WelcomeScreen, name: &str, width: usize) -> Vec<Line
             let letters = row
                 .checked_sub((rows - mark.len()) / 2)
                 .and_then(|i| mark.get(i));
-            vec![
-                span(" ".repeat(left), Tone::Text),
-                span(
-                    pad(symbol.map_or("", String::as_str), logo_width),
-                    Tone::Primary,
-                ),
-                span(" ".repeat(gap), Tone::Text),
-                span(letters.cloned().unwrap_or_default(), Tone::Text),
-            ]
+            let tiles = row
+                .checked_sub((rows - logo.len()) / 2)
+                .and_then(|i| welcome.logo_tiles.get(i));
+            let mut line = vec![span(" ".repeat(left), Tone::Text)];
+            line.extend(super::chrome::logo_row(
+                symbol.map_or("", String::as_str),
+                tiles,
+                logo_width,
+            ));
+            line.push(span(" ".repeat(gap), Tone::Text));
+            line.push(span(letters.cloned().unwrap_or_default(), Tone::Text));
+            line
         })
         .collect()
 }

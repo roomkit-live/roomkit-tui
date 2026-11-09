@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A logo can have colored pieces: `Branding::with_logo_tiles` and
+  `WelcomeScreen::with_logo_tiles` take rows of `LogoTile`, drawn in the colors
+  they name.
 - An approval reaches the view wherever it is (RMK-1535).
   `PermissionRequest::with_group` lets any view of a group answer it, and
   `SessionConfig::group` says which group a view is in: the card comes to the

@@ -6,6 +6,27 @@ use unicode_width::UnicodeWidthStr;
 
 use super::text::{fit, format_duration, pad};
 use super::{BackToBottomTarget, Line, Tone, View, frame, line, span, spinner};
+use crate::LogoTile;
+/// A logo's row, `width` columns wide: its colored pieces when it has some,
+/// else its text in the branding tone.
+pub(super) fn logo_row(text: &str, tiles: Option<&Vec<LogoTile>>, width: usize) -> Line {
+    let Some(tiles) = tiles else {
+        return vec![span(pad(text, width), Tone::Primary)];
+    };
+    let mut row: Line = tiles
+        .iter()
+        .map(|tile| {
+            span(
+                fit(&tile.text, width),
+                tile.color.map_or(Tone::Text, Tone::Mark),
+            )
+        })
+        .collect();
+    let used: usize = row.iter().map(|piece| piece.text.width()).sum();
+    row.push(span(" ".repeat(width.saturating_sub(used)), Tone::Text));
+    row
+}
+
 pub(super) fn header(view: &View<'_>, cols: usize, rows: usize) -> Vec<Line> {
     let brand = &view.options.branding;
     let title = view
@@ -25,10 +46,10 @@ pub(super) fn header(view: &View<'_>, cols: usize, rows: usize) -> Vec<Line> {
                 Some(1) => (brand.subtitle.clone(), Tone::Muted),
                 _ => (String::new(), Tone::Muted),
             };
-            lines.push(vec![
-                span(format!(" {}", pad(mark, logo_width)), Tone::Primary),
-                span(format!("   {detail}"), tone),
-            ]);
+            let mut row = vec![span(" ", Tone::Primary)];
+            row.extend(logo_row(mark, brand.logo_tiles.get(index), logo_width));
+            row.push(span(format!("   {detail}"), tone));
+            lines.push(row);
         }
     } else {
         lines.push(vec![

@@ -124,6 +124,7 @@ fn centered_welcome_reuses_the_composer_and_restores_conversation_layout() {
     let options = UiOptions {
         welcome: Some(WelcomeScreen {
             logo: vec!["╭─╮".into(), "│▦│".into(), "╰─╯".into()],
+            logo_tiles: Vec::new(),
             wordmark: vec!["CUSTOM MARK\x1b[2J".into()],
             width: 80,
         }),
@@ -294,4 +295,64 @@ fn a_title_change_renames_the_header_in_place_during_a_run() {
     let shown = header(&mut s);
     assert!(shown.contains("Plain[2Jtitle"), "{shown}");
     assert!(!shown.contains(['\u{1b}', '\u{7}', '\u{202E}']));
+}
+
+/// A logo of colored pieces is drawn piece by piece, in its own colors, in
+/// the header and on the welcome screen; a mark set as plain text clears it.
+#[test]
+fn a_logo_of_colored_pieces_keeps_its_colors() {
+    use crate::render::Tone;
+    use crate::{Branding, Color, LogoTile, UiOptions, WelcomeScreen};
+    let (first, second) = (Color::rgb(99, 102, 241), Color::rgb(55, 58, 130));
+    let rows = vec![
+        vec![
+            LogoTile::colored("██", first),
+            LogoTile::gap(" "),
+            LogoTile::colored("██", second),
+        ],
+        vec![LogoTile::colored("\x1b[2J██", second)],
+    ];
+    let branding = Branding::new("Code").with_logo_tiles(rows.clone());
+    assert_eq!(branding.logo, ["██ ██", "\x1b[2J██"]);
+    let options = UiOptions {
+        branding,
+        welcome: Some(WelcomeScreen::default().with_logo_tiles(rows.clone())),
+        ..UiOptions::default()
+    };
+    let renderers = Renderers::default();
+    let tones = |frame: &crate::render::Frame| -> Vec<Tone> {
+        frame.spans.iter().flatten().map(|span| span.tone).collect()
+    };
+    let session_on = session();
+    let welcome = render::screen_with_options(
+        &session_on,
+        140,
+        40,
+        &renderers,
+        &options,
+        std::time::Duration::ZERO,
+    );
+    assert!(tones(&welcome).contains(&Tone::Mark(first)));
+    assert!(tones(&welcome).contains(&Tone::Mark(second)));
+
+    let options = UiOptions {
+        welcome: None,
+        ..options
+    };
+    let header = render::screen_with_options(
+        &session_on,
+        140,
+        40,
+        &renderers,
+        &options,
+        std::time::Duration::ZERO,
+    );
+    assert!(tones(&header).contains(&Tone::Mark(first)));
+    assert!(header.lines[0].contains("██ ██"), "{:?}", header.lines[0]);
+    assert!(!header.lines.join("\n").contains('\x1b'));
+
+    let plain = Branding::new("Code")
+        .with_logo_tiles(rows)
+        .with_logo(vec!["AB".into()]);
+    assert!(plain.logo_tiles.is_empty());
 }

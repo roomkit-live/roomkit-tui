@@ -189,6 +189,7 @@ fn appearance(tone: Tone, theme: &crate::Theme, colors: bool) -> style::ContentS
 fn foreground(tone: Tone, theme: &crate::Theme) -> crate::Color {
     match tone {
         Tone::Primary => theme.primary,
+        Tone::Mark(color) => color,
         Tone::Accent | Tone::InputPrompt => theme.accent,
         Tone::Muted | Tone::Placeholder => theme.muted,
         Tone::Border => theme.border,

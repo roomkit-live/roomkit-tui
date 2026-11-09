@@ -27,7 +27,9 @@ mod terminal;
 #[cfg(test)]
 mod tests;
 
-pub use appearance::{Branding, Color, ColorMode, SelectionMode, Theme, UiOptions, WelcomeScreen};
+pub use appearance::{
+    Branding, Color, ColorMode, LogoTile, SelectionMode, Theme, UiOptions, WelcomeScreen,
+};
 pub use form::FormState;
 pub use menu::{CommandMenu, MenuEntry};
 pub use observation::{OperationObservation, RunObservation, SessionObservation, SessionObserver};

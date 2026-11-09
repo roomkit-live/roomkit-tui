@@ -42,6 +42,44 @@ pub struct Branding {
     pub subtitle: String,
     /// Small terminal mark; at most five lines are displayed on roomy terminals.
     pub logo: Vec<String>,
+    /// The same mark as colored pieces, row by row, when it has colors of its
+    /// own; the plain rows are then its text.
+    pub logo_tiles: Vec<Vec<LogoTile>>,
+}
+
+/// A piece of a logo row, in its own color.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct LogoTile {
+    /// The piece's text.
+    pub text: String,
+    /// Its color; `None` keeps the terminal's, for the gap between pieces.
+    pub color: Option<Color>,
+}
+
+impl LogoTile {
+    /// `text` drawn in `color`.
+    pub fn colored(text: impl Into<String>, color: Color) -> Self {
+        Self {
+            text: text.into(),
+            color: Some(color),
+        }
+    }
+
+    /// `text`, a gap between colored pieces.
+    pub fn gap(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            color: None,
+        }
+    }
+}
+
+/// The plain text of colored logo rows.
+fn tile_text(rows: &[Vec<LogoTile>]) -> Vec<String> {
+    rows.iter()
+        .map(|row| row.iter().map(|tile| tile.text.as_str()).collect())
+        .collect()
 }
 
 impl Branding {
@@ -51,6 +89,7 @@ impl Branding {
             name: name.into(),
             subtitle: String::new(),
             logo: Vec::new(),
+            logo_tiles: Vec::new(),
         }
     }
 
@@ -65,6 +104,15 @@ impl Branding {
     #[must_use]
     pub fn with_logo(mut self, logo: Vec<String>) -> Self {
         self.logo = logo;
+        self.logo_tiles.clear();
+        self
+    }
+
+    /// Set a terminal mark of colored pieces; at most five rows are displayed.
+    #[must_use]
+    pub fn with_logo_tiles(mut self, rows: Vec<Vec<LogoTile>>) -> Self {
+        self.logo = tile_text(&rows);
+        self.logo_tiles = rows;
         self
     }
 }
@@ -80,6 +128,7 @@ impl Default for Branding {
                 "│ ▄▄ ▄▄ │".into(),
                 "╰───────╯".into(),
             ],
+            logo_tiles: Vec::new(),
         }
     }
 }
@@ -91,6 +140,9 @@ impl Default for Branding {
 pub struct WelcomeScreen {
     /// Symbol beside the wordmark; empty hides it. At most eight rows/24 columns.
     pub logo: Vec<String>,
+    /// The same symbol as colored pieces, row by row, when it has colors of
+    /// its own; the plain rows are then its text.
+    pub logo_tiles: Vec<Vec<LogoTile>>,
     /// Large lettering; empty uses the application's plain name.
     /// At most eight rows/64 columns are displayed.
     pub wordmark: Vec<String>,
@@ -102,9 +154,20 @@ impl Default for WelcomeScreen {
     fn default() -> Self {
         Self {
             logo: Vec::new(),
+            logo_tiles: Vec::new(),
             wordmark: Vec::new(),
             width: 88,
         }
+    }
+}
+
+impl WelcomeScreen {
+    /// Set a symbol of colored pieces.
+    #[must_use]
+    pub fn with_logo_tiles(mut self, rows: Vec<Vec<LogoTile>>) -> Self {
+        self.logo = tile_text(&rows);
+        self.logo_tiles = rows;
+        self
     }
 }
 

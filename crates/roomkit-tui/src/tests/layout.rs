@@ -20,6 +20,7 @@ fn application_branding_is_sanitized_and_motion_is_optional_without_delaying_out
             name: "Observatory".into(),
             subtitle: "Research conversations".into(),
             logo: vec!["[o]".into(), "\x1b]52;host\x07".into()],
+            logo_tiles: Vec::new(),
         },
         animations: false,
         ..Default::default()
