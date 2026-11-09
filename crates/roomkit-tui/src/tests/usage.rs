@@ -309,6 +309,17 @@ fn the_total_adds_what_the_related_work_cost_to_the_conversation() {
     assert!(session.total_cost().is_none());
 }
 
+/// A snapshot's currency is the host's text, bounded as an event's is.
+#[test]
+fn a_snapshot_s_related_cost_is_bounded() {
+    let mut oversized = snapshot();
+    oversized.related_cost = Some(ConversationCost::new(1, "X".repeat(4_096), true));
+    let mut session = Session::default();
+    session.apply(Event::Snapshot(oversized));
+    let total = session.total_cost().unwrap();
+    assert!(total.currency.len() <= limits::MAX_LABEL_BYTES);
+}
+
 /// A conversation whose own model has no price still shows what its tasks
 /// cost, as a total that cannot be whole.
 #[test]

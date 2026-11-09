@@ -2,10 +2,10 @@
 
 use std::time::Duration;
 
-use roomkit_tui_protocol::{SidebarContent, Snapshot};
+use roomkit_tui_protocol::{ConversationCost, SidebarContent, Snapshot};
 
 use super::text::sanitize;
-use super::{Line, Session, Tone, line, span};
+use super::{Line, Session, Span, Tone, line, span};
 use unicode_width::UnicodeWidthStr;
 
 pub(super) fn footer(
@@ -232,20 +232,7 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
             Tone::Muted,
         ));
     }
-    if let Some(cost) = session.cost() {
-        let partial = if cost.complete { "" } else { " (partial)" };
-        parts.push(span(
-            format!(" · {}{partial}", super::context::amount(cost)),
-            Tone::Muted,
-        ));
-    }
-    if let Some(total) = session.total_cost() {
-        let partial = if total.complete { "" } else { " (partial)" };
-        parts.push(span(
-            format!(" · total {}{partial}", super::context::amount(&total)),
-            Tone::Muted,
-        ));
-    }
+    parts.extend(costs(session));
     let combined_width: usize = settings
         .iter()
         .chain(&parts)
@@ -260,4 +247,17 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
     } else {
         vec![settings, parts]
     }
+}
+
+/// The conversation's own cost and its total with the work related to it,
+/// each saying when it is partial.
+fn costs(session: &Session) -> Vec<Span> {
+    let part = |prefix: &str, cost: &ConversationCost| {
+        let partial = if cost.complete { "" } else { " (partial)" };
+        let amount = super::context::amount(cost);
+        span(format!(" · {prefix}{amount}{partial}"), Tone::Muted)
+    };
+    let own = session.cost().map(|cost| part("", cost));
+    let total = session.total_cost().map(|cost| part("total ", &cost));
+    own.into_iter().chain(total).collect()
 }

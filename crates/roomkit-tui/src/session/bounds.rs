@@ -26,7 +26,10 @@ pub(super) fn bound_labels(snapshot: &mut Snapshot) {
     if let Some(model) = &mut snapshot.model {
         bound_model(model);
     }
-    if let Some(cost) = &mut snapshot.cost {
+    for cost in [&mut snapshot.cost, &mut snapshot.related_cost]
+        .into_iter()
+        .flatten()
+    {
         bound_in_place(&mut cost.currency, MAX_LABEL_BYTES);
     }
 }
