@@ -17,6 +17,9 @@ pub struct PermissionRequest {
     pub summary: Option<String>,
     /// How long to wait before refusing.
     pub timeout: Duration,
+    /// The group of views that may answer it, by its name: any view showing
+    /// a room of that group, wherever the request was asked.
+    pub group: Option<String>,
 }
 
 impl PermissionRequest {
@@ -27,7 +30,15 @@ impl PermissionRequest {
             detail: detail.into(),
             summary: None,
             timeout,
+            group: None,
         }
+    }
+
+    /// Let any view of `group` answer it.
+    #[must_use]
+    pub fn with_group(mut self, group: impl Into<String>) -> Self {
+        self.group = Some(group.into());
+        self
     }
 
     /// Set the concise label kept in history.
@@ -47,6 +58,9 @@ pub(crate) struct Details {
     /// The run the request belongs to, by the token its start returned; the
     /// scope's most recent run if none.
     pub run: Option<u64>,
+    pub group: Option<String>,
+    /// The room the request is asked in.
+    pub room: String,
 }
 
 impl Details {
@@ -62,6 +76,9 @@ impl Details {
             self.detail.clone(),
         );
         permission.summary.clone_from(&self.summary);
+        if self.group.is_some() {
+            permission = permission.with_origin(self.room.as_str());
+        }
         permission.fits().then_some(permission)
     }
 }

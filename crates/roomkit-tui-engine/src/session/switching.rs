@@ -92,9 +92,11 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
     /// agent asks next.
     fn change_rooms(&mut self, target: &SessionConfig) {
         let channel = self.session.channel.clone();
-        let approvals = channel
-            .approvals
-            .attach(target.conversation(), target.agent.as_str());
+        let approvals = channel.approvals.attach_in(
+            target.conversation(),
+            target.agent.as_str(),
+            target.group_name(),
+        );
         let leaving = self.session.config.conversation().to_owned();
         let group = self.session.config.group_name().to_owned();
         let left = std::mem::replace(&mut self.approvals, approvals);

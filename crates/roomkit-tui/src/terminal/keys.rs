@@ -93,10 +93,21 @@ pub(super) fn handle_key(
 /// to be read; navigation and interruption stay immediate.
 fn permission_key(session: &mut Session, client: &Client, key: KeyEvent, now: Duration) {
     if is_cancel(key) {
+        if session.permission_elsewhere().is_some() {
+            // A card from another room: refuses this action, stops nothing.
+            answer_card(session, client, Decision::Deny);
+            return;
+        }
         // The card's run, which may be a later one than the view's own work.
         if let Some(run) = session.permissions().first().map(|p| p.run.clone()) {
             interrupt_run(session, client, run);
         }
+        return;
+    }
+    if key.code == KeyCode::Char('o')
+        && let Some(command) = session.open_permission_room()
+    {
+        send(session, client, command, false);
         return;
     }
     let Some(permission) = session.permissions().first() else {
@@ -140,6 +151,13 @@ fn permission_key(session: &mut Session, client: &Client, key: KeyEvent, now: Du
     if let Some(decision) = decision.filter(|_| session.approval_armed(now))
         && let Some(command) = session.decide(decision)
     {
+        send(session, client, command, false);
+    }
+}
+
+/// Answers the card on screen with `decision`.
+fn answer_card(session: &mut Session, client: &Client, decision: Decision) {
+    if let Some(command) = session.decide(decision) {
         send(session, client, command, false);
     }
 }

@@ -163,6 +163,8 @@ impl ConversationChannel {
             summary: request.summary,
             tool_call_id,
             run: token,
+            group: request.group,
+            room: room.to_owned(),
         };
         self.approvals
             .ask(room, agent, details, request.timeout)

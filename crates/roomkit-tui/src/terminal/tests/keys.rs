@@ -315,6 +315,68 @@ fn alt_arrows_leave_an_image_waiting_in_the_composer() {
     assert_eq!(session.images().len(), 1);
 }
 
+/// A card asked in another room shows here though its run is not this view's;
+/// Esc refuses that one action, and `o` asks for its room.
+#[test]
+fn a_card_from_another_room_is_refused_or_followed_from_here() {
+    let (mut session, client, host) = fixture(false);
+    let snapshot = session.snapshot.as_mut().unwrap();
+    snapshot.cycle_command = Some("tasks".into());
+    let conversation = snapshot.conversation.clone();
+    let permission = Permission::new("p1", "review", "worker-run", "Review asks", "write a file")
+        .with_origin("room-b");
+    session.apply(Event::PermissionRequested {
+        conversation,
+        permission,
+    });
+    assert_eq!(session.permissions().len(), 1);
+
+    press(
+        &mut session,
+        &client,
+        key(KeyCode::Char('o')),
+        Duration::ZERO,
+    );
+    let opened = host.try_recv().unwrap();
+    assert_eq!(
+        opened.command,
+        Command::Invoke {
+            name: "tasks".into(),
+            arguments: "open room-b".into()
+        }
+    );
+    session.apply(Event::Reply {
+        request: opened.id,
+        error: None,
+    });
+
+    press(&mut session, &client, key(KeyCode::Esc), Duration::ZERO);
+    let refused = host.try_recv().unwrap();
+    assert!(
+        matches!(
+            refused.command,
+            Command::Decide {
+                decision: Decision::Deny,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+}
+
+/// A card with no origin still needs its run to be live here.
+#[test]
+fn a_card_of_a_run_that_is_not_live_is_ignored_without_an_origin() {
+    let (mut session, _client, _host) = fixture(false);
+    let conversation = session.snapshot.as_ref().unwrap().conversation.clone();
+    let permission = Permission::new("p1", "review", "gone-run", "Allow?", "detail");
+    session.apply(Event::PermissionRequested {
+        conversation,
+        permission,
+    });
+    assert!(session.permissions().is_empty());
+}
+
 #[test]
 fn image_removal_and_submission_keep_the_draft_until_host_acknowledgment() {
     let (mut session, client, host) = fixture(false);

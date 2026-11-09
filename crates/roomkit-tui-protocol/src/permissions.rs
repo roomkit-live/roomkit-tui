@@ -6,7 +6,7 @@ use crate::limits::{
     MAX_LABEL_BYTES, MAX_PERMISSION_DETAIL_BYTES, MAX_PERMISSION_SUMMARY_BYTES,
     MAX_PERMISSION_TITLE_BYTES,
 };
-use crate::{ActorId, PermissionId, RunId};
+use crate::{ActorId, ConversationId, PermissionId, RunId};
 
 /// A human decision. Approval is scoped to this one request. Unknown values
 /// fail to parse, so a newer client can never be read as an approval.
@@ -37,6 +37,10 @@ pub struct Permission {
     /// Concise description for the confirmation in history; defaults to the title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// The conversation it was asked in, when a view of a related one may
+    /// answer it: the run is then not that view's. Older hosts omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ConversationId>,
 }
 
 impl Permission {
@@ -55,7 +59,15 @@ impl Permission {
             title: title.into(),
             detail: detail.into(),
             summary: None,
+            origin: None,
         }
+    }
+
+    /// Set the conversation it was asked in.
+    #[must_use]
+    pub fn with_origin(mut self, origin: impl Into<ConversationId>) -> Self {
+        self.origin = Some(origin.into());
+        self
     }
 
     /// Set the concise description kept in history.
@@ -71,6 +83,10 @@ impl Permission {
     /// it truncated.
     pub fn fits(&self) -> bool {
         self.id.as_str().len() <= MAX_LABEL_BYTES
+            && self
+                .origin
+                .as_ref()
+                .is_none_or(|origin| origin.as_str().len() <= MAX_LABEL_BYTES)
             && self.title.len() <= MAX_PERMISSION_TITLE_BYTES
             && self.detail.len() <= MAX_PERMISSION_DETAIL_BYTES
             && self

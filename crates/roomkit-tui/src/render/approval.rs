@@ -50,8 +50,13 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
     let shown = (start + count).min(detail.len());
     let help = quit_hint(session, view.elapsed).unwrap_or_else(|| {
         format!(
-            "PgUp/PgDn details {shown}/{} · Esc interrupt{more}",
-            detail.len()
+            "PgUp/PgDn details {shown}/{} · {}{more}",
+            detail.len(),
+            if session.permission_elsewhere().is_some() {
+                "Esc refuse · o open its room"
+            } else {
+                "Esc interrupt"
+            }
         )
     });
     card.push(filled(&help));

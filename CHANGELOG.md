@@ -8,6 +8,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- An approval reaches the view wherever it is (RMK-1535).
+  `PermissionRequest::with_group` lets any view of a group answer it, and
+  `SessionConfig::group` says which group a view is in: the card comes to the
+  room shown, with `Permission::origin` naming where it was asked. There Esc
+  refuses that one action, and `o` opens its room through `cycle_command`.
 - A view moves between rooms while work runs in them (RMK-1535). A command
   allowed while busy can switch the view: it leaves the work running, keeps
   what stops it and its open decisions, and finds them on its return.

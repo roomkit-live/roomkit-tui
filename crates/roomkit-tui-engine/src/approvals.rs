@@ -24,6 +24,8 @@ pub use request::PermissionRequest;
 #[derive(Debug, Default)]
 struct State {
     views: BTreeMap<Scope, usize>,
+    /// The views of each group, which answer what is asked in its rooms.
+    groups: BTreeMap<String, usize>,
     /// Live runs of each scope, oldest first: a turn delivered for another
     /// channel's message can start while host work still runs.
     runs: BTreeMap<Scope, Vec<Run>>,
@@ -82,6 +84,16 @@ struct Pending {
     answer: oneshot::Sender<Decision>,
     permission: Permission,
     tool_call_id: Option<String>,
+    /// The group whose views may answer it.
+    group: Option<String>,
+}
+
+impl Pending {
+    /// The room its requests and resolutions are published under: its
+    /// group's, heard wherever a view of the group is.
+    fn published_in(&self) -> String {
+        self.group.clone().unwrap_or_else(|| self.scope.0.clone())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -108,12 +120,23 @@ impl Approvals {
         let _ = self.events.send((room.into(), event));
     }
 
+    #[cfg(test)]
     pub fn attach(&self, room: &str, agent: &str) -> View {
+        self.attach_in(room, agent, room)
+    }
+
+    /// A view of `(room, agent)` in `group`, which also answers what is asked
+    /// in the group's other rooms.
+    pub fn attach_in(&self, room: &str, agent: &str, group: &str) -> View {
         let scope = (room.into(), agent.into());
-        *self.lock().views.entry(scope.clone()).or_default() += 1;
+        let mut state = self.lock();
+        *state.views.entry(scope.clone()).or_default() += 1;
+        *state.groups.entry(group.to_owned()).or_default() += 1;
+        drop(state);
         View {
             broker: self.clone(),
             scope,
+            group: group.to_owned(),
         }
     }
 
@@ -141,9 +164,23 @@ impl Approvals {
 
     /// Answer one pending request. The decision is recorded only once the
     /// waiting action has received it.
+    #[cfg(test)]
     pub fn decide(
         &self,
-        (room, agent): (&str, &str),
+        scope: (&str, &str),
+        id: &PermissionId,
+        decision: Decision,
+        sender: &str,
+    ) -> Result<(), Rejection> {
+        self.decide_in(scope, scope.0, id, decision, sender)
+    }
+
+    /// [`Self::decide`] from a view in `group`, which also answers what is
+    /// asked in the group's other rooms.
+    pub fn decide_in(
+        &self,
+        (view_room, agent): (&str, &str),
+        group: &str,
         id: &PermissionId,
         decision: Decision,
         sender: &str,
@@ -152,7 +189,8 @@ impl Approvals {
         let Some(pending) = state.pending.get(id) else {
             return Err(Rejection::unavailable("This approval is no longer pending"));
         };
-        if pending.scope != (room.into(), agent.into()) {
+        let own = pending.scope == (view_room.into(), agent.into());
+        if !own && pending.group.as_deref() != Some(group) {
             return Err(Rejection::invalid("Approval belongs to another view"));
         }
         if pending
@@ -165,10 +203,11 @@ impl Approvals {
                 "Only the person who started this request can answer it",
             ));
         }
+        let (room, published) = (pending.scope.0.clone(), pending.published_in());
         let settled = self.settle(&mut state, id, decision);
         let Some(settled) = settled.filter(|settled| settled.delivered) else {
             drop(state);
-            self.resolved(room, id);
+            self.resolved(&published, id);
             return Err(Rejection::unavailable("This approval has expired"));
         };
         let decided_by = ActorId::new(format!("person:{sender}"));
@@ -177,29 +216,36 @@ impl Approvals {
             decision: record.clone(),
             tool_call_id: settled.tool_call_id,
         };
-        state.receipts.entry(room.into()).or_default().push(receipt);
+        state
+            .receipts
+            .entry(room.clone())
+            .or_default()
+            .push(receipt);
         drop(state);
         // Publish only explicit, delivered answers. Timeout and withdrawal
         // settle directly and must never look like a human refusal.
         let item = Item::Approval(record);
         self.publish(
-            room,
+            &room,
             Event::Item {
-                conversation: room.into(),
+                conversation: room.as_str().into(),
                 item,
             },
         );
-        self.resolved(room, id);
+        self.resolved(&published, id);
         Ok(())
     }
 
-    /// The decisions `(room, agent)` is waiting for.
-    pub(crate) fn requested(&self, room: &str, agent: &str) -> Vec<Permission> {
+    /// The decisions a view of `(room, agent)` in `group` answers.
+    pub(crate) fn requested(&self, room: &str, agent: &str, group: &str) -> Vec<Permission> {
         let state = self.lock();
         state
             .pending
             .values()
-            .filter(|pending| pending.scope.0 == room && pending.scope.1 == agent)
+            .filter(|pending| {
+                (pending.scope.0 == room && pending.scope.1 == agent)
+                    || pending.group.as_deref() == Some(group)
+            })
             .map(|pending| pending.permission.clone())
             .collect()
     }
@@ -308,11 +354,26 @@ impl Approvals {
             .pending
             .iter()
             .filter(|(_, p)| &p.scope == scope && token.is_none_or(|t| t == p.run.token))
-            .map(|(id, _)| id.clone())
+            .map(|(id, pending)| (id.clone(), pending.published_in()))
             .collect();
-        for id in ids {
+        self.withdraw_all(state, ids);
+    }
+
+    /// Withdraws what was asked for `group`, which no view shows any more.
+    fn withdraw_group(&self, state: &mut State, group: &str) {
+        let ids: Vec<_> = state
+            .pending
+            .iter()
+            .filter(|(_, p)| p.group.as_deref() == Some(group))
+            .map(|(id, pending)| (id.clone(), pending.published_in()))
+            .collect();
+        self.withdraw_all(state, ids);
+    }
+
+    fn withdraw_all(&self, state: &mut State, ids: Vec<(PermissionId, String)>) {
+        for (id, published) in ids {
             self.settle(state, &id, Decision::Deny);
-            self.resolved(&scope.0, &id);
+            self.resolved(&published, &id);
         }
         self.ready.notify_waiters();
     }

@@ -12,7 +12,10 @@ impl Session {
         conversation: &ConversationId,
         permission: Permission,
     ) {
-        if !self.is_current(conversation) || !self.is_live(&permission.run) {
+        // One asked in a related room runs there, not in this view.
+        if !self.is_current(conversation)
+            || (permission.origin.is_none() && !self.is_live(&permission.run))
+        {
             return;
         }
         if !permission.fits() || self.permissions().len() >= MAX_PENDING_PERMISSIONS {

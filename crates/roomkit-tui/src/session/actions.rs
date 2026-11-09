@@ -1,7 +1,7 @@
 //! Requests for host actions: decisions, modes, panels and background work.
 //! Each is built only while its target is still on screen.
 
-use roomkit_tui_protocol::{Command, Decision};
+use roomkit_tui_protocol::{Command, ConversationId, Decision};
 
 use super::{Focus, Session};
 
@@ -51,6 +51,23 @@ impl Session {
         self.permissions().first().map(|p| Command::Decide {
             permission: p.id.clone(),
             decision,
+        })
+    }
+
+    /// The room the card on screen was asked in, when it is not the one shown.
+    pub fn permission_elsewhere(&self) -> Option<&ConversationId> {
+        let snapshot = self.snapshot.as_ref()?;
+        let origin = self.permissions().first()?.origin.as_ref()?;
+        (*origin != snapshot.conversation).then_some(origin)
+    }
+
+    /// The command that opens the room the card on screen was asked in.
+    pub fn open_permission_room(&self) -> Option<Command> {
+        let name = self.snapshot.as_ref()?.cycle_command.clone()?;
+        let room = self.permission_elsewhere()?;
+        Some(Command::Invoke {
+            name,
+            arguments: format!("open {}", room.as_str()),
         })
     }
 

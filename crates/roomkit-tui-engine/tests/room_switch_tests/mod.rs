@@ -376,10 +376,10 @@ async fn a_group_s_room_left_idle_keeps_its_approvals_open() {
     task.await.unwrap().unwrap();
 }
 
-/// An approval asked in a room left, while the view is in another room of
-/// its group, is told there: nothing else would say the agent is waiting.
+/// An approval asked in a room left comes to the room shown, says where it
+/// was asked, and is answered from there.
 #[tokio::test]
-async fn an_approval_in_a_room_left_is_told_in_the_room_shown() {
+async fn an_approval_in_a_room_left_comes_to_the_room_shown() {
     let kit = RoomKit::new(Default::default());
     let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
     let channel = prepare(&kit, provider, Arc::default(), false).await;
@@ -400,24 +400,95 @@ async fn an_approval_in_a_room_left_is_told_in_the_room_shown() {
     let (room, agent) = (config().room, config().agent);
     let asker = channel.clone();
     let asked = tokio::spawn(async move {
-        let request = PermissionRequest::new("Allow it?", "d", Duration::from_secs(30));
+        let request =
+            PermissionRequest::new("Allow it?", "d", Duration::from_secs(30)).with_group("room");
         asker.ask_permission(&room, &agent, request).await
     });
-    let notice = loop {
-        if let Event::Notice { conversation, text } = next(&client).await {
+    let permission = loop {
+        if let Event::PermissionRequested {
+            conversation,
+            permission,
+        } = next(&client).await
+        {
             assert_eq!(conversation.as_str(), "other");
-            break text;
+            break permission;
         }
     };
-    assert!(notice.contains("waiting for your approval"), "{notice}");
-    asked.abort();
+    assert_eq!(
+        permission.origin.as_ref().map(ConversationId::as_str),
+        Some("room")
+    );
+    let decide = Command::Decide {
+        permission: permission.id,
+        decision: Decision::Allow,
+    };
+    client
+        .try_send(Request::new(RequestId::new(3), "decide", "other", decide))
+        .unwrap();
+    assert_eq!(asked.await.unwrap(), Decision::Allow);
     open.send_replace(true);
     drop(client);
     task.await.unwrap().unwrap();
 }
 
+/// A view of a group answers for a room it never showed: a worker it was
+/// never moved into. Its run is what lets the request wait.
+#[tokio::test]
+async fn a_view_answers_for_a_room_of_its_group_it_never_showed() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([ScriptedRound::answering("Elsewhere")]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    with_other_room(&kit, &channel).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_answers(&kit, gate, held.clone());
+
+    // The other room runs under a view that then leaves, as a worker does.
+    let (elsewhere, other_host) = connection(NonZeroUsize::new(256).unwrap());
+    let mut other = commanded();
+    other.room = RoomId::new("other").unwrap();
+    other.group = Some("room".to_owned());
+    let other_view = LocalSession::new(kit.clone(), channel.clone(), other);
+    let other_task = tokio::spawn(other_view.run_with_commands(other_host, Go { stopped: None }));
+    next(&elsewhere).await;
+    let mut ask = request("ask");
+    ask.conversation = "other".into();
+    elsewhere.try_send(ask).unwrap();
+    started_run(&elsewhere).await;
+    held.notified().await;
+
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+    let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
+    next(&client).await;
+    let (room, agent) = (RoomId::new("other").unwrap(), config().agent);
+    let asker = channel.clone();
+    let asked = tokio::spawn(async move {
+        let request =
+            PermissionRequest::new("Allow it?", "d", Duration::from_secs(30)).with_group("room");
+        asker.ask_permission(&room, &agent, request).await
+    });
+    let permission = loop {
+        if let Event::PermissionRequested { permission, .. } = next(&client).await {
+            break permission;
+        }
+    };
+    let decide = Command::Decide {
+        permission: permission.id,
+        decision: Decision::Deny,
+    };
+    client
+        .try_send(Request::new(RequestId::new(3), "decide", "room", decide))
+        .unwrap();
+    assert_eq!(asked.await.unwrap(), Decision::Deny);
+    open.send_replace(true);
+    drop((client, elsewhere));
+    task.await.unwrap().unwrap();
+    other_task.await.unwrap().unwrap();
+}
+
 /// A conversation left for one of another group is not reachable from it:
-/// nothing there says an agent of "this conversation" is waiting.
+/// no card comes there.
 #[tokio::test]
 async fn an_approval_outside_the_group_is_not_told() {
     let kit = RoomKit::new(Default::default());
@@ -440,12 +511,16 @@ async fn an_approval_outside_the_group_is_not_told() {
     let (room, agent) = (config().room, config().agent);
     let asker = channel.clone();
     let asked = tokio::spawn(async move {
-        let request = PermissionRequest::new("Allow it?", "d", Duration::from_secs(30));
+        let request =
+            PermissionRequest::new("Allow it?", "d", Duration::from_secs(30)).with_group("room");
         asker.ask_permission(&room, &agent, request).await
     });
     tokio::time::sleep(Duration::from_millis(200)).await;
     while let Ok(event) = client.try_recv() {
-        assert!(!matches!(event, Event::Notice { .. }), "{event:?}");
+        assert!(
+            !matches!(event, Event::PermissionRequested { .. }),
+            "{event:?}"
+        );
     }
     asked.abort();
     open.send_replace(true);

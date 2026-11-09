@@ -117,8 +117,9 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 decision,
             } => {
                 let scope = (config.conversation(), config.agent.as_str());
-                let answer = self.session.channel.approvals.decide(
+                let answer = self.session.channel.approvals.decide_in(
                     scope,
+                    config.group_name(),
                     permission,
                     *decision,
                     &config.sender,

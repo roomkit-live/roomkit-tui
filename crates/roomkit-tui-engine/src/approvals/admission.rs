@@ -48,7 +48,11 @@ impl Approvals {
     pub(super) fn register(&self, scope: &Scope, details: &Details) -> Registration {
         let mut state = self.lock();
         let (room, agent) = scope;
-        if !state.views.contains_key(scope) {
+        let watched = details
+            .group
+            .as_ref()
+            .is_some_and(|group| state.groups.contains_key(group));
+        if !watched && !state.views.contains_key(scope) {
             return Registration::Refused;
         }
         // A refusal is told once the run has started: a terminal clears its
@@ -75,7 +79,7 @@ impl Approvals {
             return self.refuse(&mut state, scope, run.token, reason);
         };
         let pending = (run, permission, details.tool_call_id.clone());
-        self.enqueue(&mut state, scope, pending)
+        self.enqueue(&mut state, scope, pending, details.group.clone())
     }
 
     /// Hold `permission` until it is answered, and show it to the views.
@@ -84,6 +88,7 @@ impl Approvals {
         state: &mut State,
         scope: &Scope,
         (run, permission, tool_call_id): (Run, Permission, Option<String>),
+        group: Option<String>,
     ) -> Registration {
         let id = permission.id.clone();
         let (answer, receiver) = oneshot::channel();
@@ -93,12 +98,13 @@ impl Approvals {
             answer,
             permission: permission.clone(),
             tool_call_id,
+            group,
         };
+        let room = pending.published_in();
         state.pending.insert(id.clone(), pending);
-        let room = &scope.0;
         let conversation = room.as_str().into();
         self.publish(
-            room,
+            &room,
             Event::PermissionRequested {
                 conversation,
                 permission,

@@ -74,10 +74,11 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
     let mut broadcast = session.channel.events.subscribe();
     let (snapshot, costs) = session.attachment().await?;
     let (requests, host) = host.split();
-    let approvals = session
-        .channel
-        .approvals
-        .attach(session.config.conversation(), session.config.agent.as_str());
+    let approvals = session.channel.approvals.attach_in(
+        session.config.conversation(),
+        session.config.agent.as_str(),
+        session.config.group_name(),
+    );
     let mut view = View {
         session,
         host,
@@ -157,7 +158,8 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
     pub fn caught_up(&mut self, catch_up: Vec<Event>) -> Result<(), AdapterError> {
         let config = &self.session.config;
         let (room, agent) = (config.conversation(), config.agent.as_str());
-        let requested = self.session.channel.approvals.requested(room, agent);
+        let group = config.group_name();
+        let requested = self.session.channel.approvals.requested(room, agent, group);
         let requested = requested
             .into_iter()
             .map(|permission| Event::PermissionRequested {
@@ -176,6 +178,7 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         &mut self,
         frame: Result<(String, Event), broadcast::error::RecvError>,
     ) -> Result<bool, AdapterError> {
+        let here = self.session.config.conversation().to_owned();
         match frame {
             Ok((room, mut event)) if room == self.session.config.conversation() => {
                 crate::measurements::for_view(&mut event, &self.session.config);
@@ -185,25 +188,19 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
                 self.send_all(events)?;
                 Ok(true)
             }
-            Ok((room, Event::PermissionRequested { .. })) if self.in_group(&room) => {
-                self.send(Event::Notice {
-                    conversation: self.session.config.conversation().into(),
-                    text: "An agent of this conversation is waiting for your approval in another room: Alt+arrows go there".into(),
-                })?;
+            // Asked anywhere in the view's group, told wherever it is.
+            Ok((room, mut event))
+                if room == self.session.config.group_name() && decides(&event) =>
+            {
+                retarget(&mut event, &here);
+                let events = self.progress.apply(event);
+                self.send_all(events)?;
                 Ok(true)
             }
             Ok(_) => Ok(true),
             Err(broadcast::error::RecvError::Lagged(_)) => Err(AdapterError::Lagged),
             Err(broadcast::error::RecvError::Closed) => Ok(false),
         }
-    }
-
-    /// Whether `room` is a room of the shown one's group the view has left.
-    fn in_group(&self, room: &str) -> bool {
-        let shown = self.session.config.group_name();
-        self.parked
-            .get(room)
-            .is_some_and(|left| left.group == shown)
     }
 
     /// Keep a request until the pending one completes, within a bound.
@@ -304,5 +301,23 @@ impl<F: Future> Future for CatchUnwind<F> {
             Ok(Poll::Pending) => Poll::Pending,
             Err(_) => Poll::Ready(None),
         }
+    }
+}
+
+/// Whether `event` is a decision being asked or settled.
+fn decides(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::PermissionRequested { .. } | Event::PermissionResolved { .. }
+    )
+}
+
+/// Sets `event`, a decision asked or settled in the view's group, to the
+/// conversation the view shows.
+fn retarget(event: &mut Event, here: &str) {
+    if let Event::PermissionRequested { conversation, .. }
+    | Event::PermissionResolved { conversation, .. } = event
+    {
+        *conversation = here.into();
     }
 }

@@ -8,6 +8,7 @@ use super::{Approvals, Scope};
 pub(crate) struct View {
     pub(super) broker: Approvals,
     pub(super) scope: Scope,
+    pub(super) group: String,
 }
 
 impl Drop for View {
@@ -22,6 +23,13 @@ impl Drop for View {
                 if !state.views.keys().any(|(watched, _)| watched == room) {
                     state.last_runs.remove(room);
                 }
+            }
+        }
+        if let Some(count) = state.groups.get_mut(&self.group) {
+            *count -= 1;
+            if *count == 0 {
+                state.groups.remove(&self.group);
+                self.broker.withdraw_group(&mut state, &self.group);
             }
         }
     }
@@ -63,7 +71,10 @@ pub(crate) struct Waiting {
 impl Drop for Waiting {
     fn drop(&mut self) {
         let mut state = self.broker.lock();
-        let room = state.pending.get(&self.id).map(|p| p.scope.0.clone());
+        let room = state
+            .pending
+            .get(&self.id)
+            .map(super::Pending::published_in);
         self.broker.settle(&mut state, &self.id, Decision::Deny);
         drop(state);
         if let Some(room) = room {
