@@ -54,6 +54,24 @@ impl Session {
         })
     }
 
+    /// The command that moves to the next related room, or the previous one,
+    /// when the host offers one and nothing is being written.
+    pub fn cycle_room(&self, next: bool) -> Option<Command> {
+        let name = self.snapshot.as_ref()?.cycle_command.clone()?;
+        if !self.editor.text().is_empty()
+            || self.pending.values().any(
+                |command| matches!(command, Command::Invoke { name: sent, .. } if *sent == name),
+            )
+        {
+            return None;
+        }
+        let arguments = if next { "next" } else { "previous" };
+        Some(Command::Invoke {
+            name,
+            arguments: arguments.into(),
+        })
+    }
+
     /// Cycle the host's modes without changing the local policy optimistically.
     /// Repeated keys wait for the first request to settle; drafts are preserved.
     pub fn cycle_mode(&self) -> Option<Command> {

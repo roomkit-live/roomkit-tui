@@ -279,3 +279,12 @@ fn a_permission_fits_only_when_it_can_be_shown_in_full() {
         assert!(!permission.fits(), "case {n}: a person must read it all");
     }
 }
+
+#[test]
+fn the_command_that_moves_between_rooms_must_be_advertised() {
+    let mut offered = snapshot();
+    offered.cycle_command = Some("shell".into());
+    assert_eq!(offered.validate(), Ok(()));
+    offered.cycle_command = Some("unknown".into());
+    assert_eq!(offered.validate(), Err(Refused::CycleCommand));
+}

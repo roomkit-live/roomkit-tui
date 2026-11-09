@@ -10,6 +10,7 @@ use tokio::sync::broadcast;
 
 use crate::activity::{Active, Activity, Held, Stopping, Streams, Work};
 use crate::approvals::{Approvals, Details};
+use crate::live_runs::LiveRuns;
 use crate::own_turns::OwnTurns;
 use crate::{PermissionRequest, projection};
 
@@ -32,6 +33,8 @@ pub struct ConversationChannel {
     pub(crate) activity: Activity,
     pub(crate) stopping: Stopping,
     pub(crate) live_streams: Streams,
+    /// The runs under way in each room, for a view that attaches to one.
+    pub(crate) live_runs: LiveRuns,
     pub(crate) approvals: Approvals,
     pub(crate) own_turns: OwnTurns,
     /// Who asked for the answer turn under way in a room: its trigger is never
@@ -92,6 +95,7 @@ impl ConversationChannel {
             activity: Activity::default(),
             stopping: Stopping::default(),
             live_streams: Streams::default(),
+            live_runs: LiveRuns::default(),
             own_turns: OwnTurns::default(),
             answers: Arc::default(),
         }
@@ -176,6 +180,10 @@ impl ConversationChannel {
     }
 
     pub(crate) fn publish(&self, room: &str, event: Event) {
+        // Under one lock: a view that reads the runs under way knows which
+        // of the events it is then sent they already count.
+        let mut runs = self.live_runs.lock();
+        runs.apply(room, &event);
         if let Event::RunStarted { run, .. } = &event {
             self.approvals.announced(room, run);
         }

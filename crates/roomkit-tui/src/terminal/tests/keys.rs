@@ -232,6 +232,49 @@ fn shift_tab_changes_the_mode_only_from_the_composer() {
     ));
 }
 
+/// With nothing being written, Alt+arrows ask the host for the next related
+/// room, one request at a time; a host that offers none is asked nothing.
+#[test]
+fn alt_arrows_move_between_related_rooms_with_an_empty_composer() {
+    let (mut session, client, host) = fixture(false);
+    let alt = |code| KeyEvent::new(code, KeyModifiers::ALT);
+    press(&mut session, &client, alt(KeyCode::Right), Duration::ZERO);
+    assert!(
+        host.try_recv().is_err(),
+        "This host offers no related rooms"
+    );
+
+    session.snapshot.as_mut().unwrap().cycle_command = Some("tasks".into());
+    press(&mut session, &client, alt(KeyCode::Right), Duration::ZERO);
+    let sent = host.try_recv().unwrap();
+    assert_eq!(
+        sent.command,
+        Command::Invoke {
+            name: "tasks".into(),
+            arguments: "next".into()
+        }
+    );
+    press(&mut session, &client, alt(KeyCode::Right), Duration::ZERO);
+    assert!(host.try_recv().is_err(), "One request at a time");
+    session.apply(Event::Reply {
+        request: sent.id,
+        error: None,
+    });
+    press(&mut session, &client, alt(KeyCode::Left), Duration::ZERO);
+    assert_eq!(
+        host.try_recv().unwrap().command,
+        Command::Invoke {
+            name: "tasks".into(),
+            arguments: "previous".into()
+        }
+    );
+
+    // While writing, the arrows stay the editor's.
+    session.insert("draft");
+    press(&mut session, &client, alt(KeyCode::Right), Duration::ZERO);
+    assert!(host.try_recv().is_err());
+}
+
 #[test]
 fn image_removal_and_submission_keep_the_draft_until_host_acknowledgment() {
     let (mut session, client, host) = fixture(false);

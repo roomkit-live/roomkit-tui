@@ -14,6 +14,7 @@ mod cost;
 mod diagnostics;
 mod execution;
 mod lifecycle;
+mod live_runs;
 mod measurements;
 mod own_turns;
 mod progress;
@@ -27,4 +28,6 @@ pub use cost::{conversation_cost, turn_cost};
 pub use diagnostics::Diagnostic;
 pub use execution::{CommandExecution, ExecutionContext};
 pub use lifecycle::{LifecycleFuture, SessionLifecycle, TurnOutcome};
-pub use session::{AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig};
+pub use session::{
+    AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig, StopRun,
+};

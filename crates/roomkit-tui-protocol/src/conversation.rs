@@ -281,6 +281,11 @@ pub struct Snapshot {
     /// Optional application-owned composer actions. Older hosts advertise none.
     #[serde(default)]
     pub input_actions: Vec<InputAction>,
+    /// The advertised command a terminal invokes with `next` or `previous`
+    /// to move between this conversation and the rooms related to it, on
+    /// Alt+Right and Alt+Left with an empty composer. Older hosts omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cycle_command: Option<String>,
     /// Whether the selected agent and host accept image attachments.
     #[serde(default)]
     pub can_attach_images: bool,
@@ -328,6 +333,7 @@ impl Snapshot {
             related_cost: None,
             commands: Vec::new(),
             input_actions: Vec::new(),
+            cycle_command: None,
             can_attach_images: false,
             can_steer: false,
             can_answer: false,

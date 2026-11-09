@@ -193,6 +193,17 @@ impl Approvals {
         Ok(())
     }
 
+    /// The decisions `(room, agent)` is waiting for.
+    pub(crate) fn requested(&self, room: &str, agent: &str) -> Vec<Permission> {
+        let state = self.lock();
+        state
+            .pending
+            .values()
+            .filter(|pending| pending.scope.0 == room && pending.scope.1 == agent)
+            .map(|pending| pending.permission.clone())
+            .collect()
+    }
+
     pub fn receipts(&self, room: &str) -> Vec<Receipt> {
         self.lock().receipts.get(room).cloned().unwrap_or_default()
     }

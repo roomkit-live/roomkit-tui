@@ -53,6 +53,11 @@ fn composer_navigation(
     let menu = session.menu.visible;
     let multiline = session.editor.text().contains('\n');
     match key.code {
+        KeyCode::Right | KeyCode::Left if alt && session.editor.text().is_empty() => {
+            if let Some(command) = session.cycle_room(key.code == KeyCode::Right) {
+                send(session, client, command, false);
+            }
+        }
         KeyCode::Up if alt => session.focus_tool(true),
         KeyCode::Down if alt => session.focus_tool(false),
         KeyCode::Up | KeyCode::BackTab if menu => session.menu.navigate(true),

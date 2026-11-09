@@ -8,9 +8,10 @@ use roomkit_tui_protocol::limits::{
     MAX_OPERATION_ID_BYTES, MAX_TEXT_BYTES,
 };
 use roomkit_tui_protocol::{Command, ErrorCode, Event, Rejection, Request, RunId, Snapshot};
+use tokio::sync::broadcast;
 
-use super::serve::{CatchUnwind, Pending, View, send};
-use super::{AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig};
+use super::serve::{CatchUnwind, Parked, Pending, View, send};
+use super::{AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig, StopRun};
 use crate::CommandExecution;
 use crate::activity::{Active, Work};
 use crate::cost::Costs;
@@ -34,8 +35,13 @@ pub(crate) enum Step {
     Switched {
         request: Request,
         replacement: Result<(SessionConfig, Snapshot, Costs), AdapterError>,
+        /// What its snapshot will not hold of the work under way there.
+        catch_up: Vec<Event>,
     },
 }
+
+/// The room events a view reads.
+pub(super) type Frames = broadcast::Receiver<(String, Event)>;
 
 /// Requests answered without waiting for application code.
 pub(super) fn is_control(request: &Request) -> bool {
@@ -67,6 +73,26 @@ async fn first_to_stop(works: Vec<Interrupter>, run: RunId) -> Result<(), &'stat
         }
     }
     Err(refusal)
+}
+
+/// Stop `run` through `works`, else through the host.
+async fn stop(
+    works: Vec<Interrupter>,
+    run: RunId,
+    host_stop: Option<StopRun>,
+) -> Result<(), String> {
+    let refused = if works.is_empty() {
+        "This execution has already ended".to_owned()
+    } else {
+        match first_to_stop(works, run).await {
+            Ok(()) => return Ok(()),
+            Err(error) => error.to_owned(),
+        }
+    };
+    match host_stop {
+        Some(stop) => stop.await,
+        None => Err(refused),
+    }
 }
 
 fn panicked() -> Rejection {
@@ -127,20 +153,22 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         request: &Request,
         run: roomkit_tui_protocol::RunId,
     ) -> Result<(), AdapterError> {
-        // The view's own work first, then the turns of its steered messages.
+        // The view's own work first, then the turns of its steered messages,
+        // then the host, for a run this view did not start.
         let works: Vec<_> = self
             .work
             .iter()
             .chain(self.steering.iter().filter(|work| work.is_live()))
             .cloned()
             .collect();
-        if works.is_empty() {
+        let host_stop = self.handler.stop_run(&self.session.config, &run);
+        if works.is_empty() && host_stop.is_none() {
             let error = Rejection::unavailable("This attachment has no active execution");
             return self.reply(request, Some(error));
         }
         let (host, id) = (self.host.clone(), request.id);
         tokio::spawn(async move {
-            let error = first_to_stop(works, run)
+            let error = stop(works, run, host_stop)
                 .await
                 .err()
                 .map(Rejection::unavailable);
@@ -222,10 +250,14 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
     }
 
     /// Act on what application code returned.
-    pub fn complete(&mut self, step: Step) -> Result<Option<Pending<'h>>, AdapterError> {
+    pub fn complete(
+        &mut self,
+        step: Step,
+        frames: &mut Frames,
+    ) -> Result<Option<Pending<'h>>, AdapterError> {
         match step {
             Step::Handled { request, result } => match result.unwrap_or_else(|| Err(panicked())) {
-                Ok(result) => self.handled(request, result),
+                Ok(result) => self.handled(request, result, frames),
                 Err(error) => self.reply(&request, Some(error)).map(|()| None),
             },
             Step::Images {
@@ -242,8 +274,9 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
             Step::Switched {
                 request,
                 replacement,
+                catch_up,
             } => {
-                self.switched(&request, replacement)?;
+                self.switched(&request, replacement, catch_up)?;
                 Ok(None)
             }
         }
@@ -253,6 +286,7 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         &mut self,
         mut request: Request,
         result: CommandResult,
+        frames: &mut Frames,
     ) -> Result<Option<Pending<'h>>, AdapterError> {
         match result {
             CommandResult::Events(events) => {
@@ -266,7 +300,7 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 self.submit(request)
             }
             CommandResult::Execute(execution) => self.execute(request, execution),
-            CommandResult::Switch(config) => self.switch(request, *config),
+            CommandResult::Switch(config) => self.switch(request, *config, frames),
         }
     }
 
@@ -298,44 +332,91 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         &mut self,
         request: Request,
         config: SessionConfig,
+        frames: &mut Frames,
     ) -> Result<Option<Pending<'h>>, AdapterError> {
-        if self
-            .session
-            .channel
-            .busy(self.session.config.conversation())
-        {
-            let error = Rejection::busy("Cannot switch an executing conversation");
-            return self.reply(&request, Some(error)).map(|()| None);
-        }
+        let catch_up = self.place_among_frames(config.conversation(), frames)?;
         let (kit, channel) = (self.session.kit.clone(), self.session.channel.clone());
         self.switching = true;
         Ok(Some(Box::pin(async move {
             let replacement = LocalSession::new(kit, channel, config);
-            let attachment = replacement.attachment().await;
+            let attachment = replacement.attachment_of_work().await;
             let replacement =
                 attachment.map(|(snapshot, costs)| (replacement.config, snapshot, costs));
             Step::Switched {
                 request,
                 replacement,
+                catch_up,
             }
         })))
+    }
+
+    /// What `target`'s view must be told of the work under way there, read
+    /// at a known place among the events: the frames queued until then are
+    /// served to the current view, or dropped for `target`, whose snapshot
+    /// and these runs count them; the frames that follow, kept while the
+    /// snapshot is read, count from here. Anything but a frame of `target`
+    /// is the current view's, which stays on screen until the switch ends.
+    fn place_among_frames(
+        &mut self,
+        target: &str,
+        frames: &mut Frames,
+    ) -> Result<Vec<Event>, AdapterError> {
+        let channel = self.session.channel.clone();
+        let runs = channel.live_runs.lock();
+        loop {
+            match frames.try_recv() {
+                Ok((room, _)) if room == target => {}
+                Ok(frame) => {
+                    self.forward(Ok(frame))?;
+                }
+                Err(broadcast::error::TryRecvError::Lagged(_)) => {}
+                Err(_) => break,
+            }
+        }
+        Ok(runs.catch_up(target))
     }
 
     fn switched(
         &mut self,
         request: &Request,
         replacement: Result<(SessionConfig, Snapshot, Costs), AdapterError>,
+        catch_up: Vec<Event>,
     ) -> Result<(), AdapterError> {
         self.switching = false;
         let (config, snapshot, costs) = match replacement {
             Ok(replacement) => replacement,
             Err(error) => return self.reply(request, Some(refused_switch(&error))),
         };
-        let approvals = &self.session.channel.approvals;
-        self.approvals = approvals.attach(config.conversation(), config.agent.as_str());
+        self.change_rooms(&config);
         self.session.config = config;
         self.reply(request, None)?;
-        self.attached(snapshot, costs)
+        self.attached(snapshot, costs)?;
+        self.caught_up(catch_up)
+    }
+
+    /// Sets the view's approvals to `target`, and what stops work to what it
+    /// left there. A room left while work runs is kept until the view returns
+    /// or the work ends: dropping its approvals would withdraw its decisions.
+    fn change_rooms(&mut self, target: &SessionConfig) {
+        let channel = self.session.channel.clone();
+        let approvals = channel
+            .approvals
+            .attach(target.conversation(), target.agent.as_str());
+        let leaving = self.session.config.conversation().to_owned();
+        let left = std::mem::replace(&mut self.approvals, approvals);
+        if leaving != target.conversation() {
+            let returned = self.parked.remove(target.conversation());
+            let (work, steering) = returned.map_or((None, Vec::new()), |p| (p.work, p.steering));
+            let parked = Parked {
+                work: std::mem::replace(&mut self.work, work),
+                steering: std::mem::replace(&mut self.steering, steering),
+                _approvals: left,
+            };
+            if channel.busy(&leaving) {
+                self.parked.insert(leaving, parked);
+            }
+        }
+        self.parked.retain(|room, _| channel.busy(room));
     }
 }
 

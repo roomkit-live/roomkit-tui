@@ -37,6 +37,8 @@ pub enum SnapshotError {
         /// Position in [`Snapshot::input_actions`].
         index: usize,
     },
+    /// The command that moves between related rooms is not advertised.
+    CycleCommand,
     /// This pending permission is oversized, repeats an earlier identity, is
     /// outside the active run, or is the first beyond [`MAX_PENDING_PERMISSIONS`].
     Permission {
@@ -70,6 +72,9 @@ impl fmt::Display for SnapshotError {
                     "Host snapshot has an invalid, repeated or extra composer action at index {index}"
                 )
             }
+            Self::CycleCommand => {
+                f.write_str("Host snapshot names an unadvertised command to move between rooms")
+            }
             Self::Permission { index } => write!(
                 f,
                 "Host snapshot has an invalid, repeated or extra permission at index {index}"
@@ -100,6 +105,13 @@ impl Snapshot {
         }
         if let Some(index) = refused_action(&self.input_actions, &names) {
             return Err(SnapshotError::InputAction { index });
+        }
+        if self
+            .cycle_command
+            .as_ref()
+            .is_some_and(|command| !names.contains(command.as_str()))
+        {
+            return Err(SnapshotError::CycleCommand);
         }
         if let Some(index) = self.refused_permission() {
             return Err(SnapshotError::Permission { index });

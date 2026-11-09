@@ -8,6 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A view moves between rooms while work runs in them (RMK-1535). A command
+  allowed while busy can switch the view: it leaves the work running, keeps
+  what stops it and its open decisions, and finds them on its return.
+  Arriving in a busy room, the view gets the run under way and what its
+  current answer has said so far. `CommandHandler::stop_run` stops a run the
+  view did not start. `SessionConfig::cycle_command` names a command the
+  terminal invokes with `next` or `previous` on Alt+Right and Alt+Left.
 - A conversation's total with the work related to it (RMK-1536).
   `Event::RelatedCostUpdated` states what the tasks its agents handed over
   cost; the footer and the sidebar then show the total beside the

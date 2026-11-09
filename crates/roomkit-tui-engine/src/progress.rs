@@ -29,8 +29,8 @@ pub(crate) struct ToolProgress {
 }
 
 impl ToolProgress {
-    /// Start over for a conversation's snapshot. A snapshot is served only
-    /// while no turn runs, so it holds no call in flight.
+    /// Start over for a conversation's snapshot. A call a snapshot holds in
+    /// flight was seen by no view of this one: its end still reaches it.
     pub fn new(conversation: ConversationId) -> Self {
         Self {
             conversation,

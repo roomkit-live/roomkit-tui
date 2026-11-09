@@ -9,6 +9,8 @@ mod steer;
 mod turn;
 
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
 
 use roomkit::model::{ChannelId, EventContent, RoomId};
 use roomkit::{ConversationStore, RoomKit};
@@ -50,6 +52,9 @@ pub struct SessionConfig {
     pub commands: Vec<CommandSpec>,
     /// Optional prefixes invoking advertised application commands from the composer.
     pub input_actions: Vec<InputAction>,
+    /// The advertised command a terminal invokes with `next` or `previous`
+    /// to move between this conversation and the rooms related to it.
+    pub cycle_command: Option<String>,
     /// Host-confirmed image support for this attachment and selected agent.
     pub can_attach_images: bool,
     /// Optional host-owned interaction mode, independent of engine/model state.
@@ -74,6 +79,7 @@ impl SessionConfig {
             organization: None,
             commands: Vec::new(),
             input_actions: Vec::new(),
+            cycle_command: None,
             can_attach_images: false,
             mode: None,
             pricing: None,
@@ -129,6 +135,10 @@ pub enum CommandResult {
     Switch(Box<SessionConfig>),
 }
 
+/// What a host runs to stop a run its view did not start: why it could not,
+/// safe to display, when it fails.
+pub type StopRun = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
 /// Application command policy and storage remain outside the generic adapter.
 ///
 /// Its methods return futures the view awaits without blocking its events.
@@ -165,10 +175,21 @@ pub trait CommandHandler: Send + Sync {
     }
 
     /// Allow this particular advertised control command during execution.
-    /// Session switching is still refused while busy; rename the view with
-    /// [`Event::TitleChanged`] instead. Defaults to false.
+    /// One that switches the view leaves the work running: the view stops
+    /// it again once it returns. Defaults to false.
     fn allow_while_busy(&self, _name: &str) -> bool {
         false
+    }
+
+    /// How to stop `run` of `session`'s conversation when this view did not
+    /// start it, such as a task the engine runs there; none when it cannot be
+    /// stopped from here. The future runs apart from the view.
+    fn stop_run(
+        &self,
+        _session: &SessionConfig,
+        _run: &roomkit_tui_protocol::RunId,
+    ) -> Option<StopRun> {
+        None
     }
 
     /// Handle an advertised command in the current conversation. Errors must be
@@ -271,6 +292,14 @@ impl<S: ConversationStore> LocalSession<S> {
         if self.channel.busy(self.config.conversation()) {
             return Err(AdapterError::Busy);
         }
+        self.attachment_of_work().await
+    }
+
+    /// The same whether or not work runs in the conversation: what is stored
+    /// so far, the rest of a run under way told by the events that follow.
+    pub(crate) async fn attachment_of_work(
+        &self,
+    ) -> Result<(Snapshot, crate::cost::Costs), AdapterError> {
         let mut snapshot = restore::snapshot(&self.kit, &self.channel, &self.config).await?;
         let costs = crate::cost::restore(&self.kit, &self.config).await?;
         snapshot.cost = costs.total(&self.config);

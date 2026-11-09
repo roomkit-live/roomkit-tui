@@ -1,7 +1,7 @@
 //! Serving one view. Host events keep flowing while a request awaits
 //! application code, so a slow handler never makes the view fall behind.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
@@ -30,6 +30,15 @@ const READER_POLL: Duration = Duration::from_millis(100);
 /// Application code awaited on behalf of one request.
 pub(super) type Pending<'h> = Pin<Box<dyn Future<Output = Step> + Send + 'h>>;
 
+/// What a view keeps of a room it left while work runs there: what stops
+/// that work when it returns, and what keeps the room's decisions open.
+pub(super) struct Parked {
+    pub work: Option<Interrupter>,
+    pub steering: Vec<Interrupter>,
+    /// Held only: dropped, it withdraws the room's decisions.
+    pub _approvals: approvals::View,
+}
+
 /// The state of one served view.
 pub(super) struct View<'h, S: ConversationStore, H> {
     pub session: LocalSession<S>,
@@ -40,6 +49,8 @@ pub(super) struct View<'h, S: ConversationStore, H> {
     /// them one: this view may stop them too.
     pub steering: Vec<Interrupter>,
     pub approvals: approvals::View,
+    /// The rooms it left while work runs there, by room.
+    pub parked: BTreeMap<String, Parked>,
     /// Calls in flight, shown running or waiting for a decision.
     progress: ToolProgress,
     /// The conversation's priced turns, whose cost each usage report updates.
@@ -71,6 +82,7 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
         work: None,
         steering: Vec::new(),
         approvals,
+        parked: BTreeMap::new(),
         progress: ToolProgress::default(),
         costs: Costs::default(),
         switching: false,
@@ -92,7 +104,7 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
                 None => view.updates = None,
             },
             step = poll_pending(&mut pending) => {
-                pending = view.complete(step)?;
+                pending = view.complete(step, &mut broadcast)?;
                 while pending.is_none() && let Some(request) = view.queue.pop_front() {
                     pending = view.receive(request)?;
                 }
@@ -137,8 +149,27 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
         Ok(())
     }
 
+    /// Tell the view, after its snapshot, what the snapshot does not hold:
+    /// `catch_up`, the runs under way, and the decisions they wait for.
+    pub fn caught_up(&mut self, catch_up: Vec<Event>) -> Result<(), AdapterError> {
+        let config = &self.session.config;
+        let (room, agent) = (config.conversation(), config.agent.as_str());
+        let requested = self.session.channel.approvals.requested(room, agent);
+        let requested = requested
+            .into_iter()
+            .map(|permission| Event::PermissionRequested {
+                conversation: room.into(),
+                permission,
+            });
+        for event in catch_up.into_iter().chain(requested) {
+            let events = self.progress.apply(event);
+            self.send_all(events)?;
+        }
+        Ok(())
+    }
+
     /// Forward one room event. Returns false once the channel is gone.
-    fn forward(
+    pub(super) fn forward(
         &mut self,
         frame: Result<(String, Event), broadcast::error::RecvError>,
     ) -> Result<bool, AdapterError> {
