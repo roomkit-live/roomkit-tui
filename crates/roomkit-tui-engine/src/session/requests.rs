@@ -7,7 +7,9 @@ use roomkit_tui_protocol::limits::{
     MAX_FORM_FIELDS, MAX_FORM_NAME_BYTES, MAX_FORM_VALUE_BYTES, MAX_LABEL_BYTES,
     MAX_OPERATION_ID_BYTES, MAX_TEXT_BYTES,
 };
-use roomkit_tui_protocol::{Command, ErrorCode, Event, Rejection, Request, RunId, Snapshot};
+use roomkit_tui_protocol::{
+    Command, ErrorCode, Event, QuestionAnswer, QuestionId, Rejection, Request, RunId, Snapshot,
+};
 
 use super::serve::{CatchUnwind, Pending, View, send};
 use super::switching::Frames;
@@ -44,7 +46,7 @@ pub(crate) enum Step {
 pub(super) fn is_control(request: &Request) -> bool {
     matches!(
         request.command,
-        Command::Decide { .. } | Command::Interrupt { .. }
+        Command::Decide { .. } | Command::Interrupt { .. } | Command::AnswerQuestion { .. }
     )
 }
 
@@ -134,6 +136,10 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 self.interrupt(&request, run.clone())?;
                 Ok(None)
             }
+            Command::AnswerQuestion { question, answers } => {
+                self.answer_question(&request, question.clone(), answers.clone())?;
+                Ok(None)
+            }
             Command::Invoke { .. } | Command::SubmitForm { .. } => self.invoke(request),
             Command::Submit { .. } | Command::SubmitImages { .. } | Command::Answer { .. } => {
                 self.submit(request)
@@ -164,6 +170,80 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         tokio::spawn(async move {
             let _ = crate::approval_history::persist(&kit, &channel, &config).await;
         });
+    }
+
+    /// Take the person's answers to `id`, or their refusal, to the kit's
+    /// human-input request, from a separate task; the question leaves every
+    /// view of the room at once, and the reply says whether the asking call
+    /// read it.
+    fn answer_question(
+        &self,
+        request: &Request,
+        id: QuestionId,
+        answers: Option<Vec<QuestionAnswer>>,
+    ) -> Result<(), AdapterError> {
+        let room = self.session.config.conversation().to_owned();
+        let agent = self.session.config.agent.as_str();
+        let fits = |question: &roomkit_tui_protocol::Question| {
+            answers
+                .as_ref()
+                .is_none_or(|answers| question.answered_by(answers))
+        };
+        let taken = self
+            .session
+            .channel
+            .questions
+            .take_if((&room, agent), &id, fits);
+        let question = match taken {
+            Ok(question) => question,
+            Err(crate::questions::Untaken::Gone) => {
+                let error = Rejection::invalid("This question is no longer asked");
+                return self.reply(request, Some(error));
+            }
+            Err(crate::questions::Untaken::Unfit) => {
+                let error = Rejection::invalid("These answers do not fit the question");
+                return self.reply(request, Some(error));
+            }
+        };
+        let (kit, channel) = (self.session.kit.clone(), self.session.channel.clone());
+        let (host, reply_to) = (self.host.clone(), request.id);
+        tokio::spawn(async move {
+            let settled = match answers {
+                Some(answers) => {
+                    let text = crate::questions::answer_text(&question, &answers);
+                    kit.answer_input(id.as_str(), &text).await
+                }
+                None => {
+                    let options = roomkit::RejectInputOptions {
+                        reason: crate::questions::DECLINED.to_owned(),
+                    };
+                    kit.reject_input(id.as_str(), options).await
+                }
+            };
+            let conversation = room.as_str().into();
+            channel.publish(
+                &room,
+                Event::QuestionResolved {
+                    conversation,
+                    question: id,
+                },
+            );
+            let error = match settled {
+                Ok(true) => None,
+                Ok(false) => Some(Rejection::unavailable(
+                    "The question was settled otherwise first",
+                )),
+                Err(_) => Some(Rejection::unavailable("The engine is closing")),
+            };
+            let _ = send(
+                &host,
+                Event::Reply {
+                    request: reply_to,
+                    error,
+                },
+            );
+        });
+        Ok(())
     }
 
     /// Answer from a separate task: a stopping engine can take a moment.

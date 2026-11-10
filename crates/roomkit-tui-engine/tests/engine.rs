@@ -33,6 +33,7 @@ mod interruption_tests;
 mod lifecycle_tests;
 mod overflow_tests;
 mod progress_tests;
+mod question_tests;
 mod request_tests;
 mod review_tests;
 mod room_switch_tests;

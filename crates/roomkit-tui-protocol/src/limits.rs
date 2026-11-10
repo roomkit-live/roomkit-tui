@@ -14,6 +14,18 @@ pub const MAX_PERMISSION_DETAIL_BYTES: usize = 65_536;
 pub const MAX_PERMISSION_SUMMARY_BYTES: usize = 512;
 /// Maximum permissions waiting at once in one conversation.
 pub const MAX_PENDING_PERMISSIONS: usize = 64;
+/// Maximum questions one request asks the person at once.
+pub const MAX_QUESTION_ITEMS: usize = 4;
+/// Maximum options one question offers; the person may also write their own.
+pub const MAX_QUESTION_OPTIONS: usize = 4;
+/// Maximum bytes of a question's text.
+pub const MAX_QUESTION_TEXT_BYTES: usize = 1_024;
+/// Maximum bytes of a question's header, the short label naming it.
+pub const MAX_QUESTION_HEADER_BYTES: usize = 64;
+/// Maximum bytes of an option's description.
+pub const MAX_QUESTION_DESCRIPTION_BYTES: usize = 512;
+/// Maximum bytes of the person's own words in answer to one question.
+pub const MAX_QUESTION_ANSWER_BYTES: usize = 4_096;
 /// Maximum bytes of a short label (a title, caption, status or argument value)
 /// or of an identity a terminal tracks: a conversation, run or permission.
 /// Terminals ignore a `RunStarted` or `PermissionRequested` whose identity is

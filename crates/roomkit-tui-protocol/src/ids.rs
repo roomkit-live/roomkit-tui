@@ -76,6 +76,10 @@ identifier!(
     PermissionId,
     "An outstanding human decision identity within a conversation."
 );
+identifier!(
+    QuestionId,
+    "An outstanding question to the person, as the host names it."
+);
 
 /// A client-generated correlation identifier. It is local to one connection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

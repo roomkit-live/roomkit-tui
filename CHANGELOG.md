@@ -8,6 +8,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- An agent can ask the person questions: `ConversationChannel::ask_question`
+  shows a RoomKit human-input request's questions to the views of its room
+  (`Event::QuestionAsked`, at most four questions of four options, own words
+  always allowed), `Command::AnswerQuestion` answers or closes them, and the
+  engine resolves or rejects the request with what the agent reads. The
+  questions leave the views (`Event::QuestionResolved`) once answered, closed
+  or when the asking call ends, and a view coming back to the room sees them
+  again. The terminal does not show them yet.
+
 - A logo can have colored pieces: `Branding::with_logo_tiles` and
   `WelcomeScreen::with_logo_tiles` take rows of `LogoTile`, drawn in the colors
   they name.

@@ -19,6 +19,7 @@ mod measurements;
 mod own_turns;
 mod progress;
 mod projection;
+mod questions;
 mod session;
 mod stream;
 
@@ -28,6 +29,7 @@ pub use cost::{conversation_cost, turn_cost};
 pub use diagnostics::Diagnostic;
 pub use execution::{CommandExecution, ExecutionContext};
 pub use lifecycle::{LifecycleFuture, SessionLifecycle, TurnOutcome};
+pub use questions::QuestionRequest;
 pub use session::{
     AdapterError, CommandHandler, CommandResult, LocalSession, SessionConfig, StopRun,
 };

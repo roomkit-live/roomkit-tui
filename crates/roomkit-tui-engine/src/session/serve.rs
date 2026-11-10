@@ -166,7 +166,12 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
                 conversation: room.into(),
                 permission,
             });
-        for event in catch_up.into_iter().chain(requested) {
+        let asked = self.session.channel.questions.pending((room, agent));
+        let asked = asked.into_iter().map(|question| Event::QuestionAsked {
+            conversation: room.into(),
+            question,
+        });
+        for event in catch_up.into_iter().chain(requested).chain(asked) {
             let events = self.progress.apply(event);
             self.send_all(events)?;
         }

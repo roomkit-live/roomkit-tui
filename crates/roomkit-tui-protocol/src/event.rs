@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ActorId, BackgroundStatus, Choice, ContextUsage, ConversationCost, ConversationId, FormSpec,
     Item, Message, MessageId, ModeState, ModelInfo, OperationId, PanelSpec, Permission,
-    PermissionId, Rejection, RequestId, RunId, SidebarSpec, Snapshot, TokenUsage,
+    PermissionId, Question, QuestionId, Rejection, RequestId, RunId, SidebarSpec, Snapshot,
+    TokenUsage,
 };
 
 /// How an execution actually ended.
@@ -224,6 +225,23 @@ pub enum Event {
         conversation: ConversationId,
         /// Settled decision.
         permission: PermissionId,
+    },
+    /// An agent asks the person questions; the view answers with
+    /// [`Command::AnswerQuestion`](crate::Command::AnswerQuestion). Its run
+    /// waits meanwhile, as for a permission.
+    QuestionAsked {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// The questions and what may answer them.
+        question: Question,
+    },
+    /// A question was answered, declined or withdrawn by the host: the view
+    /// stops showing it.
+    QuestionResolved {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// The question that ended.
+        question: QuestionId,
     },
     /// The host confirmed a model change; stale context must be cleared.
     ModelChanged {

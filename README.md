@@ -257,6 +257,55 @@ kit.hook(
 
 No view, a timeout, an interruption or a refusal all block the call.
 
+### Ask the person a question
+
+An agent asks through RoomKit's human input: give its `AiChannel` a
+`HumanInputToolHandler` with your question tool, and show each request's
+questions to the views from an `ON_USER_INPUT_REQUIRED` hook. The view's
+answer resolves the request with one line per question (`Database: SQLite`),
+which the agent reads; a person who closes the questions rejects it, and the
+agent reads that it should go on without an answer. The questions leave the
+views once answered, closed, or when the call that asked them ends.
+
+```rust
+use roomkit::human_input::PendingInputEvent;
+use roomkit::model::{ChannelId, HookResult, RoomId};
+use roomkit::{HookOptions, HookTrigger};
+use roomkit_tui::protocol::{QuestionItem, QuestionOption};
+use roomkit_tui_engine::QuestionRequest;
+
+let views = channel.clone();
+kit.hook(
+    HookTrigger::OnUserInputRequired,
+    move |event: PendingInputEvent, _context| {
+        let views = views.clone();
+        async move {
+            // Read your tool's arguments into questions.
+            let items = vec![QuestionItem::new(
+                "Database",
+                "Which database holds the sessions?",
+                vec![QuestionOption::new("SQLite", "One file"), QuestionOption::new("Postgres", "Shared")],
+            )];
+            let request = QuestionRequest::new(event.pending_id.clone(), items)
+                .with_tool_call(event.tool_call_id.clone());
+            if let (Ok(room), Ok(agent)) = (RoomId::new(&event.room_id), ChannelId::new(&event.channel_id)) {
+                views.ask_question(&room, &agent, request);
+            }
+            Ok(HookResult::allow(Default::default()))
+        }
+    },
+    HookOptions {
+        name: "questions".to_owned(),
+        ..Default::default()
+    },
+)?;
+```
+
+A request has at most four questions of at most four options each; the
+person may also answer in their own words. `ask_question` returns `false`
+when no view watches a run of the room, or the questions exceed those
+bounds: the request then waits for an answer from elsewhere, or its timeout.
+
 ### With your own host
 
 Without RoomKit, run your own loop on the `Host` end of the connection: send an

@@ -301,6 +301,62 @@ async fn a_decision_waits_for_the_view_to_come_back() {
     task.await.unwrap().unwrap();
 }
 
+/// A question waits while its view shows another room, is shown again on
+/// its return, and leaves with the run that asked it.
+#[tokio::test]
+async fn a_question_waits_for_the_view_to_come_back() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    with_other_room(&kit, &channel).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_answers(&kit, gate, held.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+    let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
+    next(&client).await;
+    client.try_send(request("ask")).unwrap();
+    started_run(&client).await;
+    held.notified().await;
+
+    let items = vec![QuestionItem::new(
+        "Database",
+        "Which database?",
+        vec![
+            QuestionOption::new("SQLite", ""),
+            QuestionOption::new("Postgres", ""),
+        ],
+    )];
+    let request = roomkit_tui_engine::QuestionRequest::new("q1", items);
+    assert!(channel.ask_question(&config().room, &config().agent, request));
+    loop {
+        if matches!(next(&client).await, Event::QuestionAsked { .. }) {
+            break;
+        }
+    }
+
+    client.try_send(go("room", "other")).unwrap();
+    until_snapshot(&client, "other").await;
+    client.try_send(go("other", "room")).unwrap();
+    let back = until_snapshot(&client, "room").await;
+    assert!(
+        back.iter().any(|event| matches!(event, Event::QuestionAsked { question, .. } if question.id.as_str() == "q1")),
+        "The question is shown again: {back:?}"
+    );
+
+    // The run ends: its question leaves the view.
+    open.send_replace(true);
+    loop {
+        if let Event::QuestionResolved { question, .. } = next(&client).await {
+            assert_eq!(question.as_str(), "q1");
+            break;
+        }
+    }
+    drop(client);
+    task.await.unwrap().unwrap();
+}
+
 /// A run this view did not start goes to the host to stop, when it can.
 #[tokio::test]
 async fn a_run_the_view_did_not_start_is_stopped_by_the_host() {

@@ -19,6 +19,7 @@ pub mod limits;
 mod measures;
 mod panels;
 mod permissions;
+mod questions;
 mod rejection;
 mod request;
 mod sidebar;
@@ -29,13 +30,15 @@ pub use conversation::{Actor, Item, Message, Snapshot, Thinking, ToolCall, ToolS
 pub use event::{Event, RunOutcome};
 pub use forms::{FieldKind, FormField, FormSpec, FormValues};
 pub use ids::{
-    ActorId, CallId, ConversationId, MessageId, OperationId, PermissionId, RequestId, RunId,
+    ActorId, CallId, ConversationId, MessageId, OperationId, PermissionId, QuestionId, RequestId,
+    RunId,
 };
 pub use images::{ImageMessage, ImageUpload};
 pub use limits::{MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MAX_IMAGES};
 pub use measures::{ContextUsage, ConversationCost, ModelInfo, TokenUsage};
 pub use panels::{BackgroundStatus, PanelSpec};
 pub use permissions::{Decision, Permission, PermissionDecision};
+pub use questions::{Question, QuestionAnswer, QuestionItem, QuestionOption};
 pub use rejection::{ErrorCode, Rejection};
 pub use request::{Command, Request};
 pub use sidebar::{

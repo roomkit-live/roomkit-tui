@@ -12,6 +12,7 @@ use crate::activity::{Active, Activity, Held, Stopping, Streams, Work};
 use crate::approvals::{Approvals, Details};
 use crate::live_runs::LiveRuns;
 use crate::own_turns::OwnTurns;
+use crate::questions::{QuestionRequest, Questions};
 use crate::{PermissionRequest, projection};
 
 /// Events retained for a slow view before it must reattach.
@@ -42,6 +43,8 @@ pub struct ConversationChannel {
     /// Who asked for the answer turn under way in a room: its trigger is never
     /// stored, so its stream cannot read them from the room.
     answers: Arc<Mutex<BTreeMap<String, String>>>,
+    /// The questions waiting for the person in each room.
+    pub(crate) questions: Questions,
     /// The latest run of each room whose stream told why it failed, so that
     /// the turn that delivered it does not tell it again.
     failures_told: Arc<Mutex<BTreeMap<String, RunId>>>,
@@ -105,7 +108,37 @@ impl ConversationChannel {
             own_turns: OwnTurns::default(),
             answers: Arc::default(),
             failures_told: Arc::default(),
+            questions: Questions::default(),
         }
+    }
+
+    /// Show the views of `room` the questions of `request`, which `agent`
+    /// asks in its latest run there: a view's answer resolves the kit's
+    /// human-input request with the text the agent reads, and a person who
+    /// closes them rejects it. Call it from an `ON_USER_INPUT_REQUIRED`
+    /// hook. `false` when no view can show them: no run of the room is
+    /// watched, or they exceed what a terminal shows in full; the request
+    /// then waits for an answer from elsewhere, or its timeout.
+    pub fn ask_question(&self, room: &RoomId, agent: &ChannelId, request: QuestionRequest) -> bool {
+        let Some(run) = self.last_run(room.as_str()) else {
+            return false;
+        };
+        let question =
+            roomkit_tui_protocol::Question::new(request.id, agent.as_str(), run, request.items);
+        if !question.fits() {
+            return false;
+        }
+        self.questions
+            .add(room.as_str(), question.clone(), request.tool_call_id);
+        let conversation = room.as_str().into();
+        self.publish(
+            room.as_str(),
+            Event::QuestionAsked {
+                conversation,
+                question,
+            },
+        );
+        true
     }
 
     /// The stream of `run` in `room` told why it failed.
@@ -208,12 +241,23 @@ impl ConversationChannel {
         // Under one lock: a view that reads the runs under way knows which
         // of the events it is then sent they already count.
         let mut runs = self.live_runs.lock();
+        let withdrawn = self.questions.ended_by(room, &event);
         runs.apply(room, &event);
         if let Event::RunStarted { run, .. } = &event {
             self.approvals.announced(room, run);
         }
         // No subscribers is normal: the engine keeps executing and persisting.
         let _ = self.events.send((room.into(), event));
+        for question in withdrawn {
+            let conversation = room.into();
+            let _ = self.events.send((
+                room.into(),
+                Event::QuestionResolved {
+                    conversation,
+                    question,
+                },
+            ));
+        }
     }
 
     /// The last run announced in `room`, while a view watches it.

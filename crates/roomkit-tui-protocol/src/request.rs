@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ActorId, ConversationId, Decision, FormValues, ImageMessage, OperationId, PermissionId,
-    RequestId, RunId,
+    QuestionAnswer, QuestionId, RequestId, RunId,
 };
 
 /// Requests sent to the host. Hosts validate identities and policy themselves.
@@ -63,6 +63,14 @@ pub enum Command {
         permission: PermissionId,
         /// Explicit answer.
         decision: Decision,
+    },
+    /// Answer a question the host asked the person, or decline it.
+    AnswerQuestion {
+        /// Pending question identity.
+        question: QuestionId,
+        /// One answer per question asked, in their order; `None` declines
+        /// them all, which the asking agent reads as no answer.
+        answers: Option<Vec<QuestionAnswer>>,
     },
     /// A command introduced by a newer client. Hosts reply
     /// [`ErrorCode::Unsupported`](crate::ErrorCode::Unsupported).
