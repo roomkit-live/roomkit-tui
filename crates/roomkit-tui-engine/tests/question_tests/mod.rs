@@ -23,6 +23,7 @@ async fn asking_room<S: ConversationStore>(
         parameters: json!({"type": "object", "properties": {"questions": {"type": "array"}}}),
         tags: Vec::new(),
         changes_state: false,
+        defer_loading: false,
     };
     let options = HumanInputToolHandlerOptions {
         tool_definitions: vec![ask],
