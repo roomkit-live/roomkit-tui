@@ -123,8 +123,11 @@ fn composer_editing(session: &mut Session, client: &Client, key: KeyEvent) {
         KeyCode::Delete => session.editor.delete(),
         KeyCode::Left => session.editor.left(),
         KeyCode::Right => session.editor.right(),
+        // Ctrl+A and Ctrl+E as in a shell: the start and end of the line.
         KeyCode::Home => session.editor.home(),
+        KeyCode::Char('a') if control => session.editor.home(),
         KeyCode::End => session.editor.end(),
+        KeyCode::Char('e') if control => session.editor.end(),
         _ => {}
     }
 }

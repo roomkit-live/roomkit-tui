@@ -694,3 +694,97 @@ fn escape_on_an_approval_card_interrupts_the_run_that_asked() {
         Command::Interrupt { run: "sms".into() }
     );
 }
+
+fn ask(session: &mut Session, at: Duration) {
+    use roomkit_tui_protocol::{Question, QuestionItem, QuestionOption};
+    let item = QuestionItem::new(
+        "Database",
+        "Which database?",
+        vec![
+            QuestionOption::new("SQLite", ""),
+            QuestionOption::new("Postgres", ""),
+        ],
+    );
+    session.apply_at(
+        Event::QuestionAsked {
+            conversation: "room".into(),
+            question: Question::new("q", "agent", "run", vec![item]),
+        },
+        at,
+    );
+}
+
+fn rendered(session: &Session, cols: u16, rows: u16, at: Duration) -> render::Frame {
+    let options = UiOptions::default();
+    render::screen_with_options(session, cols, rows, &Renderers::default(), &options, at)
+}
+
+/// The terminal refused Enter, Tab and the arrows on a frame without an input
+/// cursor or approval targets, taking it for an undersized screen: on a
+/// question card, only digits answered, and the arrows did nothing.
+#[test]
+fn a_question_card_on_screen_takes_the_arrows_and_enter() {
+    let (mut session, client, host) = fixture(true);
+    ask(&mut session, Duration::ZERO);
+    let frame = rendered(&session, 100, 30, Duration::ZERO);
+    session.sync(&frame, Duration::ZERO);
+    let armed = APPROVAL_ARMING_DELAY;
+    for code in [KeyCode::Down, KeyCode::Enter] {
+        assert!(!acts_unseen(&frame, &session, key(code)), "{code:?}");
+        press(&mut session, &client, key(code), armed);
+    }
+    let command = host.try_recv().unwrap().command;
+    assert!(
+        matches!(&command, Command::AnswerQuestion { answers: Some(answers), .. }
+            if answers[0].selected == ["Postgres"]),
+        "Enter answers the question: {command:?}"
+    );
+    for code in [KeyCode::Up, KeyCode::Tab, KeyCode::Esc, KeyCode::Char('1')] {
+        assert!(!acts_unseen(&frame, &session, key(code)), "{code:?}");
+    }
+}
+
+/// A card the screen cannot show whole takes no answer, digits and Esc
+/// included; quitting still works.
+#[test]
+fn an_undersized_screen_answers_no_question() {
+    let (mut session, _client, _host) = fixture(true);
+    ask(&mut session, Duration::ZERO);
+    let frame = rendered(&session, 40, 6, Duration::ZERO);
+    assert!(frame.question.is_none(), "the card does not fit");
+    for code in [
+        KeyCode::Char('1'),
+        KeyCode::Char(' '),
+        KeyCode::Enter,
+        KeyCode::Down,
+        KeyCode::Esc,
+    ] {
+        assert!(acts_unseen(&frame, &session, key(code)), "{code:?}");
+    }
+    assert!(!acts_unseen(&frame, &session, ctrl_c()));
+}
+
+/// Ctrl+A and Ctrl+E move to the start and the end of the line, as in a shell.
+#[test]
+fn control_a_and_control_e_move_to_the_line_s_edges() {
+    let (mut session, client, _host) = fixture(false);
+    let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+    for c in "hello".chars() {
+        press(&mut session, &client, key(KeyCode::Char(c)), Duration::ZERO);
+    }
+    press(&mut session, &client, ctrl('a'), Duration::ZERO);
+    press(
+        &mut session,
+        &client,
+        key(KeyCode::Char('>')),
+        Duration::ZERO,
+    );
+    press(&mut session, &client, ctrl('e'), Duration::ZERO);
+    press(
+        &mut session,
+        &client,
+        key(KeyCode::Char('!')),
+        Duration::ZERO,
+    );
+    assert_eq!(session.draft(), ">hello!");
+}

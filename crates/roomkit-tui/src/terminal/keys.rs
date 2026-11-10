@@ -7,6 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use roomkit_tui_protocol::{Command, Decision};
 
 use super::{QUIT_TIMEOUT, interrupt_run, send};
+use crate::render::Frame;
 use crate::session::Focus;
 use crate::{Client, Session};
 
@@ -46,6 +47,32 @@ fn detach(session: &mut Session, now: Duration) -> Outcome {
 
 pub(super) fn is_cancel(key: KeyEvent) -> bool {
     key.code == KeyCode::Esc || is_ctrl(key, 'c')
+}
+
+/// Whether `key` would act on something `frame` does not show. An undersized
+/// screen draws no input, approval or question: a key must not answer what
+/// the person cannot see. A question card shown whole has neither an input
+/// cursor nor approval targets, and still takes its keys.
+pub(super) fn acts_unseen(frame: &Frame, session: &Session, key: KeyEvent) -> bool {
+    let question = session.focus() == Focus::Question;
+    if frame.cursor.is_some()
+        || !frame.permission_targets.is_empty()
+        || (question && frame.question.is_some())
+    {
+        return false;
+    }
+    // Every key answers a question card, Esc included; only quitting stays.
+    // The card's arming refuses them too: this keeps them from reaching it.
+    if question {
+        return !is_quit_key(key);
+    }
+    matches!(
+        key.code,
+        KeyCode::Enter | KeyCode::Tab | KeyCode::Up | KeyCode::Down
+    ) || ['y', 'n', 's'].into_iter().any(|c| is_ctrl(key, c))
+        || (session.card_refuses_on_cancel()
+            && !session.permissions().is_empty()
+            && matches!(key.code, KeyCode::Esc | KeyCode::Char('o')))
 }
 
 /// Apply one key to the focused part of the view.
@@ -289,7 +316,13 @@ fn picker_key(session: &mut Session, client: &Client, key: KeyEvent) {
         KeyCode::Left => picker.filter.left(),
         KeyCode::Right => picker.filter.right(),
         KeyCode::Home => picker.filter.home(),
+        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            picker.filter.home();
+        }
         KeyCode::End => picker.filter.end(),
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            picker.filter.end();
+        }
         KeyCode::Backspace => {
             picker.filter.backspace();
             picker.selected = 0;

@@ -180,7 +180,9 @@ impl QuestionCard {
             KeyCode::Left => editor.left(),
             KeyCode::Right => editor.right(),
             KeyCode::Home => editor.home(),
+            KeyCode::Char('a') if control => editor.home(),
             KeyCode::End => editor.end(),
+            KeyCode::Char('e') if control => editor.end(),
             _ => {}
         }
         CardStep::Stay
@@ -378,6 +380,18 @@ mod tests {
         let sent = answers(press(&mut card, KeyCode::Enter));
         assert_eq!(sent[0], QuestionAnswer::default().with_other("DuckDB 1.2"));
         assert!(card.question().answered_by(&sent));
+    }
+
+    #[test]
+    fn control_a_and_control_e_move_within_the_own_words() {
+        let mut card = card(false);
+        press(&mut card, KeyCode::Char('3'));
+        type_in(&mut card, "DB");
+        card.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        type_in(&mut card, "Duck");
+        card.key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
+        type_in(&mut card, " 1.2");
+        assert_eq!(card.own_words(), "DuckDB 1.2");
     }
 
     #[test]

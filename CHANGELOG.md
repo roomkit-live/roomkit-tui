@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Ctrl+A and Ctrl+E move to the start and the end of the line in every text
+  field: the composer, a question's own words, a picker's filter and a form.
+
 - An agent can ask the person questions: `ConversationChannel::ask_question`
   shows a RoomKit human-input request's questions to the views of its room
   (`Event::QuestionAsked`, at most four questions of four options, own words
@@ -95,6 +98,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names Ctrl+S only for what is typed during a run.
 
 ### Fixed
+
+- A question card took digits but not the arrows, Enter or Tab: the terminal
+  took a frame with no input cursor and no approval for an undersized screen and
+  dropped those keys. A card shown whole now takes them.
 
 - Provider errors, including native Anthropic status envelopes, explain access,
   credit, quota, overload, context and parameter failures without exposing raw

@@ -301,17 +301,7 @@ impl View {
             }
             return true;
         }
-        // An undersized screen shows no input or choices: never act unseen.
-        if frame.cursor.is_none()
-            && frame.permission_targets.is_empty()
-            && (matches!(
-                key.code,
-                KeyCode::Enter | KeyCode::Tab | KeyCode::Up | KeyCode::Down
-            ) || ['y', 'n', 's'].into_iter().any(|c| keys::is_ctrl(key, c))
-                || (self.session.card_refuses_on_cancel()
-                    && !self.session.permissions().is_empty()
-                    && matches!(key.code, KeyCode::Esc | KeyCode::Char('o'))))
-        {
+        if keys::acts_unseen(frame, &self.session, key) {
             return true;
         }
         if keys::is_ctrl(key, 'v')

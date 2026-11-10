@@ -3,7 +3,7 @@ mod exit;
 mod keys;
 mod send_now;
 
-use super::keys::{Outcome, handle_key};
+use super::keys::{Outcome, acts_unseen, handle_key};
 use super::*;
 use crate::{Host, connection};
 use crossterm::event::KeyModifiers;
