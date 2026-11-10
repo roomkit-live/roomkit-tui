@@ -428,6 +428,52 @@ async fn a_provider_failure_is_told_once() {
     }
 }
 
+/// An answer turn, whose instruction is never stored, explains its
+/// provider's failure once too.
+#[tokio::test]
+async fn an_answer_turn_s_provider_failure_is_told_once() {
+    let kit = RoomKit::new(Default::default());
+    let rounds = [
+        ScriptedRound::answering("Hello"),
+        ScriptedRound::answering("").refusing(503, "connect error"),
+    ];
+    let channel = prepare(&kit, ScriptedProvider::new(rounds), Arc::default(), false).await;
+    let (client, host) = connection(NonZeroUsize::new(128).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
+    next(&client).await;
+    client.try_send(request("greeting")).unwrap();
+    assert_operation(
+        &collect_operation(&client).await,
+        "greeting",
+        RunOutcome::Completed,
+    );
+    let answer = Request::new(
+        RequestId::new(2),
+        "answer",
+        "room",
+        Command::Answer {
+            agent: config().agent.as_str().into(),
+        },
+    );
+    client.try_send(answer).unwrap();
+    let events = collect_operation(&client).await;
+    assert_operation(&events, "answer", RunOutcome::Failed);
+    let notices: Vec<&str> = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Notice { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        notices,
+        ["Cannot reach the model server. Check its address, network and availability."]
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
+
 #[tokio::test]
 async fn a_slow_view_is_disconnected_without_stopping_another_view_or_the_engine() {
     let kit = RoomKit::new(Default::default());
