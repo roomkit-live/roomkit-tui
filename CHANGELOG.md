@@ -80,6 +80,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A provider failure in a streamed run is explained once. The run's stream
+  told it, then the turn that delivered the message told it again: a client
+  printing notices showed "Cannot reach the model server" twice.
+
 - A request refused past the model's context window says so. The kit's own
   failure when its compaction cannot make room, `Context too large but …`, read
   as `Engine execution failed`: it now reads as `context_limit`, as does every

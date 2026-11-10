@@ -126,6 +126,8 @@ struct Turn<S: ConversationStore> {
 struct Delivered {
     outcome: RunOutcome,
     failure: Option<&'static str>,
+    /// The run's stream already told the failure to the views.
+    failure_told: bool,
     blocked: bool,
 }
 
@@ -167,7 +169,7 @@ impl<S: ConversationStore> Turn<S> {
             }
         }
         let delivered = self.deliver(content).await;
-        if let Some(text) = delivered.failure {
+        if let Some(text) = delivered.failure.filter(|_| !delivered.failure_told) {
             self.notice(text);
         }
         let stored = crate::approval_history::persist(&self.kit, &self.channel, &self.config).await;
@@ -230,6 +232,7 @@ impl<S: ConversationStore> Turn<S> {
             Err(error) => Delivered {
                 outcome: RunOutcome::Failed,
                 failure: Some(crate::diagnostics::explain(&error.to_string())),
+                failure_told: false,
                 blocked: false,
             },
         }
@@ -286,9 +289,16 @@ impl<S: ConversationStore> Turn<S> {
         buffered.finish(&admitted, outcome);
         Delivered {
             outcome,
+            failure_told: failure.is_some() && self.told_by_stream(run.as_ref()),
             failure,
             blocked: admitted.blocked,
         }
+    }
+
+    /// Whether the stream of `run` already told the views why it failed.
+    fn told_by_stream(&self, run: Option<&RunId>) -> bool {
+        let room = self.config.conversation();
+        run.is_some_and(|run| self.channel.take_failure_told(room, run))
     }
 
     /// Explain `error`. A refusal past the model's context window is also

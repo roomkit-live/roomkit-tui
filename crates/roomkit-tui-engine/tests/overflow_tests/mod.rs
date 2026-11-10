@@ -41,11 +41,12 @@ async fn refused_past_the_context_window(buffered: bool) {
             _ => None,
         })
         .collect();
-    assert!(!notices.is_empty(), "the refusal is explained");
-    assert!(
-        notices.iter().all(|text| text.contains("context limit")),
-        "{notices:?}"
+    assert_eq!(
+        notices.len(),
+        1,
+        "the refusal is explained once: {notices:?}"
     );
+    assert!(notices[0].contains("context limit"), "{notices:?}");
     let at = |found: &dyn Fn(&Event) -> bool| events.iter().position(found);
     let exceeded = at(
         &|event| matches!(event, Event::ContextExceeded { run: refused, .. } if *refused == run),

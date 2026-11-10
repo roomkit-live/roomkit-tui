@@ -395,6 +395,39 @@ async fn provider_errors_do_not_expose_private_diagnostics_to_the_client() {
     kit.close().await.unwrap();
 }
 
+/// A provider failure is explained once: a streamed run tells it from its
+/// stream, and the turn that delivered the message does not tell it again.
+#[tokio::test]
+async fn a_provider_failure_is_told_once() {
+    for buffered in [false, true] {
+        let kit = RoomKit::new(Default::default());
+        let unreachable = ScriptedRound::answering("").refusing(503, "connect error");
+        let provider = ScriptedProvider::new([unreachable]);
+        let channel = prepare(&kit, provider, Arc::default(), buffered).await;
+        let (client, host) = connection(NonZeroUsize::new(128).unwrap());
+        let task = tokio::spawn(LocalSession::new(kit.clone(), channel, config()).run(host));
+        next(&client).await;
+        client.try_send(request("unreachable")).unwrap();
+        let events = collect_operation(&client).await;
+        assert_operation(&events, "unreachable", RunOutcome::Failed);
+        let notices: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Notice { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            notices,
+            ["Cannot reach the model server. Check its address, network and availability."],
+            "buffered: {buffered}"
+        );
+        drop(client);
+        task.await.unwrap().unwrap();
+        kit.close().await.unwrap();
+    }
+}
+
 #[tokio::test]
 async fn a_slow_view_is_disconnected_without_stopping_another_view_or_the_engine() {
     let kit = RoomKit::new(Default::default());

@@ -42,6 +42,9 @@ pub struct ConversationChannel {
     /// Who asked for the answer turn under way in a room: its trigger is never
     /// stored, so its stream cannot read them from the room.
     answers: Arc<Mutex<BTreeMap<String, String>>>,
+    /// The latest run of each room whose stream told why it failed, so that
+    /// the turn that delivered it does not tell it again.
+    failures_told: Arc<Mutex<BTreeMap<String, RunId>>>,
 }
 
 /// The answer turn of a room being delivered; dropping it forgets who asked.
@@ -101,7 +104,24 @@ impl ConversationChannel {
             storing_decisions: Arc::default(),
             own_turns: OwnTurns::default(),
             answers: Arc::default(),
+            failures_told: Arc::default(),
         }
+    }
+
+    /// The stream of `run` in `room` told why it failed.
+    pub(crate) fn failure_told(&self, room: &str, run: &RunId) {
+        lock(&self.failures_told).insert(room.to_owned(), run.clone());
+    }
+
+    /// Whether the stream of `run` in `room` told why it failed; the turn
+    /// asking is the last to need it.
+    pub(crate) fn take_failure_told(&self, room: &str, run: &RunId) -> bool {
+        let mut told = lock(&self.failures_told);
+        let was = told.get(room) == Some(run);
+        if was {
+            told.remove(room);
+        }
+        was
     }
 
     /// Identity used when the application registers and attaches this channel.

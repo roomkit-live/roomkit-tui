@@ -265,6 +265,7 @@ impl<'a> Reader<'a> {
         self.outcome = RunOutcome::Failed;
         let diagnostic = crate::diagnostics::Diagnostic::classify(error);
         self.notice(diagnostic.summary);
+        self.channel.failure_told(self.room, self.run);
         if diagnostic.exceeds_context() {
             self.publish(Event::ContextExceeded {
                 conversation: self.room.into(),
