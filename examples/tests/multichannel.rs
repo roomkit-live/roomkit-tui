@@ -64,6 +64,7 @@ async fn room(kit: &RoomKit, gate: watch::Receiver<bool>) -> (ConversationChanne
         parameters: json!({"type":"object"}),
         tags: Vec::new(),
         changes_state: false,
+        defer_loading: false,
     };
     let options = AiChannelOptions {
         tools: vec![ToolEntry::Definition(lookup)],

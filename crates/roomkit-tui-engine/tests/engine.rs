@@ -83,6 +83,7 @@ async fn prepare_as<S: ConversationStore>(
         }),
         tags: Vec::new(),
         changes_state: false,
+        defer_loading: false,
     };
     let handler = ToolHandler::new(move |_, arguments| {
         assert!(

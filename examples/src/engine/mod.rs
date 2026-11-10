@@ -165,6 +165,7 @@ async fn assemble(
         parameters: schema,
         tags: Vec::new(),
         changes_state: false,
+        defer_loading: false,
     };
     let handler = ToolHandler::new(move |_, arguments| {
         calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

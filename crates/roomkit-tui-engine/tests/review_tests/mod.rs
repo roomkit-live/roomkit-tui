@@ -13,6 +13,7 @@ async fn limited(kit: &RoomKit, rounds: Vec<ScriptedRound>, buffered: bool) -> C
         parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
         tags: Vec::new(),
         changes_state: false,
+        defer_loading: false,
     };
     let options = AiChannelOptions {
         tools: vec![ToolEntry::Definition(lookup)],

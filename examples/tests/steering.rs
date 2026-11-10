@@ -39,6 +39,7 @@ async fn room(
         parameters: json!({"type":"object"}),
         tags: Vec::new(),
         changes_state: false,
+        defer_loading: false,
     };
     let options = AiChannelOptions {
         tools: vec![ToolEntry::Definition(lookup)],
