@@ -80,6 +80,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Provider errors, including native Anthropic status envelopes, explain access,
+  credit, quota, overload, context and parameter failures without exposing raw
+  payloads. Diagnostics retain the HTTP status when present. A streamed turn
+  with a completed generation but no text or tool reports a missing answer,
+  preserving the engine's retries and usage updates.
+
 - A provider failure in a streamed run is explained once. The run's stream
   told it, then the turn that delivered the message told it again: a client
   printing notices showed "Cannot reach the model server" twice.

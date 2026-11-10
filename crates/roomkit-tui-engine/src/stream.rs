@@ -174,6 +174,8 @@ struct Reader<'a> {
     segment: u64,
     outcome: RunOutcome,
     failure: Option<ChannelError>,
+    generated: bool,
+    visible: bool,
 }
 
 impl<'a> Reader<'a> {
@@ -191,6 +193,8 @@ impl<'a> Reader<'a> {
             segment: 0,
             outcome: RunOutcome::Completed,
             failure: None,
+            generated: false,
+            visible: false,
         }
     }
 
@@ -204,13 +208,7 @@ impl<'a> Reader<'a> {
 
     fn read(&mut self, item: StreamItem) {
         match item {
-            StreamItem::Text(text) => self.publish(Event::TextDelta {
-                conversation: self.room.into(),
-                message: self.draft(),
-                actor: self.actor.clone(),
-                run: self.run.clone(),
-                text,
-            }),
+            StreamItem::Text(text) => self.text(text),
             StreamItem::Row(row) => self.row(&row),
             StreamItem::Thinking(text) => self.publish(Event::ThinkingDelta {
                 conversation: self.room.into(),
@@ -219,12 +217,24 @@ impl<'a> Reader<'a> {
                 text,
             }),
             StreamItem::Usage(marker) => {
+                self.generated = true;
                 if let Some(event) = crate::measurements::told(self.room, self.run, &marker) {
                     self.publish(event);
                 }
             }
             _ => {}
         }
+    }
+
+    fn text(&mut self, text: String) {
+        self.visible |= !text.trim().is_empty();
+        self.publish(Event::TextDelta {
+            conversation: self.room.into(),
+            message: self.draft(),
+            actor: self.actor.clone(),
+            run: self.run.clone(),
+            text,
+        });
     }
 
     fn row(&mut self, row: &RoomEvent) {
@@ -239,6 +249,7 @@ impl<'a> Reader<'a> {
         }
         match projection::item(row) {
             Some(Item::Message(message)) => {
+                self.visible |= !message.text.trim().is_empty();
                 self.publish(Event::MessageFinalized {
                     conversation: self.room.into(),
                     draft: self.draft(),
@@ -246,10 +257,13 @@ impl<'a> Reader<'a> {
                 });
                 self.segment += 1;
             }
-            Some(item) => self.publish(Event::Item {
-                conversation: self.room.into(),
-                item,
-            }),
+            Some(item) => {
+                self.visible |= matches!(item, Item::Tool { .. });
+                self.publish(Event::Item {
+                    conversation: self.room.into(),
+                    item,
+                });
+            }
             None => {}
         }
     }
@@ -276,12 +290,13 @@ impl<'a> Reader<'a> {
 
     /// End the run, unless an accepted interruption reports it once the
     /// engine has settled its cancelled rows.
-    fn finish(self) -> Result<ChannelOutput, ChannelError> {
+    fn finish(mut self) -> Result<ChannelOutput, ChannelError> {
         let deferred = self
             .channel
             .stopping
             .defer(self.room, self.run, self.outcome, self.draft());
         if !deferred {
+            self.require_answer();
             self.publish(Event::RunFinished {
                 conversation: self.room.into(),
                 run: self.run.clone(),
@@ -291,6 +306,16 @@ impl<'a> Reader<'a> {
         match self.failure {
             Some(error) => Err(error),
             None => Ok(ChannelOutput::default()),
+        }
+    }
+
+    /// Judge the whole turn after the engine's retries and usage reports.
+    /// Reasoning alone can complete a generation without delivering an answer.
+    fn require_answer(&mut self) {
+        if self.outcome == RunOutcome::Completed && self.generated && !self.visible {
+            let error = "model returned no visible answer";
+            self.fail(error);
+            self.failure = Some(error.into());
         }
     }
 }

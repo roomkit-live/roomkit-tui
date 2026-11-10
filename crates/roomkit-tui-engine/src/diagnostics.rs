@@ -1,3 +1,5 @@
+mod provider;
+
 /// Classify known engine/provider failures without forwarding arbitrary error
 /// bodies, URLs, prompts or credentials to a client.
 /// A bounded, safe explanation that never contains the provider's raw payload.
@@ -8,6 +10,8 @@ pub struct Diagnostic {
     pub code: &'static str,
     /// Human-readable explanation and recovery guidance.
     pub summary: &'static str,
+    /// HTTP failure status read from a complete provider error envelope, if present.
+    pub http_status: Option<u16>,
 }
 
 /// Failures known by fragments: any listed fragment of the lowercase error
@@ -16,6 +20,38 @@ type Known = &'static [(&'static [&'static str], &'static str, &'static str)];
 
 /// Known failures read before a context refusal, most specific first.
 const KNOWN: Known = &[
+    (
+        &["model returned no visible answer"],
+        "provider_empty_response",
+        "The model returned no visible answer. Retry, or adjust the output limit and reasoning effort.",
+    ),
+    (
+        &[
+            "credit balance is too low",
+            "insufficient credit",
+            "credit balance is insufficient",
+        ],
+        provider::PAYMENT.0,
+        provider::PAYMENT.1,
+    ),
+    (
+        &[
+            "rate limit exceeded",
+            "rate_limit_error",
+            "too many requests",
+        ],
+        provider::QUOTA.0,
+        provider::QUOTA.1,
+    ),
+    (
+        &[
+            "overloaded_error",
+            "provider is overloaded",
+            "api is overloaded",
+        ],
+        provider::OVERLOADED.0,
+        provider::OVERLOADED.1,
+    ),
     (
         &["responses api only", "takes no function tools"],
         "provider_model_refused",
@@ -75,16 +111,6 @@ const KNOWN: Known = &[
         "provider_timeout",
         "Model request timed out. Increase the provider timeout in your configuration, then retry.",
     ),
-    (
-        &["http 401", "http 403"],
-        "provider_access_denied",
-        "Provider access denied. Check the API key and endpoint permissions.",
-    ),
-    (
-        &["http 429"],
-        "provider_quota",
-        "Provider rate limit or quota reached. Check your quota and retry later.",
-    ),
 ];
 
 /// A refusal past the model's context window: read after access and quota
@@ -98,21 +124,6 @@ const CONTEXT_LIMIT: (&str, &str) = (
 
 /// Known failures read after a context refusal, most specific first.
 const AFTER_CONTEXT: Known = &[
-    (
-        &["http 400", "http 422"],
-        "provider_request_rejected",
-        "Provider rejected the request format or parameters. Check model and tool-calling support.",
-    ),
-    (
-        &["http 404"],
-        "provider_not_found",
-        "Provider endpoint or model not found. Check the base URL and model identifier.",
-    ),
-    (
-        &["http 5"],
-        "provider_server_error",
-        "Provider server failed. Check its health and logs, then retry.",
-    ),
     (
         &["connect", "dns"],
         "provider_unreachable",
@@ -134,20 +145,28 @@ impl Diagnostic {
     /// Classify an engine error without copying arbitrary upstream text.
     pub fn classify(error: &str) -> Self {
         let lower = error.to_ascii_lowercase();
+        let http_status = provider::status(&lower);
         let known = |table: Known| {
             table
                 .iter()
                 .find(|(fragments, ..)| fragments.iter().any(|f| lower.contains(f)))
                 .map(|(_, code, summary)| (*code, *summary))
         };
-        let (code, summary) = known(KNOWN)
+        let (code, summary) = provider::priority(http_status)
+            .or_else(|| known(KNOWN))
+            .or_else(|| provider::request(&lower, http_status))
             .or_else(|| reads_as_context_overflow(&lower).then_some(CONTEXT_LIMIT))
+            .or_else(|| provider::fallback(http_status))
             .or_else(|| known(AFTER_CONTEXT))
             .unwrap_or((
                 "engine_failed",
                 "Engine execution failed. Check the host diagnostics; completed tool actions may remain.",
             ));
-        Self { code, summary }
+        Self {
+            code,
+            summary,
+            http_status,
+        }
     }
 
     /// Whether the provider refused the request as past the model's context
@@ -169,73 +188,4 @@ pub(crate) fn explain(error: &str) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn diagnostics_explain_failures_without_echoing_private_provider_text() {
-        for (raw, expected) in [
-            (
-                "the completion request failed: operation timed out https://private.invalid/?key=secret",
-                "timed out",
-            ),
-            ("the provider answered HTTP 401: secret", "access denied"),
-            ("the provider answered HTTP 429: secret", "quota"),
-            ("HTTP 400 maximum context length secret", "context limit"),
-            ("private failure secret", "Engine execution failed"),
-            (
-                "gpt-5.5-pro is served by OpenAI's Responses API only, not Chat Completions",
-                "Choose another model",
-            ),
-            (
-                "gpt-6.1-sol takes no function tools on Chat Completions",
-                "Choose another model",
-            ),
-            (
-                "Responses function call has an unexpected namespace secret",
-                "unexpected namespace",
-            ),
-            (
-                "stateless reasoning replay requires an encrypted reasoning item secret",
-                "encrypted reasoning",
-            ),
-            (
-                "Responses completed items conflict secret",
-                "conflicting output items",
-            ),
-            (
-                "the provider's answer is malformed: secret",
-                "invalid response",
-            ),
-            (
-                "Responses terminal text differs from its streamed text secret",
-                "final text disagree",
-            ),
-            ("the provider account must sign in again secret", "Sign in"),
-        ] {
-            let rendered = super::explain(raw);
-            assert!(rendered.contains(expected));
-            assert!(!rendered.contains("secret") && !rendered.contains("private.invalid"));
-        }
-    }
-
-    /// The kit's own failure when compaction cannot make room, and the
-    /// wordings it reads as a context refusal, name the context limit, with
-    /// the tools among the remedies.
-    #[test]
-    fn a_context_refusal_reads_as_the_kit_reads_it() {
-        for raw in [
-            "Context too large but cannot compact further (<=4 messages)",
-            "Context too large but nothing left to compact before the turn's input",
-            "the provider answered HTTP 400: prompt is too long: 210000 tokens > 200000 maximum",
-            "the provider answered HTTP 400: This model's maximum context length is 131072 tokens",
-        ] {
-            let diagnostic = super::Diagnostic::classify(raw);
-            assert!(diagnostic.exceeds_context(), "{raw}");
-            assert!(diagnostic.summary.contains("Disconnect tools"));
-            assert!(!diagnostic.summary.contains("Start a new session"));
-        }
-        // A rate limit on tokens per minute stays a quota, worth a later retry.
-        let limit =
-            "the provider answered HTTP 429: Request too large for gpt-4o on tokens per min";
-        assert_eq!(super::Diagnostic::classify(limit).code, "provider_quota");
-    }
-}
+mod tests;

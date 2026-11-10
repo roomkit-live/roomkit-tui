@@ -1,6 +1,7 @@
 //! Message delivery, restoration and engine isolation.
 
 use super::*;
+mod empty;
 #[tokio::test]
 async fn an_accepted_submission_settles_when_the_engine_fails_before_streaming() {
     let kit = RoomKit::new(Default::default());
