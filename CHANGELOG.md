@@ -99,6 +99,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A streamed turn that stops after tools now reports its loop's failure and
+  reason, including the tool round limit, instead of appearing completed
+  without an answer. The terminal explains the stop once and retains completed
+  tool results; a later message can continue the conversation.
+
 - A question card took digits but not the arrows, Enter or Tab: the terminal
   took a frame with no input cursor and no approval for an undersized screen and
   dropped those keys. A card shown whole now takes them.

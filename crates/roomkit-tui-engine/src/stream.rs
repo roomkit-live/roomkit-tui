@@ -139,7 +139,12 @@ impl ConversationChannel {
 /// How an agent loop ended, from its final row, and what to tell the person.
 pub(crate) fn loop_end(row: &RoomEvent) -> Option<(RunOutcome, Option<&'static str>)> {
     let reason = row.metadata.get("loop_end_reason")?.as_str()?;
-    Some(match reason {
+    Some(loop_outcome(reason))
+}
+
+/// The same verdict applies to a stored row and the stream's explicit end.
+fn loop_outcome(reason: &str) -> (RunOutcome, Option<&'static str>) {
+    match reason {
         "completed" => (RunOutcome::Completed, None),
         "cancelled" => (RunOutcome::Interrupted, None),
         "max_rounds" => (
@@ -162,7 +167,7 @@ pub(crate) fn loop_end(row: &RoomEvent) -> Option<(RunOutcome, Option<&'static s
             RunOutcome::Failed,
             Some("The model execution failed after partial work. Completed actions are retained."),
         ),
-    })
+    }
 }
 
 /// Projects one stream into events: drafts, finalized messages and items.
@@ -173,6 +178,7 @@ struct Reader<'a> {
     actor: ActorId,
     segment: u64,
     outcome: RunOutcome,
+    ending: Option<(RunOutcome, Option<&'static str>)>,
     failure: Option<ChannelError>,
     generated: bool,
     visible: bool,
@@ -192,6 +198,7 @@ impl<'a> Reader<'a> {
             actor,
             segment: 0,
             outcome: RunOutcome::Completed,
+            ending: None,
             failure: None,
             generated: false,
             visible: false,
@@ -222,6 +229,9 @@ impl<'a> Reader<'a> {
                     self.publish(event);
                 }
             }
+            StreamItem::LoopEnd(marker) => {
+                self.ending = Some(loop_outcome(&marker.reason.to_string()));
+            }
             _ => {}
         }
     }
@@ -241,11 +251,8 @@ impl<'a> Reader<'a> {
         if let Some(event) = crate::measurements::event(row) {
             self.publish(event);
         }
-        if let Some((outcome, notice)) = loop_end(row) {
-            self.outcome = outcome;
-            if let Some(text) = notice {
-                self.notice(text);
-            }
+        if let Some(ending) = loop_end(row) {
+            self.ending = Some(ending);
         }
         match projection::item(row) {
             Some(Item::Message(message)) => {
@@ -291,6 +298,7 @@ impl<'a> Reader<'a> {
     /// End the run, unless an accepted interruption reports it once the
     /// engine has settled its cancelled rows.
     fn finish(mut self) -> Result<ChannelOutput, ChannelError> {
+        self.apply_ending();
         let deferred = self
             .channel
             .stopping
@@ -306,6 +314,21 @@ impl<'a> Reader<'a> {
         match self.failure {
             Some(error) => Err(error),
             None => Ok(ChannelOutput::default()),
+        }
+    }
+
+    /// Tell the verdict once, even when both a final row and a marker carry
+    /// it. A stream error's specific diagnostic or a confirmed interruption
+    /// takes precedence over the loop's generic explanation.
+    fn apply_ending(&mut self) {
+        if self.outcome != RunOutcome::Completed {
+            return;
+        }
+        if let Some((outcome, notice)) = self.ending.take() {
+            self.outcome = outcome;
+            if let Some(text) = notice {
+                self.notice(text);
+            }
         }
     }
 
