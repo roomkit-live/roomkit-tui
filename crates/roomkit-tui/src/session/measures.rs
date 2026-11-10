@@ -2,14 +2,47 @@
 
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 use roomkit_tui_protocol::{
-    ContextUsage, ConversationCost, ConversationId, ModelInfo, RunId, TokenUsage,
+    ContextUsage, ConversationCost, ConversationId, Event, ModelInfo, RunId, TokenUsage,
 };
 
 use super::Session;
 use super::bounds::{bound_in_place, bound_model, bounded};
 
 impl Session {
-    pub(super) fn on_model_changed(&mut self, conversation: &ConversationId, mut model: ModelInfo) {
+    /// Apply a model, measurement or cost event; any other event is ignored.
+    pub(super) fn apply_measurement(&mut self, event: Event) {
+        match event {
+            Event::ModelChanged {
+                conversation,
+                model,
+            } => self.on_model_changed(&conversation, model),
+            Event::UsageUpdated {
+                conversation,
+                run,
+                provider,
+                model,
+                context,
+                usage,
+            } => self.on_usage(&conversation, &run, (&provider, &model), context, usage),
+            Event::ContextUpdated {
+                conversation,
+                run,
+                provider,
+                model,
+                usage,
+            } => self.on_context(&conversation, &run, (&provider, &model), usage),
+            Event::ContextExceeded { conversation, run } => {
+                self.on_context_exceeded(&conversation, &run);
+            }
+            Event::CostUpdated { conversation, cost } => self.on_cost(&conversation, cost),
+            Event::RelatedCostUpdated { conversation, cost } => {
+                self.on_related_cost(&conversation, cost);
+            }
+            _ => {}
+        }
+    }
+
+    fn on_model_changed(&mut self, conversation: &ConversationId, mut model: ModelInfo) {
         if !self.is_current(conversation) {
             return;
         }
@@ -42,7 +75,7 @@ impl Session {
                 })
     }
 
-    pub(super) fn on_usage(
+    fn on_usage(
         &mut self,
         conversation: &ConversationId,
         run: &RunId,
@@ -62,7 +95,7 @@ impl Session {
         }
     }
 
-    pub(super) fn on_context(
+    fn on_context(
         &mut self,
         conversation: &ConversationId,
         run: &RunId,
@@ -78,7 +111,7 @@ impl Session {
 
     /// A refusal past the context window, kept only for the latest run,
     /// like its measurements.
-    pub(super) fn on_context_exceeded(&mut self, conversation: &ConversationId, run: &RunId) {
+    fn on_context_exceeded(&mut self, conversation: &ConversationId, run: &RunId) {
         if self.is_current(conversation) && self.last_run.as_ref() == Some(run) {
             self.context_exceeded = true;
         }
@@ -86,7 +119,7 @@ impl Session {
 
     /// The conversation's cost, which a new execution keeps: it sums every
     /// turn of the conversation, not the latest one.
-    pub(super) fn on_cost(&mut self, conversation: &ConversationId, mut cost: ConversationCost) {
+    fn on_cost(&mut self, conversation: &ConversationId, mut cost: ConversationCost) {
         if !self.is_current(conversation) {
             return;
         }
@@ -98,7 +131,7 @@ impl Session {
 
     /// What the work related to the conversation cost, which the next total
     /// adds to its own.
-    pub(super) fn on_related_cost(
+    fn on_related_cost(
         &mut self,
         conversation: &ConversationId,
         mut cost: Option<ConversationCost>,

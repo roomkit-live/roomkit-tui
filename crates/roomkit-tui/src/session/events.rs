@@ -180,32 +180,12 @@ impl Session {
                 conversation,
                 question,
             } => self.on_question_resolved(&conversation, &question),
-            Event::ModelChanged {
-                conversation,
-                model,
-            } => self.on_model_changed(&conversation, model),
-            Event::UsageUpdated {
-                conversation,
-                run,
-                provider,
-                model,
-                context,
-                usage,
-            } => self.on_usage(&conversation, &run, (&provider, &model), context, usage),
-            Event::ContextUpdated {
-                conversation,
-                run,
-                provider,
-                model,
-                usage,
-            } => self.on_context(&conversation, &run, (&provider, &model), usage),
-            Event::ContextExceeded { conversation, run } => {
-                self.on_context_exceeded(&conversation, &run);
-            }
-            Event::CostUpdated { conversation, cost } => self.on_cost(&conversation, cost),
-            Event::RelatedCostUpdated { conversation, cost } => {
-                self.on_related_cost(&conversation, cost);
-            }
+            event @ (Event::ModelChanged { .. }
+            | Event::UsageUpdated { .. }
+            | Event::ContextUpdated { .. }
+            | Event::ContextExceeded { .. }
+            | Event::CostUpdated { .. }
+            | Event::RelatedCostUpdated { .. }) => self.apply_measurement(event),
             _ => {}
         }
     }
