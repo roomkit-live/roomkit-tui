@@ -26,6 +26,11 @@ impl Session {
                 .iter()
                 .map(|permission| permission.id.clone())
                 .collect(),
+            questions: self
+                .questions
+                .iter()
+                .map(|card| card.id().clone())
+                .collect(),
         })
     }
 

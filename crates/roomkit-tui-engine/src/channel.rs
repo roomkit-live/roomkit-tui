@@ -125,7 +125,8 @@ impl ConversationChannel {
         };
         let question =
             roomkit_tui_protocol::Question::new(request.id, agent.as_str(), run, request.items);
-        if !question.fits() {
+        let waiting = self.questions.waiting(room.as_str());
+        if !question.fits() || waiting >= roomkit_tui_protocol::limits::MAX_PENDING_QUESTIONS {
             return false;
         }
         self.questions

@@ -80,6 +80,7 @@ pub(super) fn handle_key(
     }
     match focus {
         Focus::Permission => permission_key(session, client, key, now),
+        Focus::Question => question_key(session, client, key, now),
         Focus::Panel => panel_key(session, client, key),
         Focus::Form => form_key(session, client, key),
         Focus::Picker => picker_key(session, client, key),
@@ -116,6 +117,36 @@ fn permission_key(session: &mut Session, client: &Client, key: KeyEvent, now: Du
         && let Some(command) = session.decide(decision)
     {
         send(session, client, command, false);
+    }
+}
+
+/// Keys to the questions on screen, once they can have been read: a key
+/// pressed as they appear answers nothing. Ctrl+C interrupts the run that
+/// asks, as on a decision card.
+fn question_key(session: &mut Session, client: &Client, key: KeyEvent, now: Duration) {
+    session.quit_until = None;
+    if is_ctrl(key, 'c') {
+        if let Some(run) = session.question().map(|card| card.question().run.clone()) {
+            interrupt_run(session, client, run);
+        }
+        return;
+    }
+    if key.kind == KeyEventKind::Repeat || !session.question_armed(now) {
+        return;
+    }
+    let Some(card) = session.question_mut() else {
+        return;
+    };
+    let command = match card.key(key) {
+        crate::question::CardStep::Stay => return,
+        crate::question::CardStep::Answer(command)
+        | crate::question::CardStep::Decline(command) => command,
+    };
+    if super::requests::try_request(session, client, command).is_some() {
+        if let Some(card) = session.question_mut() {
+            card.sent = true;
+        }
+        session.notice.clear();
     }
 }
 

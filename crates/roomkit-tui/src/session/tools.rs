@@ -207,6 +207,20 @@ impl Session {
         {
             self.approval_drawn = Some((id.clone(), now));
         }
+        // A card that left the screen, under a decision or a frame too
+        // small for it, is read again before it takes keys.
+        match &frame.question {
+            Some(id)
+                if self
+                    .question_drawn
+                    .as_ref()
+                    .is_none_or(|(drawn, _)| drawn != id) =>
+            {
+                self.question_drawn = Some((id.clone(), now));
+            }
+            Some(_) => {}
+            None => self.question_drawn = None,
+        }
         if let Some(scroll) = frame.scroll {
             self.scroll = scroll;
         }

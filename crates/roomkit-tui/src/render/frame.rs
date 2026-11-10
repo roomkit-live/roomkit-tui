@@ -108,6 +108,8 @@ pub struct Frame {
     pub permission_scroll: Option<usize>,
     /// The pending permission whose card this frame shows in full.
     pub approval: Option<roomkit_tui_protocol::PermissionId>,
+    /// The pending questions whose card this frame shows in full.
+    pub question: Option<roomkit_tui_protocol::QuestionId>,
     /// The conversation area, so a selection can refer to content, not rows.
     pub(crate) timeline: Option<TimelineRows>,
 }

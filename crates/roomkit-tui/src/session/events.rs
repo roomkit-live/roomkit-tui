@@ -39,6 +39,8 @@ impl Session {
                     | Event::RunFinished { .. }
                     | Event::PermissionRequested { .. }
                     | Event::PermissionResolved { .. }
+                    | Event::QuestionAsked { .. }
+                    | Event::QuestionResolved { .. }
             );
         self.apply_event(event, at);
         if observe && let Some(observer) = &self.observer {
@@ -170,6 +172,14 @@ impl Session {
                 conversation,
                 permission,
             } => self.on_permission_resolved(&conversation, &permission),
+            Event::QuestionAsked {
+                conversation,
+                question,
+            } => self.on_question_asked(&conversation, question),
+            Event::QuestionResolved {
+                conversation,
+                question,
+            } => self.on_question_resolved(&conversation, &question),
             Event::ModelChanged {
                 conversation,
                 model,
@@ -341,6 +351,16 @@ impl Session {
         match command {
             Command::Decide { permission, .. } => {
                 self.deciding.remove(&permission);
+            }
+            // Refused: the card takes answers again.
+            Command::AnswerQuestion { question, .. } => {
+                if let Some(card) = self
+                    .questions
+                    .iter_mut()
+                    .find(|card| *card.id() == question)
+                {
+                    card.sent = false;
+                }
             }
             // A late refusal for a run already over leaves the interruption
             // of the run under way pending.

@@ -98,6 +98,11 @@ impl Questions {
         Ok(asked.question)
     }
 
+    /// How many questions wait in `room`, whoever asks them.
+    pub(crate) fn waiting(&self, room: &str) -> usize {
+        self.lock().get(room).map_or(0, Vec::len)
+    }
+
     /// The questions `agent` asks in `room`, in the order asked.
     pub(crate) fn pending(&self, (room, agent): (&str, &str)) -> Vec<Question> {
         self.lock()

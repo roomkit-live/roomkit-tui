@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use roomkit_tui_protocol::{
-    ActorId, ConversationId, ModeState, OperationId, PermissionId, RunId, RunOutcome,
+    ActorId, ConversationId, ModeState, OperationId, PermissionId, QuestionId, RunId, RunOutcome,
 };
 
 /// The latest accepted operation, including admission before a run exists.
@@ -44,6 +44,9 @@ pub struct SessionObservation {
     pub run: Option<RunObservation>,
     /// Decisions still open, including answers awaiting host confirmation.
     pub permissions: Vec<PermissionId>,
+    /// Questions an agent asks that are still open, including answers
+    /// awaiting host confirmation.
+    pub questions: Vec<QuestionId>,
 }
 
 /// A read-only handle to the latest session observation.

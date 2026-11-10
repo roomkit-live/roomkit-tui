@@ -15,7 +15,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   engine resolves or rejects the request with what the agent reads. The
   questions leave the views (`Event::QuestionResolved`) once answered, closed
   or when the asking call ends, and a view coming back to the room sees them
-  again. The terminal does not show them yet.
+  again. The terminal shows them on a card after any approval: ↑↓ or a digit
+  picks, Space toggles on a question taking several, the last row takes the
+  person's own words, Enter confirms, Tab and Shift+Tab move between
+  questions, Esc closes them unanswered and Ctrl+C interrupts the run. Keys
+  count once the card has been on screen for half a second, as on an approval.
+  `SessionObservation::questions` lists the questions still open; at most
+  16 requests wait at once in a conversation (`MAX_PENDING_QUESTIONS`), and a
+  card that leaves the screen is read again before it takes keys.
 
 - A logo can have colored pieces: `Branding::with_logo_tiles` and
   `WelcomeScreen::with_logo_tiles` take rows of `LogoTile`, drawn in the colors

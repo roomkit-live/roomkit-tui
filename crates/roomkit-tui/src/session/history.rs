@@ -83,6 +83,9 @@ impl Session {
         self.forget_waited_send();
         self.scroll = 0;
         self.approval_drawn = None;
+        // The host tells the questions still asked again after a snapshot.
+        self.questions.clear();
+        self.question_drawn = None;
         self.expanded_tools.clear();
         self.focused_tool = None;
         self.picker = None;

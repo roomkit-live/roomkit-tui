@@ -3,6 +3,7 @@
 use unicode_width::UnicodeWidthStr;
 
 use super::chrome;
+use super::question;
 use super::text::{fit, input_gutter, pad, sanitize, wrap};
 use super::timeline::{Timeline, timeline};
 use super::{
@@ -52,6 +53,7 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
     }
     match session.focus() {
         Focus::Permission => return approval::screen(view, cols, rows),
+        Focus::Question => return question::screen(view, cols, rows),
         Focus::Panel => return panel::screen(session, cols, rows, view.elapsed),
         Focus::Form => return form::screen(session, cols, rows, view.elapsed),
         _ => {}

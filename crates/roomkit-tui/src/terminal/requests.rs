@@ -13,6 +13,11 @@ pub(super) fn paste(session: &mut Session, text: &str) {
         return;
     }
     match session.focus() {
+        Focus::Question => {
+            if let Some(card) = session.question_mut() {
+                card.insert(text);
+            }
+        }
         Focus::Form => {
             if !session.form_pending()
                 && let Some(form) = &mut session.form

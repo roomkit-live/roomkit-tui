@@ -9,6 +9,7 @@ mod history;
 mod input;
 mod labels;
 mod measures;
+mod questions;
 mod runs;
 mod send_now;
 mod steering;
@@ -77,6 +78,8 @@ impl Default for Limits {
 pub enum Focus {
     /// The oldest pending human decision.
     Permission,
+    /// The oldest questions an agent asks.
+    Question,
     /// A read-only host panel.
     Panel,
     /// A host form.
@@ -119,6 +122,10 @@ pub struct Session {
     pub(crate) permission_choice: usize,
     /// The head permission's card and when a frame first showed it.
     pub(crate) approval_drawn: Option<(PermissionId, Duration)>,
+    /// Questions an agent asks, oldest first; the first one is on screen.
+    pub(crate) questions: Vec<crate::QuestionCard>,
+    /// The question card on screen and when a frame first showed it.
+    pub(crate) question_drawn: Option<(roomkit_tui_protocol::QuestionId, Duration)>,
     previous_context: Option<ContextUsage>,
     /// The latest run's request was refused past the model's context window.
     context_exceeded: bool,
@@ -185,6 +192,8 @@ impl Session {
             permission_scroll: 0,
             permission_choice: 0,
             approval_drawn: None,
+            questions: Vec::new(),
+            question_drawn: None,
             previous_context: None,
             context_exceeded: false,
             limits,
@@ -229,6 +238,8 @@ impl Session {
     pub fn focus(&self) -> Focus {
         if !self.permissions().is_empty() {
             Focus::Permission
+        } else if !self.questions.is_empty() {
+            Focus::Question
         } else if self.panel.is_some() {
             Focus::Panel
         } else if self.form.is_some() {
@@ -383,6 +394,24 @@ impl Session {
         };
         self.approval_drawn.as_ref().is_some_and(|(id, drawn)| {
             *id == head.id && now.saturating_sub(*drawn) >= APPROVAL_ARMING_DELAY
+        })
+    }
+
+    /// The questions on screen: the oldest an agent asks.
+    pub fn question(&self) -> Option<&crate::QuestionCard> {
+        self.questions.first()
+    }
+
+    /// Whether the questions on screen take answers at `now`: a frame
+    /// synchronized through [`Self::sync`] has shown them for at least
+    /// [`APPROVAL_ARMING_DELAY`], as for a decision, so that typing under way
+    /// when they appear answers nothing.
+    pub fn question_armed(&self, now: Duration) -> bool {
+        let Some(head) = self.questions.first() else {
+            return true;
+        };
+        self.question_drawn.as_ref().is_some_and(|(id, drawn)| {
+            id == head.id() && now.saturating_sub(*drawn) >= APPROVAL_ARMING_DELAY
         })
     }
 

@@ -14,6 +14,8 @@ pub const MAX_PERMISSION_DETAIL_BYTES: usize = 65_536;
 pub const MAX_PERMISSION_SUMMARY_BYTES: usize = 512;
 /// Maximum permissions waiting at once in one conversation.
 pub const MAX_PENDING_PERMISSIONS: usize = 64;
+/// Maximum question requests waiting at once in one conversation.
+pub const MAX_PENDING_QUESTIONS: usize = 16;
 /// Maximum questions one request asks the person at once.
 pub const MAX_QUESTION_ITEMS: usize = 4;
 /// Maximum options one question offers; the person may also write their own.

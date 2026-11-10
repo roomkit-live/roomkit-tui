@@ -280,7 +280,10 @@ impl View {
             return true;
         };
         let focus = self.session.focus();
-        let sidebar_reachable = !matches!(focus, Focus::Permission | Focus::Panel | Focus::Form);
+        let sidebar_reachable = !matches!(
+            focus,
+            Focus::Permission | Focus::Question | Focus::Panel | Focus::Form
+        );
         if key.code == KeyCode::F(7) && self.session.sidebar.is_some() && sidebar_reachable {
             let visible = self
                 .session
