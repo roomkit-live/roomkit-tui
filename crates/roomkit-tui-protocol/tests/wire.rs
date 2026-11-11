@@ -194,6 +194,12 @@ fn every_event_round_trips() {
             conversation: room.clone(),
             run: "run".into(),
         },
+        Event::ContextEstimated {
+            conversation: room.clone(),
+            provider: "openai".into(),
+            model: "model".into(),
+            usage: ContextUsage::new(92_000).with_capacity(200_000).estimated(),
+        },
         Event::Notice {
             conversation: room,
             text: "Check the provider".into(),

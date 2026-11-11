@@ -5,6 +5,7 @@ mod activity;
 mod bounds;
 mod commands;
 mod composer;
+mod estimates;
 mod layout;
 mod messages;
 mod meters;

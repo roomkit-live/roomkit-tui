@@ -184,6 +184,7 @@ impl Session {
             | Event::UsageUpdated { .. }
             | Event::ContextUpdated { .. }
             | Event::ContextExceeded { .. }
+            | Event::ContextEstimated { .. }
             | Event::CostUpdated { .. }
             | Event::RelatedCostUpdated { .. }) => self.apply_measurement(event),
             _ => {}

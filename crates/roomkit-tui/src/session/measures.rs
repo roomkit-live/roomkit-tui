@@ -34,6 +34,12 @@ impl Session {
             Event::ContextExceeded { conversation, run } => {
                 self.on_context_exceeded(&conversation, &run);
             }
+            Event::ContextEstimated {
+                conversation,
+                provider,
+                model,
+                usage,
+            } => self.on_context_estimated(&conversation, (&provider, &model), usage),
             Event::CostUpdated { conversation, cost } => self.on_cost(&conversation, cost),
             Event::RelatedCostUpdated { conversation, cost } => {
                 self.on_related_cost(&conversation, cost);
@@ -54,25 +60,30 @@ impl Session {
         }
         self.previous_context = None;
         self.context_exceeded = false;
+        self.taken_estimate = None;
     }
 
     fn measures_current_model(
         &self,
         conversation: &ConversationId,
         run: &RunId,
-        (provider, model): (&str, &str),
+        measured: (&str, &str),
     ) -> bool {
         self.is_current(conversation)
             && self.last_run.as_ref() == Some(run)
-            && self
-                .snapshot
-                .as_ref()
-                .and_then(|s| s.model.as_ref())
-                .is_some_and(|m| {
-                    // Labels in the view were shortened the same way.
-                    m.provider == bounded(provider, MAX_LABEL_BYTES)
-                        && m.model == bounded(model, MAX_LABEL_BYTES)
-                })
+            && self.shows_model(measured)
+    }
+
+    /// Whether `provider` and `model` are those on screen.
+    fn shows_model(&self, (provider, model): (&str, &str)) -> bool {
+        self.snapshot
+            .as_ref()
+            .and_then(|s| s.model.as_ref())
+            .is_some_and(|m| {
+                // Labels in the view were shortened the same way.
+                m.provider == bounded(provider, MAX_LABEL_BYTES)
+                    && m.model == bounded(model, MAX_LABEL_BYTES)
+            })
     }
 
     fn on_usage(
@@ -115,6 +126,32 @@ impl Session {
         if self.is_current(conversation) && self.last_run.as_ref() == Some(run) {
             self.context_exceeded = true;
         }
+    }
+
+    /// Take the host's estimate as the conversation's context, while no run
+    /// measures it: a live run's measures win, and the estimate this view
+    /// took, sent again with the host's state, replaces nothing.
+    fn on_context_estimated(
+        &mut self,
+        conversation: &ConversationId,
+        estimated: (&str, &str),
+        mut usage: ContextUsage,
+    ) {
+        usage.estimated = true;
+        if !self.is_current(conversation)
+            || !self.shows_model(estimated)
+            || self.active_run().is_some()
+            || self.taken_estimate.as_ref() == Some(&usage)
+        {
+            return;
+        }
+        if let Some(snapshot) = &mut self.snapshot {
+            snapshot.context = Some(usage.clone());
+        }
+        // The estimate postdates the refused request: the refusal no longer
+        // describes what the gauge shows.
+        self.context_exceeded = false;
+        self.taken_estimate = Some(usage);
     }
 
     /// The conversation's cost, which a new execution keeps: it sums every

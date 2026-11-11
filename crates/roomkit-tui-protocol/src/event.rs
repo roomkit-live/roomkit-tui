@@ -272,6 +272,28 @@ pub enum Event {
         /// Execution whose request was refused.
         run: RunId,
     },
+    /// The host's estimate of the context the conversation fills while no
+    /// execution measures it, such as after compacting it between turns. A
+    /// view shows it as an estimate until an execution's measurement
+    /// replaces it.
+    ///
+    /// A view takes it only while no execution is live, for the model on
+    /// screen, and once: the same estimate sent again, as a host's coalesced
+    /// state is whenever another part of it changes, never replaces a later
+    /// measurement. Stop sending it once a request of the agent was
+    /// measured: a view attached afterwards reads that newer measurement
+    /// from its snapshot, and would replace it with the estimate.
+    ContextEstimated {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// Provider the estimate is for.
+        provider: String,
+        /// Model the estimate is for.
+        model: String,
+        /// Estimated occupancy; a view reads it as estimated whatever its
+        /// `estimated` flag says.
+        usage: ContextUsage,
+    },
     /// Replace measurements for one execution and its actual model.
     UsageUpdated {
         /// Target conversation.

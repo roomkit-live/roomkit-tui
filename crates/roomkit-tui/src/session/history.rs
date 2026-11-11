@@ -75,6 +75,7 @@ impl Session {
         self.forget_thoughts();
         self.previous_context = None;
         self.context_exceeded = false;
+        self.taken_estimate = None;
         self.permission_scroll = 0;
         self.permission_choice = 0;
         self.deciding.clear();

@@ -340,7 +340,12 @@ a `last report` label, and clears it when the model or conversation changes.
 When the host reports the latest request refused past the model's context
 window (`Event::ContextExceeded`), the sidebar shows `Refused: over capacity`
 above that measurement and the footer `context refused`, until the next run.
-These indicators do not implement compaction or account for the next unsent
+A host's estimate of the context while no run measures it, such as after a
+compaction between turns (`Event::ContextEstimated`), replaces the last
+measurement and shows `~`; the next run's measurement replaces it in turn. The
+view takes an estimate only while no run is live, for the model on screen, and
+never takes the same estimate twice, so a host sending its state again does not
+undo a newer measurement. These indicators do not implement compaction or account for the next unsent
 message.
 
 ## Terminal status (OSC 7501)
