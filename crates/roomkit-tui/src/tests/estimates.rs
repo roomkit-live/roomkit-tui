@@ -153,3 +153,45 @@ fn an_estimate_after_a_refused_request_is_no_refusal() {
     assert!(screen.contains("context ~92000/1000000"), "{screen}");
     assert!(!screen.contains("refused"), "{screen}");
 }
+
+/// An estimate told while a run goes that measures nothing, such as host
+/// work that compacts, shows once the room is idle.
+#[test]
+fn an_estimate_told_during_a_run_that_measures_nothing_shows_once_it_ends() {
+    let mut session = Session::default();
+    session.apply(Event::Snapshot(measured_before()));
+    started(&mut session, "compaction");
+    session.apply(estimate(92_000));
+    assert_eq!(shown(&session), None, "A live run's measures win");
+    finished(&mut session, "compaction");
+    assert_eq!(shown(&session), Some((92_000, true)));
+    assert!(footer(&session).contains("context ~92000/1000000"));
+}
+
+/// A view that saw the estimate only while a run went, which then measured,
+/// keeps that measure when the host sends its state again.
+#[test]
+fn an_estimate_seen_during_a_run_that_measures_never_undoes_its_measure() {
+    let mut restored = measured_before();
+    restored.active_run = Some("run-1".into());
+    let mut session = Session::default();
+    session.apply(Event::Snapshot(restored));
+    session.apply(estimate(92_000));
+    session.apply(measured("run-1", 147_015));
+    finished(&mut session, "run-1");
+    assert_eq!(shown(&session), Some((147_015, false)));
+    session.apply(estimate(92_000));
+    assert_eq!(shown(&session), Some((147_015, false)));
+
+    // A refusal is newer than the estimate seen before it.
+    started(&mut session, "run-2");
+    session.apply(estimate(80_000));
+    session.apply(Event::ContextExceeded {
+        conversation: "room-a".into(),
+        run: "run-2".into(),
+    });
+    finished(&mut session, "run-2");
+    assert!(footer(&session).contains("context refused"));
+    session.apply(estimate(80_000));
+    assert!(footer(&session).contains("context refused"));
+}

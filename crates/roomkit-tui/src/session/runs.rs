@@ -140,6 +140,7 @@ impl Session {
         if index == 0 {
             self.freeze_observed_run(outcome, at);
         }
+        self.show_held_estimate();
         self.sync_active_run();
     }
 

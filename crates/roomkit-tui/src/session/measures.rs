@@ -60,7 +60,8 @@ impl Session {
         }
         self.previous_context = None;
         self.context_exceeded = false;
-        self.taken_estimate = None;
+        self.known_estimate = None;
+        self.held_estimate = None;
     }
 
     fn measures_current_model(
@@ -97,6 +98,9 @@ impl Session {
         if !self.measures_current_model(conversation, run, measured) {
             return;
         }
+        if context.is_some() {
+            self.measured_over_estimate();
+        }
         if let Some(snapshot) = &mut self.snapshot {
             if let Some(previous) = snapshot.context.take() {
                 self.previous_context = Some(previous);
@@ -113,9 +117,11 @@ impl Session {
         measured: (&str, &str),
         usage: ContextUsage,
     ) {
-        if self.measures_current_model(conversation, run, measured)
-            && let Some(snapshot) = &mut self.snapshot
-        {
+        if !self.measures_current_model(conversation, run, measured) {
+            return;
+        }
+        self.measured_over_estimate();
+        if let Some(snapshot) = &mut self.snapshot {
             snapshot.context = Some(usage);
         }
     }
@@ -124,13 +130,15 @@ impl Session {
     /// like its measurements.
     fn on_context_exceeded(&mut self, conversation: &ConversationId, run: &RunId) {
         if self.is_current(conversation) && self.last_run.as_ref() == Some(run) {
+            self.measured_over_estimate();
             self.context_exceeded = true;
         }
     }
 
-    /// Take the host's estimate as the conversation's context, while no run
-    /// measures it: a live run's measures win, and the estimate this view
-    /// took, sent again with the host's state, replaces nothing.
+    /// Take the host's estimate as the conversation's context, unless a
+    /// newer measure replaced it: the estimate it already knows, sent again
+    /// with the host's state, replaces nothing. A live run's measures win, so
+    /// an estimate told while it goes waits for the room to be idle.
     fn on_context_estimated(
         &mut self,
         conversation: &ConversationId,
@@ -140,18 +148,42 @@ impl Session {
         usage.estimated = true;
         if !self.is_current(conversation)
             || !self.shows_model(estimated)
-            || self.active_run().is_some()
-            || self.taken_estimate.as_ref() == Some(&usage)
+            || self.known_estimate.as_ref() == Some(&usage)
         {
             return;
         }
+        if self.active_run().is_some() {
+            self.held_estimate = Some(usage);
+        } else {
+            self.show_estimate(usage);
+        }
+    }
+
+    /// Show `usage`, the host's estimate, as the conversation's context.
+    fn show_estimate(&mut self, usage: ContextUsage) {
         if let Some(snapshot) = &mut self.snapshot {
             snapshot.context = Some(usage.clone());
         }
         // The estimate postdates the refused request: the refusal no longer
         // describes what the gauge shows.
         self.context_exceeded = false;
-        self.taken_estimate = Some(usage);
+        self.known_estimate = Some(usage);
+    }
+
+    /// A run measured, or was refused, after the estimate held: the estimate
+    /// is older, and known, so it is not shown when sent again.
+    fn measured_over_estimate(&mut self) {
+        if let Some(held) = self.held_estimate.take() {
+            self.known_estimate = Some(held);
+        }
+    }
+
+    /// Once the room is idle, show the estimate told while a run went that
+    /// measured nothing since.
+    pub(super) fn show_held_estimate(&mut self) {
+        if let Some(held) = self.held_estimate.take() {
+            self.show_estimate(held);
+        }
     }
 
     /// The conversation's cost, which a new execution keeps: it sums every

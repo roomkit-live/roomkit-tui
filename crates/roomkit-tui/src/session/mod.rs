@@ -129,8 +129,12 @@ pub struct Session {
     previous_context: Option<ContextUsage>,
     /// The latest run's request was refused past the model's context window.
     context_exceeded: bool,
-    /// The host's estimate this view last took: sent again, it is not news.
-    taken_estimate: Option<ContextUsage>,
+    /// The host's estimate this view already knows, shown or measured over:
+    /// sent again, it is not news.
+    known_estimate: Option<ContextUsage>,
+    /// An estimate told while a run went, shown once the room is idle unless
+    /// a run measured meanwhile.
+    held_estimate: Option<ContextUsage>,
     limits: Limits,
     next_request: u64,
     pending: BTreeMap<RequestId, Command>,
@@ -198,7 +202,8 @@ impl Session {
             question_drawn: None,
             previous_context: None,
             context_exceeded: false,
-            taken_estimate: None,
+            known_estimate: None,
+            held_estimate: None,
             limits,
             next_request: 0,
             pending: BTreeMap::new(),
