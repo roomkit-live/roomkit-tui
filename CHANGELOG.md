@@ -8,6 +8,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The context gauge follows a compaction between turns (RMK-1646): a host
+  publishes its estimate as `Event::ContextEstimated`, which the engine gives
+  the configured capacity, as it now does any measurement a host publishes,
+  and the terminal shows as `~92000/1000000` until the next run measures, live
+  and after a relaunch.
+
 - Ctrl+A and Ctrl+E move to the start and the end of the line in every text
   field: the composer, a question's own words, a picker's filter and a form.
 

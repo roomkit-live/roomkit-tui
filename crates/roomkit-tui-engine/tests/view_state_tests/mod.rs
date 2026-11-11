@@ -326,3 +326,47 @@ async fn a_view_a_terminal_would_refuse_is_not_attached() {
     assert!(client.try_recv().is_err(), "Nothing was sent to the view");
     kit.close().await.unwrap();
 }
+
+fn estimate(model: &str, capacity: Option<u64>) -> Event {
+    let mut usage = ContextUsage::new(92_000).estimated();
+    usage.capacity = capacity;
+    Event::ContextEstimated {
+        conversation: "room".into(),
+        provider: "local".into(),
+        model: model.into(),
+        usage,
+    }
+}
+
+/// RMK-1646: an estimate the host publishes, by its subscription or a
+/// command, gets the configured model's capacity, as the engine's own
+/// measurements do; another model's keeps what the host gave it.
+#[tokio::test]
+async fn a_published_estimate_gets_the_configured_capacity() {
+    let kit = RoomKit::new(Default::default());
+    let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
+    let mut view = view();
+    view.model = Some(ModelInfo::new("local", "fixture"));
+    view.context_capacity = Some(200_000);
+    let (publish, updates) = watch::channel(vec![estimate("fixture", None)]);
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let handler = Renamer {
+        updates: Some(updates),
+        published: vec![estimate("fixture", Some(1))],
+    };
+    let task = tokio::spawn(
+        LocalSession::new(kit.clone(), channel, view).run_with_commands(host, handler),
+    );
+    assert!(matches!(next(&client).await, Event::Snapshot(_)));
+    assert_eq!(next(&client).await, estimate("fixture", Some(200_000)));
+
+    client.try_send(invoke(1, "publish", "")).unwrap();
+    while !matches!(next(&client).await, Event::Reply { .. }) {}
+    assert_eq!(next(&client).await, estimate("fixture", Some(200_000)));
+
+    publish.send_replace(vec![estimate("other", Some(64_000))]);
+    assert_eq!(next(&client).await, estimate("other", Some(64_000)));
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}

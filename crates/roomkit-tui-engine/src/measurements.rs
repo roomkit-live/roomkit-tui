@@ -76,6 +76,9 @@ fn counter(report: &Metadata, key: &str) -> u64 {
     report.get(key).and_then(Value::as_u64).unwrap_or(0)
 }
 
+/// Give a context measured or estimated on the configured model the
+/// capacity the session configured. One the host gave a capacity keeps it
+/// when the session configured none.
 pub(crate) fn for_view(event: &mut Event, config: &SessionConfig) {
     let (provider, model, context) = match event {
         Event::UsageUpdated {
@@ -89,15 +92,23 @@ pub(crate) fn for_view(event: &mut Event, config: &SessionConfig) {
             model,
             usage,
             ..
+        }
+        | Event::ContextEstimated {
+            provider,
+            model,
+            usage,
+            ..
         } => (provider, model, usage),
         _ => return,
     };
-    if config
-        .model
-        .as_ref()
-        .is_some_and(|selected| selected.provider == *provider && selected.model == *model)
+    let configured = config.context_capacity.filter(|capacity| *capacity > 0);
+    if let Some(capacity) = configured
+        && config
+            .model
+            .as_ref()
+            .is_some_and(|selected| selected.provider == *provider && selected.model == *model)
     {
-        context.capacity = config.context_capacity.filter(|capacity| *capacity > 0);
+        context.capacity = Some(capacity);
     }
 }
 
@@ -157,6 +168,31 @@ mod tests {
         };
         assert_eq!(run, crate::projection::run_id(&agent, "evt_1"));
         assert!(run.as_str().len() <= MAX_LABEL_BYTES);
+    }
+
+    /// RMK-1646: the session states the configured model's capacity; with
+    /// none configured, a host's estimate keeps the capacity it gave.
+    #[test]
+    fn an_estimate_keeps_its_capacity_unless_the_session_configured_one() {
+        use roomkit_tui_protocol::ModelInfo;
+        let estimate = |capacity| Event::ContextEstimated {
+            conversation: "room".into(),
+            provider: "local".into(),
+            model: "fixture".into(),
+            usage: ContextUsage::new(92_000).with_capacity(capacity),
+        };
+        let mut config = SessionConfig::new(
+            RoomId::new("room").unwrap(),
+            ChannelId::new("agent").unwrap(),
+            "alice",
+        );
+        config.model = Some(ModelInfo::new("local", "fixture"));
+        let mut event = estimate(64_000);
+        for_view(&mut event, &config);
+        assert_eq!(event, estimate(64_000));
+        config.context_capacity = Some(200_000);
+        for_view(&mut event, &config);
+        assert_eq!(event, estimate(200_000));
     }
 
     /// RMK-1457: since roomkit-rs f86cbb1 a Chat Completions usage reports the

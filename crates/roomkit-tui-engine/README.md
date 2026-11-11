@@ -206,6 +206,13 @@ the provider refused past the model's context window, which the kit's
 compaction could not fix, sends `Event::ContextExceeded` before it ends, with
 its `context_limit` notice: no measurement of that request comes.
 
+A host that changes the context outside a turn, such as compacting the
+conversation between turns, publishes its estimate as `Event::ContextEstimated`,
+from a command result or from `CommandHandler::subscribe`. The adapter gives it
+the configured capacity, as it does the engine's measurements. Stop publishing
+it once a request of the agent was measured: a view attached afterwards reads
+that newer measurement from its snapshot, and would show the estimate instead.
+
 `SessionConfig.context_capacity` is the host-confirmed capacity of its configured
 model. With matching `ai_model`/`ai_provider` metadata, `ai_last_usage` supplies
 the last completed generation's input (including cached tokens) plus output.

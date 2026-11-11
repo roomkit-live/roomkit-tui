@@ -257,10 +257,12 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
     }
 
     /// Send events the host published, keeping this view's configuration in
-    /// step with the mode and title they confirm.
-    pub fn publish(&mut self, events: Vec<Event>) -> Result<(), AdapterError> {
-        for event in &events {
+    /// step with the mode and title they confirm. Their measurements and
+    /// estimates get the configured capacity, as the engine's own do.
+    pub fn publish(&mut self, mut events: Vec<Event>) -> Result<(), AdapterError> {
+        for event in &mut events {
             self.session.config.record(event);
+            crate::measurements::for_view(event, &self.session.config);
         }
         self.send_all(events)
     }
