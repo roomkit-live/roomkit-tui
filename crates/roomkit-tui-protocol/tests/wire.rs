@@ -159,7 +159,15 @@ fn every_event_round_trips() {
                 "configure",
                 "Configure",
                 vec![FormField::new("key", "Key", FieldKind::Secret).required()],
-            ),
+            )
+            .with_description("Open https://example.com then enter the code")
+            .with_dismiss("cancel:rev")
+            .with_async_completion(),
+        },
+        Event::FormCompleted {
+            conversation: room.clone(),
+            form: "rev".into(),
+            panel: PanelSpec::new("result", "configure", "Complete", "Done"),
         },
         Event::Reply {
             request: RequestId::new(3),
@@ -449,4 +457,13 @@ fn an_older_host_s_usage_and_snapshot_read_without_cache_writes_or_cost() {
     let mut priced = snapshot;
     priced.cost = Some(ConversationCost::new(420_000, "USD", true));
     round_trip(&priced);
+}
+
+#[test]
+fn older_forms_have_no_instructions_or_dismiss_action() {
+    let form: FormSpec = serde_json::from_value(json!({
+        "id": "old", "command": "configure", "title": "Settings", "fields": []
+    }))
+    .unwrap();
+    assert!(form.description.is_empty() && form.dismiss.is_empty() && !form.wait_for_completion);
 }

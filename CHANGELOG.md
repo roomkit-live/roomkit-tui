@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Host forms can show scrollable instructions beside their fields, notify the
+  host on cancellation, and display an asynchronous result while still open.
+
 - The context gauge follows a compaction between turns (RMK-1646): a host
   publishes its estimate as `Event::ContextEstimated`, which the engine gives
   the configured capacity, as it now does any measurement a host publishes,

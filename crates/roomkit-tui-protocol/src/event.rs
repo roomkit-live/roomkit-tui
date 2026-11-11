@@ -135,12 +135,22 @@ pub enum Event {
         /// Host-ordered choices; the view bounds its visible catalogue.
         choices: Vec<Choice>,
     },
-    /// Open an application form. Cancellation is local and has no side effects.
+    /// Open an application form. Cancellation optionally notifies its command.
     Form {
         /// Conversation in which the form is valid.
         conversation: ConversationId,
         /// Host-owned definition; never include credentials in initial values.
         form: FormSpec,
+    },
+    /// Replace an open form with its asynchronous result. Ignored after dismissal
+    /// or replacement, or when the panel command differs from the form command.
+    FormCompleted {
+        /// Conversation in which the form is valid.
+        conversation: ConversationId,
+        /// Exact identity of the form to replace.
+        form: String,
+        /// Result to display while that form is still open.
+        panel: PanelSpec,
     },
     /// A request was accepted or rejected; it does not announce run completion.
     Reply {

@@ -119,6 +119,13 @@ impl Session {
                 choices,
             } => self.on_choices(&conversation, command, title, choices),
             Event::Form { conversation, form } => self.on_form(&conversation, form),
+            Event::FormCompleted {
+                conversation,
+                form,
+                panel,
+            } => {
+                self.on_form_completed(&conversation, &form, panel);
+            }
             Event::Reply { request, error } => self.on_reply(request, error, at),
             Event::Notice { conversation, text } => {
                 if self.is_current(&conversation) {
@@ -313,6 +320,16 @@ impl Session {
         }
     }
 
+    fn on_form_completed(&mut self, conversation: &ConversationId, id: &str, panel: PanelSpec) {
+        if self
+            .form
+            .as_ref()
+            .is_some_and(|form| form.spec.id == id && form.spec.command == panel.command)
+        {
+            self.on_panel(conversation, panel);
+        }
+    }
+
     fn on_reply(&mut self, request: RequestId, error: Option<Rejection>, at: Option<Duration>) {
         let Some(command) = self.pending.remove(&request) else {
             return;
@@ -363,13 +380,18 @@ impl Session {
             {
                 self.picker = None;
             }
-            Command::SubmitForm { form, .. }
-                if self
+            Command::SubmitForm { form, .. } => {
+                if let Some(current) = self
                     .form
-                    .as_ref()
-                    .is_some_and(|state| state.spec.id == *form) =>
-            {
-                self.form = None;
+                    .as_mut()
+                    .filter(|current| current.spec.id == *form)
+                {
+                    if current.spec.wait_for_completion {
+                        current.submitted = true;
+                    } else {
+                        self.form = None;
+                    }
+                }
             }
             _ => {}
         }

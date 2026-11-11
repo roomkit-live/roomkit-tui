@@ -11,6 +11,8 @@ pub struct FormState {
     pub(crate) spec: FormSpec,
     pub(crate) editors: Vec<Editor>,
     pub(crate) selected: usize,
+    pub(crate) description_scroll: usize,
+    pub(crate) submitted: bool,
 }
 
 impl fmt::Debug for FormState {
@@ -35,6 +37,7 @@ impl FormState {
     pub(crate) fn new(mut spec: FormSpec) -> Option<Self> {
         let mut names = BTreeSet::new();
         if spec.id.is_empty() || spec.id.len() > 256 || spec.title.len() > 256
+            || spec.description.len() > 16_384 || spec.dismiss.len() > 1024
             || spec.fields.is_empty() || spec.fields.len() > 32
             || spec.fields.iter().any(|field| {
                 field.name.is_empty() || field.name.len() > 64 || !names.insert(&field.name)
@@ -67,6 +70,8 @@ impl FormState {
             spec,
             editors,
             selected: 0,
+            description_scroll: 0,
+            submitted: false,
         })
     }
 
@@ -86,7 +91,24 @@ impl FormState {
         }
     }
 
+    fn scroll_description(&mut self, key: KeyCode) -> bool {
+        if self.spec.description.is_empty() {
+            return false;
+        }
+        match key {
+            KeyCode::PageUp => self.description_scroll = self.description_scroll.saturating_sub(5),
+            KeyCode::PageDown => {
+                self.description_scroll = self.description_scroll.saturating_add(5).min(16_384);
+            }
+            _ => return false,
+        }
+        true
+    }
+
     pub(crate) fn key(&mut self, key: KeyEvent) {
+        if self.scroll_description(key.code) {
+            return;
+        }
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         if key.code == KeyCode::Tab

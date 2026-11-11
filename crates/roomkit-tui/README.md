@@ -230,12 +230,19 @@ succeeded.
 
 Host forms use a separate bounded editor: **Tab / Shift+Tab** change fields,
 **Left / Right** cycle choices, **Alt+Enter** adds a line break, **Ctrl+U** clears
-the current field, **Ctrl+S** submits, and **Esc** cancels locally. A rejected
+the current field, **Ctrl+S** submits, and **Esc** cancels (notifying the host when a `dismiss`
+argument is configured). A rejected
 submission keeps the draft. Pending submissions cannot be edited or submitted
 again. Secrets are masked in frames and clipboard selections, omitted from
 Debug output and never entered in conversation input history. The host owns
 persistence and validates all submitted values. Limits are 32 fields, 8 KiB per
 value and 500 choices per field; undersized terminals request a resize.
+
+Forms may include up to 16 KiB of plain text instructions with
+`with_description`; **PgUp / PgDn** scroll them while the input stays visible.
+`with_async_completion` keeps an accepted form open, with editing disabled,
+until its matching `FormCompleted` result arrives. An explicit `dismiss` action
+remains available during this wait, so the host can cancel its operation.
 
 ## Panels and background work
 

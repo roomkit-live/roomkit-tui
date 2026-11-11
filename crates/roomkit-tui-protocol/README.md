@@ -39,6 +39,14 @@ remote hosts must protect their transport and never log raw requests. Hosts
 validate token, conversation, fields and business rules, and return a safe error
 through `Reply`. Secret defaults must be empty; the TUI discards them defensively.
 
+Forms can include plain text `description` guidance and a `dismiss` argument for
+host cleanup. `with_async_completion()` keeps an accepted form visible and
+stops editing while background work continues. Acknowledge submissions promptly
+so the host can process cancellation. Publish `Event::FormCompleted` with the
+original form ID and a result panel; the view only replaces that still-open
+form in the matching conversation, never a dismissed or newer form. Ordinary
+forms still close on acceptance.
+
 Every public type is `#[non_exhaustive]`: build structs with their
 constructors (`Snapshot::new`, `ToolCall::new(...).with_text(...)`, …) and
 match enums with a wildcard arm. A refused request carries a `Rejection` with a

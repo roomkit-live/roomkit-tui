@@ -268,11 +268,27 @@ fn panel_key(session: &mut Session, client: &Client, key: KeyEvent) {
 
 fn form_key(session: &mut Session, client: &Client, key: KeyEvent) {
     session.quit_until = None;
-    if session.form_pending() {
+    let cancellable = session
+        .form
+        .as_ref()
+        .is_some_and(|form| form.submitted || !form.spec.dismiss.is_empty());
+    if is_cancel(key) && (cancellable || !session.form_pending()) {
+        if let Some(form) = session.form.take()
+            && !form.spec.dismiss.is_empty()
+        {
+            send(
+                session,
+                client,
+                Command::Invoke {
+                    name: form.spec.command,
+                    arguments: form.spec.dismiss,
+                },
+                false,
+            );
+        }
         return;
     }
-    if is_cancel(key) {
-        session.form = None;
+    if session.form_pending() {
         return;
     }
     let Some(form) = &mut session.form else {

@@ -16,6 +16,16 @@ pub struct FormSpec {
     pub command: String,
     /// User-facing heading.
     pub title: String,
+    /// Plain text guidance displayed above the fields, including links to open.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// Optional argument sent to the command when the user cancels the form.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub dismiss: String,
+    /// Keep the form open after submission is accepted, until `FormCompleted`.
+    /// The accepted form stops editing but remains cancellable via `dismiss`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wait_for_completion: bool,
     /// Ordered fields; hosts must never populate secret defaults.
     pub fields: Vec<FormField>,
 }
@@ -32,8 +42,31 @@ impl FormSpec {
             id: id.into(),
             command: command.into(),
             title: title.into(),
+            description: String::new(),
+            dismiss: String::new(),
+            wait_for_completion: false,
             fields,
         }
+    }
+    /// Set the scrollable guidance displayed together with the input fields.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+
+    /// Keep an accepted form visible until its scoped asynchronous result arrives.
+    #[must_use]
+    pub fn with_async_completion(mut self) -> Self {
+        self.wait_for_completion = true;
+        self
+    }
+
+    /// Notify the host when the user cancels, for resource cleanup.
+    #[must_use]
+    pub fn with_dismiss(mut self, dismiss: impl Into<String>) -> Self {
+        self.dismiss = dismiss.into();
+        self
     }
 }
 

@@ -19,21 +19,18 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Durat
     let Some(form) = &session.form else {
         return frame(Vec::new(), cols, None);
     };
-    let mut lines = vec![
-        line(format!(" {}", form.spec.title), Tone::Primary),
-        line(" Changes apply when you save", Tone::Muted),
-        line("", Tone::Text),
-    ];
-    lines.extend(fields(form, rows.saturating_sub(12).max(1)));
+    let mut lines = heading(form, cols, rows);
     let field = &form.spec.fields[form.selected];
-    lines.push(line(
-        format!(
-            " Field {} / {} · Tab next · Shift+Tab previous",
-            form.selected + 1,
-            form.editors.len()
-        ),
-        Tone::Muted,
-    ));
+    if form.spec.description.is_empty() || form.spec.fields.len() > 1 {
+        lines.push(line(
+            format!(
+                " Field {} / {} · Tab next · Shift+Tab previous",
+                form.selected + 1,
+                form.editors.len()
+            ),
+            Tone::Muted,
+        ));
+    }
     lines.push(line(format!(" {}", field.help), Tone::Accent));
     lines.push(line(format!(" {}", field.label), Tone::Primary));
     let (input, (column, row)) = input(form, cols.saturating_sub(4));
@@ -41,6 +38,43 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Durat
     lines.extend(input);
     lines.extend(controls(session, &field.kind, elapsed));
     frame(lines.into_iter().take(rows).collect(), cols, cursor)
+}
+
+/// Keep guidance and the selected input visible together, even on short screens.
+fn heading(form: &FormState, cols: usize, rows: usize) -> Vec<Line> {
+    let mut lines = vec![line(format!(" {}", form.spec.title), Tone::Primary)];
+    if form.spec.description.is_empty() {
+        lines.push(line(" Changes apply when you save", Tone::Muted));
+        lines.push(Vec::new());
+        lines.extend(fields(form, rows.saturating_sub(12).max(1)));
+        return lines;
+    }
+    let body = wrap(&sanitize(&form.spec.description), cols.saturating_sub(2));
+    let extra = usize::from(form.spec.fields.len() > 1);
+    let height = rows.saturating_sub(10 + extra).max(1);
+    let start = form
+        .description_scroll
+        .min(body.len().saturating_sub(height));
+    lines.extend(
+        body.iter()
+            .skip(start)
+            .take(height)
+            .map(|text| line(format!(" {text}"), Tone::Text)),
+    );
+    if body.len() > height {
+        lines.push(line(
+            format!(
+                " PgUp/PgDn instructions · {}–{} / {}",
+                start + 1,
+                (start + height).min(body.len()),
+                body.len()
+            ),
+            Tone::Muted,
+        ));
+    } else {
+        lines.push(Vec::new());
+    }
+    lines
 }
 
 /// The visible window of fields, keeping the selected one in view.
@@ -114,7 +148,9 @@ fn controls(session: &Session, kind: &FieldKind, elapsed: Duration) -> [Line; 3]
         _ => " Ctrl+U clear field",
     };
     let saving = quit_hint(session, elapsed).unwrap_or_else(|| {
-        if session.form_pending() {
+        if session.form.as_ref().is_some_and(|form| form.submitted) {
+            "Waiting for completion… · Esc cancel".into()
+        } else if session.form_pending() {
             "Saving…".into()
         } else {
             "Ctrl+S save · Esc cancel · Enter next field".into()

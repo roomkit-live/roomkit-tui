@@ -101,11 +101,13 @@ impl Session {
             .any(|command| matches!(command, Command::SubmitImages { .. }))
     }
 
-    /// Whether the current form is awaiting validation by the host.
+    /// Whether the current form awaits validation or asynchronous completion.
     pub fn form_pending(&self) -> bool {
-        self.pending
-            .values()
-            .any(|c| matches!(c, Command::SubmitForm { .. }))
+        self.form.as_ref().is_some_and(|form| form.submitted)
+            || self
+                .pending
+                .values()
+                .any(|c| matches!(c, Command::SubmitForm { .. }))
     }
 
     pub(crate) fn clear_composer(&mut self) {

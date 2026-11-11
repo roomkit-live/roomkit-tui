@@ -6,6 +6,7 @@ mod bounds;
 mod commands;
 mod composer;
 mod estimates;
+mod forms;
 mod layout;
 mod messages;
 mod meters;
