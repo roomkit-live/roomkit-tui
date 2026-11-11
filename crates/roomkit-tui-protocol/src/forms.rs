@@ -16,9 +16,12 @@ pub struct FormSpec {
     pub command: String,
     /// User-facing heading.
     pub title: String,
-    /// Plain text guidance displayed above the fields, including links to open.
+    /// Guidance displayed above the fields, plain text unless `description_markdown` is set.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// Render guidance with the conversation's Markdown renderer, including link labels.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub description_markdown: bool,
     /// Optional argument sent to the command when the user cancels the form.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub dismiss: String,
@@ -43,15 +46,25 @@ impl FormSpec {
             command: command.into(),
             title: title.into(),
             description: String::new(),
+            description_markdown: false,
             dismiss: String::new(),
             wait_for_completion: false,
             fields,
         }
     }
-    /// Set the scrollable guidance displayed together with the input fields.
+    /// Set plain text guidance displayed together with the input fields.
     #[must_use]
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
+        self.description_markdown = false;
+        self
+    }
+
+    /// Set Markdown guidance using the same rendering as conversation messages.
+    #[must_use]
+    pub fn with_markdown_description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self.description_markdown = true;
         self
     }
 

@@ -466,4 +466,25 @@ fn older_forms_have_no_instructions_or_dismiss_action() {
     }))
     .unwrap();
     assert!(form.description.is_empty() && form.dismiss.is_empty() && !form.wait_for_completion);
+    assert!(!form.description_markdown);
+}
+
+#[test]
+fn form_markdown_guidance_is_explicit_and_round_trips() {
+    let plain =
+        FormSpec::new("form", "configure", "Settings", vec![]).with_description("**Literal**");
+    assert!(
+        serde_json::to_value(&plain)
+            .unwrap()
+            .get("description_markdown")
+            .is_none()
+    );
+    let markdown = plain.with_markdown_description("[Open](https://example.com)");
+    assert!(markdown.description_markdown);
+    round_trip(&markdown);
+    assert!(
+        !markdown
+            .with_description("**Literal again**")
+            .description_markdown
+    );
 }

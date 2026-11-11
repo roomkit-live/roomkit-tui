@@ -6,7 +6,8 @@ from terminal_pty import Terminal, binary, require
 
 GUIDE = b"https://example.com/guide?view=full&lang=en"
 BARE = b"https://example.com/~person/guide_(terminal)"
-AUTH = b"https://example.com/authorize?state=" + b"x" * 240 + b"&scope=read"
+AUTH = (b"https://example.com/authorize?state=" + b"x" * 240
+        + b"&scope=openid+profile&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fcallback")
 
 
 def links(output):
@@ -23,6 +24,9 @@ with Terminal([binary("link-host")], rows=30, cols=100) as terminal:
     terminal.wait_for(b"Open guide")
     destination(terminal, GUIDE)
     destination(terminal, BARE)
+    destination(terminal, AUTH)
+    require(any(target == AUTH and b"Open sign-in page" in text for target, text in links(terminal.output)),
+            "The conversation sign-in label did not carry its destination")
     require(any(target == GUIDE and b"Open guide" in text for target, text in links(terminal.output)),
             "The Markdown label did not carry its destination")
     require(b"\x1b[?1006h" in terminal.output, "The scenario must run with application mouse capture")
@@ -30,6 +34,8 @@ with Terminal([binary("link-host")], rows=30, cols=100) as terminal:
     terminal.send(b"/connect\r")
     terminal.wait_for(b"Return URL")
     destination(terminal, AUTH, offset)
+    require(any(target == AUTH and b"Open sign-in page" in text for target, text in links(terminal.output[offset:])),
+            "The same sign-in label lost its destination in the form")
     require(sum(target == AUTH for target, _ in links(terminal.output[offset:])) > 1,
             "The long form URL did not wrap into multiple linked fragments")
     offset = len(terminal.output)
@@ -43,7 +49,7 @@ with Terminal([binary("link-host")], rows=30, cols=100) as terminal:
     destination(terminal, AUTH, offset)
     terminal.mouse(0, 8, 4, release=True)
     terminal.send(b"\x1b")
-    terminal.wait_for(b"Open guide")
+    terminal.wait_for(b"Use /connect to open the form.")
     terminal.send(b"\x04")
     terminal.exited()
 

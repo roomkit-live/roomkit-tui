@@ -9,17 +9,18 @@ use unicode_width::UnicodeWidthStr;
 
 use super::footer::quit_hint;
 use super::text::{fit, sanitize, wrap};
-use super::{Frame, Line, Tone, frame, line};
+use super::{Frame, Line, Renderers, Tone, View, frame, line};
 use crate::{FormState, Session};
 
 /// Rows of the edited field's input area.
 const INPUT_ROWS: usize = 3;
 
-pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Duration) -> Frame {
+pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
+    let session = view.session;
     let Some(form) = &session.form else {
         return frame(Vec::new(), cols, None);
     };
-    let mut lines = heading(form, cols, rows);
+    let mut lines = heading(form, cols, rows, view.renderers);
     let field = &form.spec.fields[form.selected];
     if form.spec.description.is_empty() || form.spec.fields.len() > 1 {
         lines.push(line(
@@ -31,17 +32,20 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Durat
             Tone::Muted,
         ));
     }
-    lines.push(line(format!(" {}", field.help), Tone::Accent));
+    lines.push(super::link_text(line(
+        format!(" {}", field.help),
+        Tone::Accent,
+    )));
     lines.push(line(format!(" {}", field.label), Tone::Primary));
     let (input, (column, row)) = input(form, cols.saturating_sub(4));
     let cursor = Some(((column + 2) as u16, (lines.len() + row) as u16));
     lines.extend(input);
-    lines.extend(controls(session, &field.kind, elapsed));
+    lines.extend(controls(session, &field.kind, view.elapsed));
     frame(lines.into_iter().take(rows).collect(), cols, cursor)
 }
 
 /// Keep guidance and the selected input visible together, even on short screens.
-fn heading(form: &FormState, cols: usize, rows: usize) -> Vec<Line> {
+fn heading(form: &FormState, cols: usize, rows: usize, renderers: &Renderers) -> Vec<Line> {
     let mut lines = vec![line(format!(" {}", form.spec.title), Tone::Primary)];
     if form.spec.description.is_empty() {
         lines.push(line(" Changes apply when you save", Tone::Muted));
@@ -49,7 +53,7 @@ fn heading(form: &FormState, cols: usize, rows: usize) -> Vec<Line> {
         lines.extend(fields(form, rows.saturating_sub(12).max(1)));
         return lines;
     }
-    let body = super::hyperlink::guidance(&form.spec.description, cols.saturating_sub(2));
+    let body = description(form, cols.saturating_sub(2), renderers);
     let extra = usize::from(form.spec.fields.len() > 1);
     let height = rows.saturating_sub(10 + extra).max(1);
     let start = form
@@ -74,6 +78,13 @@ fn heading(form: &FormState, cols: usize, rows: usize) -> Vec<Line> {
         lines.push(Vec::new());
     }
     lines
+}
+
+fn description(form: &FormState, width: usize, renderers: &Renderers) -> Vec<Line> {
+    if form.spec.description_markdown {
+        return renderers.markdown("form:description", &form.spec.description, width, true);
+    }
+    crate::content::wrap(&crate::content::plain(&form.spec.description), width, false)
 }
 
 /// The visible window of fields, keeping the selected one in view.

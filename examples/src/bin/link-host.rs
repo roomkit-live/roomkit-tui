@@ -12,13 +12,20 @@ use roomkit_tui::render::Renderers;
 use roomkit_tui::{ColorMode, Host, UiOptions, connection, run_with_options};
 
 fn serve(host: &Host) {
+    let url = format!(
+        "https://example.com/authorize?state={}&scope=openid+profile&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fcallback",
+        "x".repeat(240)
+    );
+    let instructions = format!(
+        "Cmd-click the link:\n\n[Open sign-in page](<{url}>)\n\nPaste the return URL below."
+    );
     let mut snapshot = Snapshot::new("room", "Links", Actor::new("agent", "Agent"));
     snapshot
         .commands
         .push(CommandSpec::new("connect", "Show a link and return field"));
     snapshot.items.push(Item::Message(Message::new(
         "message", "agent",
-        "[Open guide](https://example.com/guide?view=full&lang=en)\n\nBare https://example.com/~person/guide_(terminal).\n\nUse /connect to open the form.",
+        format!("[Open guide](https://example.com/guide?view=full&lang=en)\n\nBare https://example.com/~person/guide_(terminal).\n\n{instructions}\n\nUse /connect to open the form."),
     )));
     drop(host.try_send(Event::Snapshot(snapshot)));
     loop {
@@ -32,19 +39,13 @@ fn serve(host: &Host) {
             error: None,
         }));
         if matches!(request.command, Command::Invoke { ref name, .. } if name == "connect") {
-            let url = format!(
-                "https://example.com/authorize?state={}&scope=read",
-                "x".repeat(240)
-            );
             let form = FormSpec::new(
                 "login",
                 "connect",
                 "Browser sign-in",
                 vec![FormField::new("callback", "Return URL", FieldKind::Secret)],
             )
-            .with_description(format!(
-                "Cmd-click the link:\n\n{url}\n\nPaste the return URL below."
-            ));
+            .with_markdown_description(&instructions);
             drop(host.try_send(Event::Form {
                 conversation: "room".into(),
                 form,

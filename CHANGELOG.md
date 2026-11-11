@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Form guidance can opt into the conversation's Markdown renderer, including
+  native links with labels. Plain form guidance and field help also share the
+  conversation's URL detection.
+
 - HTTP(S) links in conversation text and Markdown labels carry native terminal
   destinations through wrapping and tables; OSC 8 output matches Codex's BEL
   termination and form links are visibly underlined.

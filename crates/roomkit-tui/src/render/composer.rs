@@ -55,7 +55,7 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
         Focus::Permission => return approval::screen(view, cols, rows),
         Focus::Question => return question::screen(view, cols, rows),
         Focus::Panel => return panel::screen(session, cols, rows, view.elapsed),
-        Focus::Form => return form::screen(session, cols, rows, view.elapsed),
+        Focus::Form => return form::screen(view, cols, rows),
         _ => {}
     }
     let welcome = matches!(layout, Layout::Welcome);

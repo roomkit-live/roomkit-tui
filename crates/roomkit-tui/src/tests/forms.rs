@@ -180,3 +180,78 @@ fn form_links_remain_clickable_across_wrapping_and_resizing() {
         );
     }
 }
+
+#[test]
+fn form_markdown_links_match_conversation_links() {
+    let url = format!(
+        "https://example.com/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fcallback&scope=openid+profile&state={}",
+        "x".repeat(180)
+    );
+    let source = format!("[Open sign-in page](<{url}>)");
+    let mut s = session();
+    s.apply(Event::Item {
+        conversation: "room-a".into(),
+        item: Item::Message(Message::new("link", "agent", &source)),
+    });
+    let renderers = Renderers::default();
+    for width in [40, 80, 120] {
+        let conversation = render::screen(&s, width, 50, &renderers);
+        let links = |frame: &render::Frame| -> Vec<render::Span> {
+            frame
+                .spans
+                .iter()
+                .flatten()
+                .filter(|span| span.hyperlink.is_some())
+                .cloned()
+                .collect()
+        };
+        let expected = links(&conversation);
+        assert!(!expected.is_empty());
+        s.apply(Event::Form {
+            conversation: "room-a".into(),
+            form: form().with_markdown_description(&source),
+        });
+        let actual = links(&render::screen(&s, width, 50, &renderers));
+        assert!(!actual.is_empty(), "Form link label lost its destination");
+        let text = |spans: &[render::Span]| {
+            spans
+                .iter()
+                .map(|span| span.text.as_str())
+                .collect::<String>()
+        };
+        assert_eq!(text(&actual), text(&expected));
+        assert!(
+            actual
+                .iter()
+                .all(|span| span.hyperlink == expected[0].hyperlink
+                    && span.emphasis == expected[0].emphasis)
+        );
+        assert!(text(&actual).starts_with("Open sign-in page"));
+        s.form = None;
+    }
+}
+
+#[test]
+fn plain_form_instructions_and_inline_field_links_keep_their_meaning() {
+    let mut s = session();
+    let mut spec = form().with_description("Keep **literal** text and [brackets].");
+    spec.fields[0].help = "Copy a key from https://example.com/console; keep it private".into();
+    s.apply(Event::Form {
+        conversation: "room-a".into(),
+        form: spec,
+    });
+    let frame = render::screen(&s, 100, 30, &Renderers::default());
+    assert!(
+        frame
+            .lines
+            .join("\n")
+            .contains("Keep **literal** text and [brackets].")
+    );
+    assert!(frame.spans.iter().flatten().any(|span| {
+        span.text == "https://example.com/console"
+            && span
+                .hyperlink
+                .as_ref()
+                .is_some_and(|link| link.url() == span.text)
+    }));
+}

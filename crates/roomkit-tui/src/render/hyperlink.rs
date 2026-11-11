@@ -30,29 +30,6 @@ impl Hyperlink {
     }
 }
 
-/// Link standalone URLs in host guidance. Keep the full address visible as a
-/// fallback for terminals without OSC 8 and use that same target on every row.
-pub(super) fn guidance(text: &str, width: usize) -> Vec<Line> {
-    let lines: Vec<_> = text
-        .split('\n')
-        .map(|text| {
-            let hyperlink = Hyperlink::new(text.trim());
-            let tone = if hyperlink.is_some() {
-                Tone::Link
-            } else {
-                Tone::Text
-            };
-            let mut span = Span {
-                hyperlink,
-                ..Span::new(text, tone)
-            };
-            span.emphasis.underline = span.hyperlink.is_some();
-            vec![span]
-        })
-        .collect();
-    crate::content::wrap(&lines, width, false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,31 +52,6 @@ mod tests {
         assert!(Hyperlink::new(&format!("https://example.com/{}", "x".repeat(8192))).is_none());
         assert!(
             Hyperlink::new("https://example.com/signin?state=example&scope=one%20two").is_some()
-        );
-    }
-
-    #[test]
-    fn wrapped_links_keep_the_entire_destination_on_every_fragment() {
-        let url = "https://example.com/authorize?state=example&challenge=unchanged";
-        let rows = guidance(url, 16);
-        assert!(rows.len() > 1);
-        assert_eq!(
-            rows.iter()
-                .flatten()
-                .map(|span| span.text.as_str())
-                .collect::<String>(),
-            url
-        );
-        assert!(rows.iter().flatten().all(|span| {
-            span.hyperlink
-                .as_ref()
-                .is_some_and(|link| link.url() == url)
-        }));
-        assert!(
-            guidance("https://example.com/\x1b\\attack", 80)
-                .iter()
-                .flatten()
-                .all(|span| span.hyperlink.is_none())
         );
     }
 }
