@@ -338,9 +338,21 @@ fn estimate(model: &str, capacity: Option<u64>) -> Event {
     }
 }
 
-/// RMK-1646: an estimate the host publishes, by its subscription or a
-/// command, gets the configured model's capacity, as the engine's own
-/// measurements do; another model's keeps what the host gave it.
+fn measured(capacity: Option<u64>) -> Event {
+    let mut usage = ContextUsage::new(5_000);
+    usage.capacity = capacity;
+    Event::ContextUpdated {
+        conversation: "room".into(),
+        run: "host-1".into(),
+        provider: "local".into(),
+        model: "fixture".into(),
+        usage,
+    }
+}
+
+/// RMK-1646: an estimate or a measurement the host publishes, by its
+/// subscription or a command, gets the configured model's capacity, as the
+/// engine's own measurements do; another model's keeps what the host gave it.
 #[tokio::test]
 async fn a_published_estimate_gets_the_configured_capacity() {
     let kit = RoomKit::new(Default::default());
@@ -352,7 +364,7 @@ async fn a_published_estimate_gets_the_configured_capacity() {
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
     let handler = Renamer {
         updates: Some(updates),
-        published: vec![estimate("fixture", Some(1))],
+        published: vec![estimate("fixture", Some(1)), measured(None)],
     };
     let task = tokio::spawn(
         LocalSession::new(kit.clone(), channel, view).run_with_commands(host, handler),
@@ -363,6 +375,7 @@ async fn a_published_estimate_gets_the_configured_capacity() {
     client.try_send(invoke(1, "publish", "")).unwrap();
     while !matches!(next(&client).await, Event::Reply { .. }) {}
     assert_eq!(next(&client).await, estimate("fixture", Some(200_000)));
+    assert_eq!(next(&client).await, measured(Some(200_000)));
 
     publish.send_replace(vec![estimate("other", Some(64_000))]);
     assert_eq!(next(&client).await, estimate("other", Some(64_000)));

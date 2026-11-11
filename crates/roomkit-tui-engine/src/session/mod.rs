@@ -136,7 +136,8 @@ impl SessionConfig {
 pub enum CommandResult {
     /// Publish application-owned selectors or notices after acknowledging the request.
     /// A mode or title change for this view also updates its configuration,
-    /// unless a terminal would ignore it.
+    /// unless a terminal would ignore it. A measurement or estimate of the
+    /// configured model's context gets the configured capacity.
     Events(Vec<Event>),
     /// Submit host-prepared text to the current agent through the normal engine
     /// path, preserving validation, operation identity and cancellation.
@@ -181,6 +182,9 @@ pub trait CommandHandler: Send + Sync {
     /// Values describe current state, not durable/transient model events.
     /// A mode or title change for this view also updates its configuration,
     /// so later snapshots and handlers see it, unless a terminal would ignore it.
+    /// A measurement or estimate of the configured model's context gets the
+    /// configured capacity, such as an `Event::ContextEstimated` after a
+    /// compaction between turns.
     fn subscribe(
         &self,
         _session: SessionConfig,

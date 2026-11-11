@@ -180,14 +180,7 @@ impl Session {
                 conversation,
                 question,
             } => self.on_question_resolved(&conversation, &question),
-            event @ (Event::ModelChanged { .. }
-            | Event::UsageUpdated { .. }
-            | Event::ContextUpdated { .. }
-            | Event::ContextExceeded { .. }
-            | Event::ContextEstimated { .. }
-            | Event::CostUpdated { .. }
-            | Event::RelatedCostUpdated { .. }) => self.apply_measurement(event),
-            _ => {}
+            event => self.apply_measurement(event),
         }
     }
 

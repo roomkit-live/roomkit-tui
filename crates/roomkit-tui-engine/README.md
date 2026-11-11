@@ -208,10 +208,12 @@ its `context_limit` notice: no measurement of that request comes.
 
 A host that changes the context outside a turn, such as compacting the
 conversation between turns, publishes its estimate as `Event::ContextEstimated`,
-from a command result or from `CommandHandler::subscribe`. The adapter gives it
-the configured capacity, as it does the engine's measurements. Stop publishing
-it once a request of the agent was measured: a view attached afterwards reads
-that newer measurement from its snapshot, and would show the estimate instead.
+from a command result, from `CommandHandler::subscribe` or while work run as
+`CommandResult::Execute` goes. The adapter gives it the configured capacity, as
+it does the engine's measurements. Stop publishing it once a turn of the agent
+was measured, for instance when `SessionLifecycle::finished` reports one: a
+view attached afterwards reads that newer measurement from its snapshot, and
+would show the estimate instead.
 
 `SessionConfig.context_capacity` is the host-confirmed capacity of its configured
 model. With matching `ai_model`/`ai_provider` metadata, `ai_last_usage` supplies

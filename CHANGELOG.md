@@ -12,7 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   publishes its estimate as `Event::ContextEstimated`, which the engine gives
   the configured capacity, as it now does any measurement a host publishes,
   and the terminal shows as `~92000/1000000` until the next run measures, live
-  and after a relaunch.
+  and after a relaunch. One told while host work runs shows once it ends.
 
 - Ctrl+A and Ctrl+E move to the start and the end of the line in every text
   field: the composer, a question's own words, a picker's filter and a form.

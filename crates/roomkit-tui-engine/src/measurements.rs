@@ -103,13 +103,18 @@ pub(crate) fn for_view(event: &mut Event, config: &SessionConfig) {
     };
     let configured = config.context_capacity.filter(|capacity| *capacity > 0);
     if let Some(capacity) = configured
-        && config
-            .model
-            .as_ref()
-            .is_some_and(|selected| selected.provider == *provider && selected.model == *model)
+        && is_configured(config, provider, model)
     {
         context.capacity = Some(capacity);
     }
+}
+
+/// Whether `provider` and `model` are the session's configured model.
+fn is_configured(config: &SessionConfig, provider: &str, model: &str) -> bool {
+    config
+        .model
+        .as_ref()
+        .is_some_and(|selected| selected.provider == provider && selected.model == model)
 }
 
 pub(crate) fn restore(
@@ -128,10 +133,7 @@ pub(crate) fn restore(
         ..
     } = event
         && row.source.channel_id == config.agent
-        && config
-            .model
-            .as_ref()
-            .is_some_and(|selected| selected.provider == provider && selected.model == model)
+        && is_configured(config, &provider, &model)
     {
         return (context, Some(usage));
     }

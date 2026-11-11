@@ -343,10 +343,11 @@ above that measurement and the footer `context refused`, until the next run.
 A host's estimate of the context while no run measures it, such as after a
 compaction between turns (`Event::ContextEstimated`), replaces the last
 measurement and shows `~`; the next run's measurement replaces it in turn. The
-view takes an estimate only while no run is live, for the model on screen, and
-never takes the same estimate twice, so a host sending its state again does not
-undo a newer measurement. These indicators do not implement compaction or account for the next unsent
-message.
+view takes an estimate for the model on screen; one told while a run goes shows
+once the room is idle, unless a run measured meanwhile. It never takes the same
+estimate twice, so a host sending its state again does not undo a newer
+measurement. These indicators do not implement compaction or account for the
+next unsent message.
 
 ## Terminal status (OSC 7501)
 
