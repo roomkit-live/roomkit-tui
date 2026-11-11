@@ -430,6 +430,12 @@ selection follows. Text copied from the conversation stays highlighted until
 the next click, key, paste or resize.
 Pastes keep their newlines and never send by themselves.
 
+Web addresses and Markdown link labels are native terminal hyperlinks, including
+when wrapped over several rows. In iTerm2, Cmd-click opens the browser on your
+Mac even when the application runs over SSH. Other terminal emulators use their
+own link shortcut and settings. `--native-selection` leaves mouse handling to
+the terminal; application selection and tool clicks are then disabled.
+
 History navigation recalls one complete input per arrow press, including
 multiline messages and commands. Down past the newest entry restores the
 unfinished draft and its cursor. Editing or moving the cursor in a recalled

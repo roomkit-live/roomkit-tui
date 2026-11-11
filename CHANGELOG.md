@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- HTTP(S) links in conversation text and Markdown labels carry native terminal
+  destinations through wrapping and tables; OSC 8 output matches Codex's BEL
+  termination and form links are visibly underlined.
+
 - Standalone HTTP(S) links in form instructions use native OSC 8 hyperlinks;
   wrapped fragments keep the complete destination for browser opening.
 

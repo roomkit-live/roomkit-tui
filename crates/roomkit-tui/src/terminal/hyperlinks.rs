@@ -6,9 +6,10 @@ use crate::render::Span;
 
 pub(super) fn print(writer: &mut impl Write, span: &Span) -> io::Result<()> {
     if let Some(link) = &span.hyperlink {
-        write!(writer, "\x1b]8;;{}\x1b\\", link.url())?;
+        // Use the same BEL-terminated OSC 8 form as Codex's terminal output.
+        write!(writer, "\x1b]8;;{}\x07", link.url())?;
         writer.write_all(span.text.as_bytes())?;
-        writer.write_all(b"\x1b]8;;\x1b\\")
+        writer.write_all(b"\x1b]8;;\x07")
     } else {
         writer.write_all(span.text.as_bytes())
     }
@@ -30,7 +31,7 @@ mod tests {
         print(&mut bytes, &Span::new("Enter code", Tone::Text)).unwrap();
         assert_eq!(
             String::from_utf8(bytes).unwrap(),
-            format!("\x1b]8;;{url}\x1b\\Open sign-in\x1b]8;;\x1b\\Enter code")
+            format!("\x1b]8;;{url}\x07Open sign-in\x1b]8;;\x07Enter code")
         );
     }
 }

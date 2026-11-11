@@ -2,6 +2,9 @@
 
 mod writer;
 
+#[cfg(test)]
+mod links_tests;
+
 use writer::render;
 
 use crate::{content, render::Line};

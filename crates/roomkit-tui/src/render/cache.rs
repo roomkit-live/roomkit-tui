@@ -89,7 +89,11 @@ pub(crate) fn line_bytes(lines: &[super::Line]) -> usize {
         + lines
             .iter()
             .flatten()
-            .map(|span| span.text.len() + std::mem::size_of::<super::Span>())
+            .map(|span| {
+                span.text.len()
+                    + span.hyperlink.as_ref().map_or(0, |link| link.url().len())
+                    + std::mem::size_of::<super::Span>()
+            })
             .sum::<usize>()
 }
 

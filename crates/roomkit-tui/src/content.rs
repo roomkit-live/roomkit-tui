@@ -12,7 +12,7 @@ use crate::render::{Line, Span, Tone, sanitize};
 pub fn plain(text: &str) -> Vec<Line> {
     sanitize(&crate::session::bounded(text, 65_536))
         .split('\n')
-        .map(|line| vec![Span::new(line, Tone::Text)])
+        .map(|line| crate::render::link_text(vec![Span::new(line, Tone::Text)]))
         .collect()
 }
 

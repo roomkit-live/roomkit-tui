@@ -27,6 +27,7 @@ terminal-check:
 	python3 scripts/terminal_screen.py
 	python3 scripts/check-terminal.py
 	python3 scripts/check-history.py
+	python3 scripts/check-links.py
 	python3 scripts/check-terminal-status.py
 	python3 scripts/check-sidebar.py
 	python3 scripts/check-selection.py

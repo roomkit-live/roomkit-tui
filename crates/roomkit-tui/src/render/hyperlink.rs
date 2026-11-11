@@ -4,6 +4,9 @@ use std::sync::Arc;
 
 use super::{Line, Span, Tone};
 
+mod detect;
+pub(crate) use detect::annotate;
+
 /// A bounded HTTP(S) destination safe to include in an OSC 8 control sequence.
 /// Opening it remains the terminal emulator's explicit user action.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,10 +42,12 @@ pub(super) fn guidance(text: &str, width: usize) -> Vec<Line> {
             } else {
                 Tone::Text
             };
-            vec![Span {
+            let mut span = Span {
                 hyperlink,
                 ..Span::new(text, tone)
-            }]
+            };
+            span.emphasis.underline = span.hyperlink.is_some();
+            vec![span]
         })
         .collect();
     crate::content::wrap(&lines, width, false)

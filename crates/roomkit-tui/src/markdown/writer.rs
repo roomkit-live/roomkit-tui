@@ -1,6 +1,7 @@
 //! A CommonMark event stream written as wrapped, styled lines.
 
 mod blocks;
+mod links;
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use unicode_width::UnicodeWidthStr;
@@ -35,13 +36,14 @@ pub(super) struct Writer {
 
 impl Writer {
     fn text(&mut self, text: impl Into<String>) {
+        let hyperlink = self.active_link();
         content::push(
             &mut self.current,
             Span {
                 text: text.into(),
                 tone: self.style.0,
                 emphasis: self.style.1,
-                hyperlink: None,
+                hyperlink,
             },
         );
     }
@@ -67,7 +69,7 @@ impl Writer {
         if self.current.is_empty() || self.table.is_some() {
             return;
         }
-        let content = std::mem::take(&mut self.current);
+        let content = self.take_inline();
         let prefix_width: usize = self
             .prefix(false)
             .iter()
@@ -113,13 +115,14 @@ impl Writer {
                 self.text(text.as_ref())
             }
             Event::Code(text) => {
+                let hyperlink = self.active_link();
                 content::push(
                     &mut self.current,
                     Span {
                         text: text.into_string(),
                         tone: Tone::Code,
                         emphasis: self.style.1,
-                        hyperlink: None,
+                        hyperlink,
                     },
                 );
             }
@@ -194,10 +197,7 @@ impl Writer {
                 self.code = Some((language, String::new()));
             }
             Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
-                self.save_style();
-                self.style.0 = Tone::Link;
-                self.style.1.underline = true;
-                self.links.push(dest_url.into_string());
+                self.start_link(dest_url.into_string());
             }
             Tag::Table(_) => {
                 self.blank();
@@ -237,14 +237,12 @@ impl Writer {
             }
             TagEnd::CodeBlock => self.finish_code(),
             TagEnd::Link | TagEnd::Image => {
-                if let Some(url) = self.links.pop() {
-                    self.text(format!(" ({url})"));
-                }
-                self.restore_style();
+                self.end_link();
             }
             TagEnd::TableCell => {
+                let cell = self.take_inline();
                 if let Some(table) = &mut self.table {
-                    table.row.push(std::mem::take(&mut self.current));
+                    table.row.push(cell);
                 }
             }
             TagEnd::TableRow | TagEnd::TableHead => {

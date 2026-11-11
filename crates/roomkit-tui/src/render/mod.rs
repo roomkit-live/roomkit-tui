@@ -26,6 +26,7 @@ mod welcome;
 pub(crate) use frame::TimelineRows;
 pub use frame::{ActionTarget, BackToBottomTarget, Frame, PermissionTarget, ToolTarget};
 pub use hyperlink::Hyperlink;
+pub(crate) use hyperlink::annotate as link_text;
 pub use presenters::{Renderers, ToolRenderer};
 pub use sidebar::SidebarArea;
 pub use text::{sanitize, wrap};

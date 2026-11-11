@@ -38,6 +38,12 @@ are removed, while code indentation and interior blank lines are preserved.
 The protocol keeps original text; `UiOptions::markdown = false` shows literal
 syntax. Selection copies the visible rendered text.
 
+HTTP(S) Markdown labels and bare web addresses carry native OSC 8 links, with
+the complete destination retained on every wrapped fragment. Literal inline
+and fenced code stays unlinked. The terminal handles browser opening (Cmd-click
+in iTerm2), so SSH links open on the terminal's computer. No host browser process
+is started by the library; terminal settings still govern link activation.
+
 `UiOptions::message_gap` controls space between transcript items.
 
 Hosts can enable `UiOptions::highlight_own_messages` to show submitted messages
