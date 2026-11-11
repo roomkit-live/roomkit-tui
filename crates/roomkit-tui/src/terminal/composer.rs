@@ -134,11 +134,12 @@ fn composer_editing(session: &mut Session, client: &Client, key: KeyEvent) {
 /// nothing runs any more, however the host holds the room ([`send_waiting`]).
 /// With an empty composer, it does so for the message handed to the turn.
 fn send_now(session: &mut Session, client: &Client) {
-    let command = session
-        .draft()
-        .trim_start()
-        .starts_with(session.command_prefix)
-        || session.input_action().is_some();
+    let command = !session.editor.is_restored_input()
+        && (session
+            .draft()
+            .trim_start()
+            .starts_with(session.command_prefix)
+            || session.input_action().is_some());
     let can_cut = session
         .snapshot
         .as_ref()

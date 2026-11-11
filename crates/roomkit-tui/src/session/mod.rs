@@ -10,6 +10,7 @@ mod input;
 mod labels;
 mod measures;
 mod questions;
+mod recall;
 mod runs;
 mod send_now;
 mod steering;
@@ -156,8 +157,8 @@ pub struct Session {
     thoughts: thinking::Thoughts,
     /// The draft that leaves once the interrupted turn stops (Ctrl+S).
     waiting: Option<send_now::Waiting>,
-    /// The waited draft's request and text, until the host answers it.
-    flight: Option<(RequestId, String)>,
+    /// The waited draft's request, text and intent, until the host answers it.
+    flight: Option<send_now::Flight>,
     deciding: BTreeSet<PermissionId>,
     expanded_tools: BTreeSet<ToolKey>,
     focused_tool: Option<ToolKey>,

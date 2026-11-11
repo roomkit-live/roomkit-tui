@@ -41,6 +41,7 @@ impl Writer {
                 text: text.into(),
                 tone: self.style.0,
                 emphasis: self.style.1,
+                hyperlink: None,
             },
         );
     }
@@ -118,6 +119,7 @@ impl Writer {
                         text: text.into_string(),
                         tone: Tone::Code,
                         emphasis: self.style.1,
+                        hyperlink: None,
                     },
                 );
             }

@@ -48,6 +48,7 @@ impl Session {
             bound_item(item, self.limits.text_bytes.get());
         }
         trim_items(&mut snapshot.items, self.limits.items.get());
+        self.restore_input_history(&snapshot);
         let preserve_timing = self.is_current(&snapshot.conversation)
             && self.observed_run.as_ref().is_some_and(|run| {
                 snapshot.active_run.as_ref() == Some(&run.id) && run.outcome.is_none()
@@ -69,7 +70,7 @@ impl Session {
     }
 
     /// A replacement snapshot invalidates every transient projection of the
-    /// previous one; the draft and its history are kept.
+    /// previous one; the draft and the selected conversation's recall are kept.
     fn reset_view_state(&mut self) {
         self.operation = None;
         self.forget_thoughts();

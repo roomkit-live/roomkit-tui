@@ -146,3 +146,37 @@ fn asynchronous_form_completion_is_safe_before_or_after_the_submission_reply() {
         assert_eq!(s.panel.as_ref().unwrap().spec.title, "Complete");
     }
 }
+
+#[test]
+fn form_links_remain_clickable_across_wrapping_and_resizing() {
+    let mut s = session();
+    let url = format!("https://example.com/authorize?state={}", "x".repeat(180));
+    s.apply(Event::Form {
+        conversation: "room-a".into(),
+        form: form().with_description(format!(
+            "Open this link:\n\n{url}\n\nPaste the return URL below."
+        )),
+    });
+    for (width, height) in [(80, 24), (40, 20), (120, 40)] {
+        let frame = render::screen(&s, width, height, &Renderers::default());
+        let links: Vec<_> = frame
+            .spans
+            .iter()
+            .flatten()
+            .filter(|span| span.hyperlink.is_some())
+            .collect();
+        assert!(links.len() > 1);
+        assert!(
+            links
+                .iter()
+                .all(|span| span.hyperlink.as_ref().unwrap().url() == url)
+        );
+        assert_eq!(
+            links
+                .iter()
+                .map(|span| span.text.as_str())
+                .collect::<String>(),
+            url
+        );
+    }
+}

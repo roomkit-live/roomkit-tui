@@ -263,16 +263,18 @@ fn paint(spans: &mut Vec<Span>, range: Range<usize>) {
             } else {
                 span.tone
             };
-            if let Some(last) = highlighted
-                .last_mut()
-                .filter(|last| last.tone == tone && last.emphasis == span.emphasis)
-            {
+            if let Some(last) = highlighted.last_mut().filter(|last| {
+                last.tone == tone
+                    && last.emphasis == span.emphasis
+                    && last.hyperlink == span.hyperlink
+            }) {
                 last.text.push_str(grapheme);
             } else {
                 highlighted.push(Span {
                     text: grapheme.into(),
                     tone,
                     emphasis: span.emphasis,
+                    hyperlink: span.hyperlink.clone(),
                 });
             }
             column = end;

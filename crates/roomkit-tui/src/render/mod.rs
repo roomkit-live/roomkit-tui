@@ -9,6 +9,7 @@ mod context;
 mod footer;
 mod form;
 mod frame;
+mod hyperlink;
 mod menus;
 mod message;
 mod meter;
@@ -24,6 +25,7 @@ mod welcome;
 
 pub(crate) use frame::TimelineRows;
 pub use frame::{ActionTarget, BackToBottomTarget, Frame, PermissionTarget, ToolTarget};
+pub use hyperlink::Hyperlink;
 pub use presenters::{Renderers, ToolRenderer};
 pub use sidebar::SidebarArea;
 pub use text::{sanitize, wrap};
@@ -109,6 +111,8 @@ pub struct Span {
     pub tone: Tone,
     /// Text attributes independent of the semantic color.
     pub emphasis: Emphasis,
+    /// Optional native terminal hyperlink, independent of the visible label.
+    pub hyperlink: Option<Hyperlink>,
 }
 
 /// A line of semantic spans, without terminal escape sequences.
@@ -121,6 +125,7 @@ impl Span {
             text: text.into(),
             tone,
             emphasis: Emphasis::default(),
+            hyperlink: None,
         }
     }
 

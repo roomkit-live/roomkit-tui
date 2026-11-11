@@ -3,6 +3,7 @@ mod exit;
 mod forms;
 mod history;
 mod keys;
+mod recall;
 mod send_now;
 
 use super::keys::{Outcome, acts_unseen, handle_key};

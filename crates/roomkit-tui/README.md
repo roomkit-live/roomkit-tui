@@ -240,6 +240,11 @@ value and 500 choices per field; undersized terminals request a resize.
 
 Forms may include up to 16 KiB of plain text instructions with
 `with_description`; **PgUp / PgDn** scroll them while the input stays visible.
+A standalone HTTP(S) URL in these instructions becomes a native OSC 8 hyperlink,
+with the entire destination preserved across wrapped rows. Compatible terminals
+open it with their usual shortcut (Cmd-click in iTerm2, Ctrl-click in many Linux
+terminals). The user's terminal opens the browser, including over SSH; the host
+runs no browser command. The full URL stays visible for copying as a fallback.
 `with_async_completion` keeps an accepted form open, with editing disabled,
 until its matching `FormCompleted` result arrives. An explicit `dismiss` action
 remains available during this wait, so the host can cancel its operation.

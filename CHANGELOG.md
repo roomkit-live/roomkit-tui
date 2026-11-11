@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Standalone HTTP(S) links in form instructions use native OSC 8 hyperlinks;
+  wrapped fragments keep the complete destination for browser opening.
+
 - Host forms can show scrollable instructions beside their fields, notify the
   host on cancellation, and display an asynchronous result while still open.
 
@@ -107,6 +110,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names Ctrl+S only for what is typed during a run.
 
 ### Fixed
+
+- Resuming or opening a conversation restores input recall from its saved local
+  messages. Recall no longer mixes conversations or turns a saved message into
+  a command when it begins with an action prefix.
 
 - Up/Down browse whole input-history entries, including multiline messages and
   commands, without getting trapped by line movement or completion menus.

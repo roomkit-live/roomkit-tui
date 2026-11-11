@@ -435,6 +435,13 @@ multiline messages and commands. Down past the newest entry restores the
 unfinished draft and its cursor. Editing or moving the cursor in a recalled
 entry resumes line navigation; Tab explicitly opens command completion.
 
+On the first snapshot or a conversation change, input recall is rebuilt from
+up to 100 saved messages by `Snapshot::local_actor`. Other participants and
+agent output are excluded. Recalled saved messages remain literal messages,
+including when they start with a command prefix; clear the draft to type a new
+command. Refreshing the same conversation keeps locally typed command history.
+Commands are not reconstructed from conversation messages after a restart.
+
 ## Platform support
 
 Linux and macOS are supported and tested in CI, including a pseudo-terminal

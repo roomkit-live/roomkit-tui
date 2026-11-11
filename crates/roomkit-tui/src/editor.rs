@@ -6,11 +6,20 @@ use unicode_width::UnicodeWidthStr;
 pub(crate) struct Editor {
     text: String,
     cursor: usize,
-    history: Vec<String>,
+    history: Vec<HistoryInput>,
+    restored_input: bool,
     history_position: Option<usize>,
     browsing_history: bool,
     draft: String,
     draft_cursor: usize,
+    draft_restored: bool,
+}
+
+/// A restored message stays literal; a locally typed input keeps command syntax.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct HistoryInput {
+    text: String,
+    restored: bool,
 }
 
 impl Editor {
@@ -27,6 +36,7 @@ impl Editor {
     /// Replace the draft and put the cursor at its end.
     pub fn set(&mut self, text: String) {
         self.edit_history();
+        self.restored_input = false;
         self.text = text;
         self.cursor = self.text.len();
     }
@@ -37,12 +47,16 @@ impl Editor {
         self.history_position = None;
         self.draft.clear();
         self.draft_cursor = 0;
+        self.draft_restored = false;
     }
 
     /// Insert text at the cursor. Control characters other than newlines and
     /// tabs are removed; pasting never submits. Inputs normalize CRLF to LF.
     pub fn insert(&mut self, text: &str) {
         self.edit_history();
+        if self.text.is_empty() {
+            self.restored_input = false;
+        }
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
         let clean: String = normalized
             .chars()
@@ -155,10 +169,41 @@ impl Editor {
         self.align_cursor();
     }
 
+    /// Replace another conversation's recall entries without losing the draft.
+    pub fn replace_history(&mut self, entries: impl Iterator<Item = String>) {
+        if self.history_position.is_some() {
+            self.text.clone_from(&self.draft);
+            self.cursor = self.draft_cursor;
+            self.restored_input = self.draft_restored;
+        }
+        self.history.clear();
+        self.history_position = None;
+        self.browsing_history = false;
+        self.draft.clear();
+        self.draft_cursor = 0;
+        self.draft_restored = false;
+        for text in entries {
+            let entry = HistoryInput {
+                text,
+                restored: true,
+            };
+            if !entry.text.trim().is_empty() && self.history.last() != Some(&entry) {
+                self.history.push(entry);
+                if self.history.len() > 100 {
+                    self.history.remove(0);
+                }
+            }
+        }
+    }
+
     /// Remember successfully submitted text; keep at most 100 input entries.
     pub fn submitted(&mut self) {
-        if !self.text.trim().is_empty() && self.history.last() != Some(&self.text) {
-            self.history.push(self.text.clone());
+        let entry = HistoryInput {
+            text: self.text.clone(),
+            restored: self.restored_input,
+        };
+        if !entry.text.trim().is_empty() && self.history.last() != Some(&entry) {
+            self.history.push(entry);
             if self.history.len() > 100 {
                 self.history.remove(0);
             }
@@ -175,14 +220,14 @@ impl Editor {
             None => {
                 self.draft = self.text.clone();
                 self.draft_cursor = self.cursor;
+                self.draft_restored = self.restored_input;
                 self.history.len() - 1
             }
             Some(position) => position.saturating_sub(1),
         };
         self.history_position = Some(position);
-        if let Some(text) = self.history.get(position) {
-            self.set(text.clone());
-            self.browsing_history = true;
+        if let Some(entry) = self.history.get(position).cloned() {
+            self.recall(entry);
         }
     }
 
@@ -191,15 +236,26 @@ impl Editor {
         let Some(position) = self.history_position else {
             return;
         };
-        if let Some(text) = self.history.get(position + 1) {
+        if let Some(entry) = self.history.get(position + 1).cloned() {
             self.history_position = Some(position + 1);
-            self.set(text.clone());
-            self.browsing_history = true;
+            self.recall(entry);
         } else {
             self.history_position = None;
             self.set(self.draft.clone());
             self.cursor = self.draft_cursor;
+            self.restored_input = self.draft_restored;
         }
+    }
+
+    fn recall(&mut self, entry: HistoryInput) {
+        self.set(entry.text);
+        self.restored_input = entry.restored;
+        self.browsing_history = true;
+    }
+
+    /// Whether this draft is a restored message rather than a command input.
+    pub fn is_restored_input(&self) -> bool {
+        self.restored_input
     }
 
     /// Recalled entries use whole-input navigation until explicitly edited.

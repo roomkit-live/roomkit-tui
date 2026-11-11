@@ -185,10 +185,9 @@ pub(crate) fn push(line: &mut Line, span: Span) {
     if span.text.is_empty() {
         return;
     }
-    if let Some(last) = line
-        .last_mut()
-        .filter(|last| last.tone == span.tone && last.emphasis == span.emphasis)
-    {
+    if let Some(last) = line.last_mut().filter(|last| {
+        last.tone == span.tone && last.emphasis == span.emphasis && last.hyperlink == span.hyperlink
+    }) {
         last.text.push_str(&span.text);
     } else {
         line.push(span);

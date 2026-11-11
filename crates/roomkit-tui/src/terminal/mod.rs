@@ -2,6 +2,7 @@
 //! events to a [`Session`] and sends the person's requests.
 
 mod composer;
+mod hyperlinks;
 mod keys;
 mod mouse;
 mod requests;

@@ -49,18 +49,17 @@ fn heading(form: &FormState, cols: usize, rows: usize) -> Vec<Line> {
         lines.extend(fields(form, rows.saturating_sub(12).max(1)));
         return lines;
     }
-    let body = wrap(&sanitize(&form.spec.description), cols.saturating_sub(2));
+    let body = super::hyperlink::guidance(&form.spec.description, cols.saturating_sub(2));
     let extra = usize::from(form.spec.fields.len() > 1);
     let height = rows.saturating_sub(10 + extra).max(1);
     let start = form
         .description_scroll
         .min(body.len().saturating_sub(height));
-    lines.extend(
-        body.iter()
-            .skip(start)
-            .take(height)
-            .map(|text| line(format!(" {text}"), Tone::Text)),
-    );
+    lines.extend(body.iter().skip(start).take(height).map(|row| {
+        let mut row = row.clone();
+        row.insert(0, super::span(" ", Tone::Text));
+        row
+    }));
     if body.len() > height {
         lines.push(line(
             format!(

@@ -137,12 +137,9 @@ impl Terminal {
                 appearance.attributes.set(attribute);
             }
         }
-        queue!(
-            self.stdout,
-            style::SetStyle(appearance),
-            style::Print(&span.text),
-            style::SetAttribute(style::Attribute::Reset)
-        )
+        queue!(self.stdout, style::SetStyle(appearance))?;
+        super::hyperlinks::print(&mut self.stdout, span)?;
+        queue!(self.stdout, style::SetAttribute(style::Attribute::Reset))
     }
 }
 

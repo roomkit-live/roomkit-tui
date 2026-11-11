@@ -31,6 +31,7 @@ const RETRY_FOR: Duration = Duration::from_secs(30);
 #[derive(Debug)]
 pub(super) struct Waiting {
     text: String,
+    restored: bool,
     images: Vec<ImageUpload>,
     /// With an empty composer: a turn of its own answers what the turn being
     /// cut was handed, rather than a draft leaving.
@@ -44,6 +45,14 @@ pub(super) struct Waiting {
     give_up: Option<Duration>,
 }
 
+/// Identity of a waited draft until the host accepts or refuses it.
+#[derive(Debug)]
+pub(super) struct Flight {
+    request: RequestId,
+    text: String,
+    restored: bool,
+}
+
 impl Session {
     /// Whether the draft waits to be sent once nothing runs any more: the
     /// composer still holds it as it was when Ctrl+S was pressed.
@@ -52,7 +61,9 @@ impl Session {
     }
 
     fn holds(&self, waiting: &Waiting) -> bool {
-        waiting.text == self.editor.text() && waiting.images == self.images
+        waiting.text == self.editor.text()
+            && waiting.restored == self.editor.is_restored_input()
+            && waiting.images == self.images
     }
 
     /// Keep the draft for once nothing runs. Pressed again for the same
@@ -71,6 +82,7 @@ impl Session {
         }
         self.waiting = Some(Waiting {
             text: self.editor.text().to_owned(),
+            restored: self.editor.is_restored_input(),
             images: self.images.clone(),
             answers,
             cut: None,
@@ -176,7 +188,11 @@ impl Session {
 
     /// The waited draft left as request `id`.
     pub(crate) fn sent_waited(&mut self, id: RequestId) {
-        self.flight = Some((id, self.editor.text().to_owned()));
+        self.flight = Some(Flight {
+            request: id,
+            text: self.editor.text().to_owned(),
+            restored: self.editor.is_restored_input(),
+        });
     }
 
     /// Request `id` was answered at `at`. Accepted, the waited draft leaves
@@ -188,16 +204,20 @@ impl Session {
         refusal: Option<&Rejection>,
         at: Option<Duration>,
     ) -> bool {
-        let Some((_, text)) = self.flight.take_if(|(sent, _)| *sent == id) else {
+        let Some(sent) = self.flight.take_if(|sent| sent.request == id) else {
             return false;
         };
         let Some(refusal) = refusal else {
-            self.waited_draft_left(&text);
+            self.waited_draft_left(&sent);
             return false;
         };
         // Dropped meanwhile, or replaced by an edited draft sent next: being
         // busy no longer matters, any other refusal still does.
-        let Some(waiting) = self.waiting.as_mut().filter(|w| w.text == text) else {
+        let Some(waiting) = self
+            .waiting
+            .as_mut()
+            .filter(|w| w.text == sent.text && w.restored == sent.restored)
+        else {
             return refusal.code == ErrorCode::Busy;
         };
         let now = at.unwrap_or_default();
@@ -210,19 +230,26 @@ impl Session {
         true
     }
 
-    /// The host took the draft `text`: it leaves the composer, unless the
+    /// The host took the draft: it leaves the composer, unless the
     /// person edited it meanwhile. Esc that came too late changes nothing: the
     /// message left and shows in the conversation, and a copy left behind
     /// would be sent twice. Images leave as any image message.
-    fn waited_draft_left(&mut self, text: &str) {
-        if self.waiting.as_ref().is_some_and(|w| w.text != text) {
+    fn waited_draft_left(&mut self, sent: &Flight) {
+        if self
+            .waiting
+            .as_ref()
+            .is_some_and(|w| w.text != sent.text || w.restored != sent.restored)
+        {
             return;
         }
         if self.waiting.take().is_some_and(|w| w.answers) {
             self.handed_answered_by_their_own_turn();
         }
         self.notice.clear();
-        if self.editor.text() == text && self.images.is_empty() {
+        if self.editor.text() == sent.text
+            && self.editor.is_restored_input() == sent.restored
+            && self.images.is_empty()
+        {
             self.editor.submitted();
             self.draft_epoch = self.draft_epoch.wrapping_add(1);
             self.scroll_to_bottom();

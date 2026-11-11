@@ -79,7 +79,10 @@ impl Session {
         if self.snapshot.as_ref().is_none_or(|s| !s.can_attach_images) {
             return Err(SessionError::ImagesUnsupported);
         }
-        if self.input_action().is_some() || self.editor.text().starts_with(self.command_prefix) {
+        if self.input_action().is_some()
+            || (!self.editor.is_restored_input()
+                && self.editor.text().starts_with(self.command_prefix))
+        {
             return Err(SessionError::CommandMode);
         }
         if self.images.len() >= MAX_IMAGES || image.data.len() > MAX_IMAGE_BASE64_BYTES {
@@ -120,6 +123,9 @@ impl Session {
 
     /// Composer action selected by the current draft, if advertised by the host.
     pub fn input_action(&self) -> Option<&InputAction> {
+        if self.editor.is_restored_input() {
+            return None;
+        }
         self.snapshot.as_ref()?.input_actions.iter().find(|action| {
             action.prefix != self.command_prefix && self.editor.text().starts_with(action.prefix)
         })
@@ -136,7 +142,8 @@ impl Session {
             return Err(SessionError::ImagesPending);
         }
         if !self.images.is_empty()
-            && (self.input_action().is_some() || text.starts_with(self.command_prefix))
+            && (self.input_action().is_some()
+                || (!self.editor.is_restored_input() && text.starts_with(self.command_prefix)))
         {
             return Err(SessionError::ImagesWithCommand);
         }
@@ -150,7 +157,9 @@ impl Session {
                 arguments: arguments.into(),
             });
         }
-        if let Some(command) = text.strip_prefix(self.command_prefix) {
+        if !self.editor.is_restored_input()
+            && let Some(command) = text.strip_prefix(self.command_prefix)
+        {
             return self.invocation(command);
         }
         // During a turn, only a message the host hands to that turn.
@@ -189,9 +198,12 @@ impl Session {
         })
     }
 
-    /// A leading backslash escapes an advertised action prefix into text.
+    /// A restored message is literal; typed input may escape an action prefix.
     fn unescaped_draft(&self) -> &str {
         let text = self.editor.text();
+        if self.editor.is_restored_input() {
+            return text;
+        }
         text.strip_prefix('\\')
             .filter(|rest| {
                 self.snapshot.as_ref().is_some_and(|snapshot| {
@@ -273,6 +285,9 @@ impl Session {
 
     /// Complete command names or first arguments from host-supplied choices.
     pub fn complete(&mut self) {
+        if self.editor.is_restored_input() {
+            return;
+        }
         self.editor.edit_history();
         if self
             .snapshot
@@ -294,7 +309,7 @@ impl Session {
 
     /// Refresh completion state after the composer changed.
     pub(crate) fn refresh_menu(&mut self) {
-        if self.editor.is_browsing_history() {
+        if self.editor.is_browsing_history() || self.editor.is_restored_input() {
             self.menu.suppress(self.editor.text());
         }
         let commands = self

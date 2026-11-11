@@ -24,6 +24,7 @@ fn frame() -> Frame {
                 text: text.clone(),
                 tone: Tone::Text,
                 emphasis: Default::default(),
+                hyperlink: None,
             }]
         })
         .collect();
