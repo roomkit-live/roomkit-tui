@@ -80,6 +80,21 @@ pub(super) const OVERLOADED: Description = (
     "The provider is overloaded. Wait briefly, then retry; completed tool actions are retained.",
 );
 
+/// The Responses stream may label a ChatGPT usage limit as an invalid
+/// request. Its specific code still identifies the remedy; access and
+/// service failures keep their own explanations.
+pub(super) fn usage_limit(error: &str, status: Option<u16>) -> Option<Description> {
+    if status.is_some_and(|status| !matches!(status, 400 | 422 | 429))
+        || !error.contains("subscription_sharing_usage_limit_exceeded")
+    {
+        return None;
+    }
+    Some((
+        QUOTA.0,
+        "ChatGPT plan usage limit reached. Check your plan or this app's limit in ChatGPT Settings > Usage, then retry when usage is available or choose an API-key connection.",
+    ))
+}
+
 /// Specific parameter failures are useful even when the vendor's message
 /// names itself and `ProviderError::Display` consequently omits its status.
 pub(super) fn request(error: &str, status: Option<u16>) -> Option<Description> {

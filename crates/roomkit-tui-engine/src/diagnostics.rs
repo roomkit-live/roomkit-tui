@@ -152,7 +152,8 @@ impl Diagnostic {
                 .find(|(fragments, ..)| fragments.iter().any(|f| lower.contains(f)))
                 .map(|(_, code, summary)| (*code, *summary))
         };
-        let (code, summary) = provider::priority(http_status)
+        let (code, summary) = provider::usage_limit(&lower, http_status)
+            .or_else(|| provider::priority(http_status))
             .or_else(|| known(KNOWN))
             .or_else(|| provider::request(&lower, http_status))
             .or_else(|| reads_as_context_overflow(&lower).then_some(CONTEXT_LIMIT))

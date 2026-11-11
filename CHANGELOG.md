@@ -105,6 +105,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- ChatGPT plan usage limits are reported as quota failures, including when
+  a Responses stream labels them as invalid requests. The message points to
+  ChatGPT Settings > Usage for the plan or app limit.
+
 - A streamed turn that stops after tools now reports its loop's failure and
   reason, including the tool round limit, instead of appearing completed
   without an answer. The terminal explains the stop once and retains completed

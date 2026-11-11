@@ -171,3 +171,32 @@ fn an_empty_answer_has_a_recovery_message() {
     assert_eq!(diagnostic.code, "provider_empty_response");
     assert!(!diagnostic.exceeds_context());
 }
+
+/// A Responses stream can report this quota as an invalid request (400),
+/// even though its specific code names the ChatGPT plan usage limit.
+#[test]
+fn a_chatgpt_usage_limit_explains_the_plan_or_app_limit() {
+    for envelope in ["openai (400): ", "HTTP 429: ", ""] {
+        let raw =
+            format!("{envelope}subscription_sharing_usage_limit_exceeded: private account details");
+        let diagnostic = super::Diagnostic::classify(&raw);
+        assert_eq!(diagnostic.code, "provider_quota", "{raw}");
+        assert_eq!(
+            diagnostic.summary,
+            "ChatGPT plan usage limit reached. Check your plan or this app's limit in ChatGPT Settings > Usage, then retry when usage is available or choose an API-key connection."
+        );
+        assert!(!diagnostic.exceeds_context());
+        assert!(!diagnostic.summary.contains("private account details"));
+    }
+}
+
+#[test]
+fn a_chatgpt_usage_code_does_not_override_access_or_server_failures() {
+    for (status, code) in [
+        (401, "provider_access_denied"),
+        (503, "provider_server_error"),
+    ] {
+        let raw = format!("openai ({status}): subscription_sharing_usage_limit_exceeded");
+        assert_eq!(super::Diagnostic::classify(&raw).code, code);
+    }
+}
