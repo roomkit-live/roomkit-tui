@@ -195,3 +195,26 @@ fn an_estimate_seen_during_a_run_that_measures_never_undoes_its_measure() {
     session.apply(estimate(80_000));
     assert!(footer(&session).contains("context refused"));
 }
+
+/// The turn's record, told before its end, measures as much as a
+/// generation does.
+#[test]
+fn an_estimate_seen_during_a_run_gives_way_to_the_run_s_record() {
+    let mut restored = measured_before();
+    restored.active_run = Some("run-1".into());
+    let mut session = Session::default();
+    session.apply(Event::Snapshot(restored));
+    session.apply(estimate(92_000));
+    session.apply(Event::UsageUpdated {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+        provider: "local".into(),
+        model: "model-a".into(),
+        context: Some(ContextUsage::new(147_015).with_capacity(1_000_000)),
+        usage: TokenUsage::complete(145_000, 2_015, 0),
+    });
+    finished(&mut session, "run-1");
+    assert_eq!(shown(&session), Some((147_015, false)));
+    session.apply(estimate(92_000));
+    assert_eq!(shown(&session), Some((147_015, false)));
+}

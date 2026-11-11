@@ -15,7 +15,7 @@ use roomkit::{
     model::{ChannelId, Metadata, RoomId},
 };
 use roomkit_ai::testing::{ScriptedProvider, ScriptedRound};
-use roomkit_ai::{AiChannel, AiChannelOptions};
+use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
 use roomkit_tui::{Client, Session, connection, render};
 use roomkit_tui_engine::{
     AdapterError, CommandExecution, CommandHandler, CommandResult, ConversationChannel,
@@ -78,16 +78,20 @@ impl CommandHandler for Host {
 }
 
 impl SessionLifecycle for Host {
-    /// The turn measured the context: the estimate is no longer current.
+    /// A completed turn measured the context, as this provider reports its
+    /// usage: the estimate is no longer current. A refused or interrupted
+    /// one may have measured nothing.
     fn finished<'a>(
         &'a self,
         _: &'a SessionConfig,
         _: &'a OperationId,
-        _: TurnOutcome,
+        outcome: TurnOutcome,
     ) -> LifecycleFuture<'a, ()> {
-        self.live.send_modify(|events| {
-            events.retain(|event| !matches!(event, Event::ContextEstimated { .. }));
-        });
+        if outcome == TurnOutcome::Completed {
+            self.live.send_modify(|events| {
+                events.retain(|event| !matches!(event, Event::ContextEstimated { .. }));
+            });
+        }
         Box::pin(async {})
     }
 }
@@ -109,6 +113,48 @@ fn used(input: u64, output: u64) -> Metadata {
 }
 
 async fn room() -> (RoomKit, ConversationChannel, SessionConfig) {
+    let rounds = vec![
+        ScriptedRound::answering("First.").with_usage(used(650_250, 1_321)),
+        ScriptedRound::answering("Second.").with_usage(used(145_000, 2_015)),
+    ];
+    room_with(rounds, AiChannelOptions::default()).await
+}
+
+/// A turn that calls a tool, which answers once `gate` opens, then measures.
+async fn room_holding_its_turn(
+    gate: watch::Receiver<bool>,
+) -> (RoomKit, ConversationChannel, SessionConfig) {
+    let tool = AiTool {
+        name: "lookup_record".into(),
+        description: "Read a record".into(),
+        parameters: json!({"type": "object", "properties": {}}),
+        tags: vec![],
+        changes_state: false,
+        defer_loading: false,
+    };
+    let handler = ToolHandler::new(move |_, _| {
+        let mut gate = gate.clone();
+        async move {
+            let _ = gate.wait_for(|open| *open).await;
+            Ok(ToolResult::Json(json!({"record": "42"})))
+        }
+    });
+    let options = AiChannelOptions {
+        tools: vec![ToolEntry::Definition(tool)],
+        tool_handler: Some(handler),
+        ..Default::default()
+    };
+    let rounds = vec![
+        ScriptedRound::calling("", [("call1", "lookup_record", "{}")]),
+        ScriptedRound::answering("Second.").with_usage(used(145_000, 2_015)),
+    ];
+    room_with(rounds, options).await
+}
+
+async fn room_with(
+    rounds: Vec<ScriptedRound>,
+    options: AiChannelOptions,
+) -> (RoomKit, ConversationChannel, SessionConfig) {
     let kit = RoomKit::new(Default::default());
     let mut config = SessionConfig::new(
         RoomId::new("room").unwrap(),
@@ -121,11 +167,8 @@ async fn room() -> (RoomKit, ConversationChannel, SessionConfig) {
         CommandSpec::new("compact", "Compact the conversation"),
         CommandSpec::new("compact-now", "Compact the conversation as host work"),
     ];
-    let provider = ScriptedProvider::new([
-        ScriptedRound::answering("First.").with_usage(used(650_250, 1_321)),
-        ScriptedRound::answering("Second.").with_usage(used(145_000, 2_015)),
-    ]);
-    let agent = AiChannel::new(config.agent.clone(), provider, AiChannelOptions::default());
+    let provider = ScriptedProvider::new(rounds);
+    let agent = AiChannel::new(config.agent.clone(), provider, options);
     kit.register_channel(agent.unwrap()).unwrap();
     let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
     kit.register_channel(channel.clone()).unwrap();
@@ -203,8 +246,8 @@ impl View {
         self.client.try_send(request).unwrap();
     }
 
-    /// Ask the agent, and wait for its turn to end.
-    async fn ask(&mut self, id: u64) {
+    /// Ask the agent, without waiting for its turn.
+    fn submit(&self, id: u64) {
         let text = "Continue".into();
         self.send(
             id,
@@ -213,6 +256,11 @@ impl View {
                 text,
             },
         );
+    }
+
+    /// Ask the agent, and wait for its turn to end.
+    async fn ask(&mut self, id: u64) {
+        self.submit(id);
         self.until(|e| matches!(e, Event::OperationFinished { .. }))
             .await;
     }
@@ -309,6 +357,50 @@ async fn a_compaction_run_as_host_work_shows_its_estimate_once_it_ends() {
         .await;
     let footer = view.footer();
     assert!(footer.contains("context ~92000/1000000"), "{footer}");
+    view.close().await;
+    kit.close().await.unwrap();
+}
+
+/// A view that sees the estimate only while a turn goes keeps the turn's
+/// measure when a late copy of the host's state brings the estimate again.
+#[tokio::test]
+async fn an_estimate_seen_during_a_turn_never_undoes_the_turn_s_measure() {
+    let (open, gate) = watch::channel(false);
+    let (kit, channel, config) = room_holding_its_turn(gate).await;
+    let host = Host::new(vec![]);
+    let mut view = View::attach(&kit, &channel, &config, &host).await;
+    view.submit(1);
+    view.until(|e| {
+        matches!(
+            e,
+            Event::Item {
+                item: Item::Tool { .. },
+                ..
+            }
+        )
+    })
+    .await;
+    host.compacted();
+    view.until(|e| matches!(e, Event::ContextEstimated { .. }))
+        .await;
+    assert!(
+        view.ui.active_run().is_some(),
+        "The estimate came during the turn"
+    );
+    open.send_replace(true);
+    view.until(|e| matches!(e, Event::OperationFinished { .. }))
+        .await;
+    assert!(view.footer().contains("context 147015/1000000"));
+
+    let notice = Event::Notice {
+        conversation: "room".into(),
+        text: "Compacted earlier".into(),
+    };
+    host.live
+        .send_replace(vec![estimate("scripted", 92_000), notice]);
+    view.until(|e| matches!(e, Event::Notice { .. })).await;
+    let footer = view.footer();
+    assert!(footer.contains("context 147015/1000000"), "{footer}");
     view.close().await;
     kit.close().await.unwrap();
 }
