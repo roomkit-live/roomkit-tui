@@ -8,7 +8,9 @@ pub(crate) struct Editor {
     cursor: usize,
     history: Vec<String>,
     history_position: Option<usize>,
+    browsing_history: bool,
     draft: String,
+    draft_cursor: usize,
 }
 
 impl Editor {
@@ -24,6 +26,7 @@ impl Editor {
 
     /// Replace the draft and put the cursor at its end.
     pub fn set(&mut self, text: String) {
+        self.edit_history();
         self.text = text;
         self.cursor = self.text.len();
     }
@@ -33,11 +36,13 @@ impl Editor {
         self.set(String::new());
         self.history_position = None;
         self.draft.clear();
+        self.draft_cursor = 0;
     }
 
     /// Insert text at the cursor. Control characters other than newlines and
     /// tabs are removed; pasting never submits. Inputs normalize CRLF to LF.
     pub fn insert(&mut self, text: &str) {
+        self.edit_history();
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
         let clean: String = normalized
             .chars()
@@ -53,6 +58,7 @@ impl Editor {
 
     /// Move one grapheme left.
     pub fn left(&mut self) {
+        self.edit_history();
         self.cursor = self
             .text
             .grapheme_indices(true)
@@ -64,6 +70,7 @@ impl Editor {
 
     /// Move one grapheme right.
     pub fn right(&mut self) {
+        self.edit_history();
         self.cursor = self
             .text
             .grapheme_indices(true)
@@ -74,6 +81,7 @@ impl Editor {
 
     /// Move to the start of the current line.
     pub fn home(&mut self) {
+        self.edit_history();
         self.cursor = self
             .text
             .get(..self.cursor)
@@ -83,6 +91,7 @@ impl Editor {
 
     /// Move to the end of the current line.
     pub fn end(&mut self) {
+        self.edit_history();
         self.cursor = self
             .text
             .get(self.cursor..)
@@ -92,6 +101,7 @@ impl Editor {
 
     /// Move between logical input lines, preserving display columns where possible.
     pub fn vertical(&mut self, backwards: bool) {
+        self.edit_history();
         let start = self.text[..self.cursor]
             .rfind('\n')
             .map_or(0, |index| index + 1);
@@ -164,6 +174,7 @@ impl Editor {
         let position = match self.history_position {
             None => {
                 self.draft = self.text.clone();
+                self.draft_cursor = self.cursor;
                 self.history.len() - 1
             }
             Some(position) => position.saturating_sub(1),
@@ -171,6 +182,7 @@ impl Editor {
         self.history_position = Some(position);
         if let Some(text) = self.history.get(position) {
             self.set(text.clone());
+            self.browsing_history = true;
         }
     }
 
@@ -182,9 +194,37 @@ impl Editor {
         if let Some(text) = self.history.get(position + 1) {
             self.history_position = Some(position + 1);
             self.set(text.clone());
+            self.browsing_history = true;
         } else {
             self.history_position = None;
             self.set(self.draft.clone());
+            self.cursor = self.draft_cursor;
+        }
+    }
+
+    /// Recalled entries use whole-input navigation until explicitly edited.
+    pub fn is_browsing_history(&self) -> bool {
+        self.browsing_history
+    }
+
+    /// Resume ordinary editing without losing the saved draft or history position.
+    pub fn edit_history(&mut self) {
+        self.browsing_history = false;
+    }
+
+    /// Move within a draft's lines; at the edge, or while browsing, recall inputs.
+    pub fn history_or_vertical(&mut self, backwards: bool) {
+        let another_line = if backwards {
+            self.text[..self.cursor].contains('\n')
+        } else {
+            self.text[self.cursor..].contains('\n')
+        };
+        if !self.browsing_history && another_line {
+            self.vertical(backwards);
+        } else if backwards {
+            self.history_previous();
+        } else {
+            self.history_next();
         }
     }
 

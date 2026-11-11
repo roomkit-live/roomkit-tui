@@ -273,6 +273,7 @@ impl Session {
 
     /// Complete command names or first arguments from host-supplied choices.
     pub fn complete(&mut self) {
+        self.editor.edit_history();
         if self
             .snapshot
             .as_ref()
@@ -293,6 +294,9 @@ impl Session {
 
     /// Refresh completion state after the composer changed.
     pub(crate) fn refresh_menu(&mut self) {
+        if self.editor.is_browsing_history() {
+            self.menu.suppress(self.editor.text());
+        }
         let commands = self
             .snapshot
             .as_ref()

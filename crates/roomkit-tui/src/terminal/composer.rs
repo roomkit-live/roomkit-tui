@@ -51,7 +51,6 @@ fn composer_navigation(
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     let shift = key.modifiers.contains(KeyModifiers::SHIFT);
     let menu = session.menu.visible;
-    let multiline = session.editor.text().contains('\n');
     match key.code {
         KeyCode::Right | KeyCode::Left if alt && session.editor.text().is_empty() => {
             if let Some(command) = session.cycle_room(key.code == KeyCode::Right) {
@@ -67,10 +66,8 @@ fn composer_navigation(
                 send(session, client, command, false);
             }
         }
-        KeyCode::Up if multiline => session.editor.vertical(true),
-        KeyCode::Down if multiline => session.editor.vertical(false),
-        KeyCode::Up => session.editor.history_previous(),
-        KeyCode::Down => session.editor.history_next(),
+        KeyCode::Up => session.editor.history_or_vertical(true),
+        KeyCode::Down => session.editor.history_or_vertical(false),
         KeyCode::Char('p') if control => session.editor.history_previous(),
         KeyCode::Char('n') if control => session.editor.history_next(),
         KeyCode::Tab => session.complete(),

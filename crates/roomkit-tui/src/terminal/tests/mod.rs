@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "Test fixtures fail on invalid state")]
 mod exit;
 mod forms;
+mod history;
 mod keys;
 mod send_now;
 

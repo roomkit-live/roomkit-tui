@@ -108,6 +108,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Up/Down browse whole input-history entries, including multiline messages and
+  commands, without getting trapped by line movement or completion menus.
+  Returning to the unfinished draft restores its text and cursor position.
+
 - ChatGPT plan usage limits are reported as quota failures, including when
   a Responses stream labels them as invalid requests. The message points to
   ChatGPT Settings > Usage for the plan or app limit.

@@ -406,7 +406,7 @@ that, and a very long reasoning keeps its end. The engine forwards the kit's
 | Esc | Close the current menu or panel, cancel sending a message after the interruption (it stays in the composer), otherwise interrupt the run |
 | Ctrl+Y, Ctrl+N | Allow once or deny the pending permission |
 | ↑↓ or 1, 2, then Enter | Choose and confirm an answer on the permission card |
-| Up, Down | Move between lines, or browse input history |
+| Up, Down | Move within draft lines; at the edge, browse whole input-history entries |
 | Ctrl+P, Ctrl+N | Browse input history |
 | PageUp, PageDown | Scroll the conversation, or the pending permission's details |
 | Ctrl+End | Return to the latest message |
@@ -429,6 +429,11 @@ or hold the pointer above or below the conversation: it scrolls and the
 selection follows. Text copied from the conversation stays highlighted until
 the next click, key, paste or resize.
 Pastes keep their newlines and never send by themselves.
+
+History navigation recalls one complete input per arrow press, including
+multiline messages and commands. Down past the newest entry restores the
+unfinished draft and its cursor. Editing or moving the cursor in a recalled
+entry resumes line navigation; Tab explicitly opens command completion.
 
 ## Platform support
 
