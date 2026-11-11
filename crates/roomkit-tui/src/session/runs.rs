@@ -138,16 +138,20 @@ impl Session {
             return;
         }
         if index == 0 {
-            // The outcome and duration stay shown until the next run.
-            if let Some(observed) = &mut self.observed_run {
-                observed.outcome = Some(outcome);
-                observed.duration = observed
-                    .started_at
-                    .zip(at)
-                    .and_then(|(start, finish)| finish.checked_sub(start));
-            }
+            self.freeze_observed_run(outcome, at);
         }
         self.sync_active_run();
+    }
+
+    /// Keep the observed run's outcome and duration shown until the next run.
+    fn freeze_observed_run(&mut self, outcome: RunOutcome, at: Option<Duration>) {
+        if let Some(observed) = &mut self.observed_run {
+            observed.outcome = Some(outcome);
+            observed.duration = observed
+                .started_at
+                .zip(at)
+                .and_then(|(start, finish)| finish.checked_sub(start));
+        }
     }
 
     /// The most severe outcome of the runs that finished while another ran
