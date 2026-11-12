@@ -368,7 +368,7 @@ impl Session {
     fn on_accepted(&mut self, command: &Command) {
         match command {
             Command::SubmitImages { message, .. }
-                if self.editor.text() == message.text && self.images == message.images =>
+                if self.editor.expanded() == message.text && self.images == message.images =>
             {
                 self.editor.submitted();
                 self.images.clear();

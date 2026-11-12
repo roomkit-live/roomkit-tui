@@ -148,7 +148,8 @@ impl Session {
             return Err(SessionError::ImagesWithCommand);
         }
         if let Some(action) = self.input_action() {
-            let arguments = &self.editor.text()[action.prefix.len_utf8()..];
+            let expanded = self.editor.expanded();
+            let arguments = expanded.strip_prefix(action.prefix).unwrap_or(&expanded);
             if arguments.trim().is_empty() {
                 return Err(SessionError::EmptyActionText(action.prefix));
             }
@@ -157,10 +158,10 @@ impl Session {
                 arguments: arguments.into(),
             });
         }
-        if !self.editor.is_restored_input()
-            && let Some(command) = text.strip_prefix(self.command_prefix)
-        {
-            return self.invocation(command);
+        if !self.editor.is_restored_input() && text.starts_with(self.command_prefix) {
+            let expanded = self.editor.expanded();
+            let command = expanded.trim().strip_prefix(self.command_prefix);
+            return self.invocation(command.unwrap_or_default());
         }
         // During a turn, only a message the host hands to that turn.
         let steering = self.can_steer() && self.images.is_empty() && self.interrupting.is_none();
@@ -173,12 +174,15 @@ impl Session {
             }
             return Ok(Command::SubmitImages {
                 agent: snapshot.selected_agent.clone(),
-                message: Box::new(ImageMessage::new(self.editor.text(), self.images.clone())),
+                message: Box::new(ImageMessage::new(
+                    self.editor.expanded(),
+                    self.images.clone(),
+                )),
             });
         }
         Ok(Command::Submit {
             agent: snapshot.selected_agent.clone(),
-            text: self.unescaped_draft().into(),
+            text: self.unescaped_draft(),
         })
     }
 
@@ -199,12 +203,15 @@ impl Session {
     }
 
     /// A restored message is literal; typed input may escape an action prefix.
-    fn unescaped_draft(&self) -> &str {
-        let text = self.editor.text();
+    /// The draft as it is sent: long pastes in place of their blocks, and
+    /// without the `\\` that keeps an input action's prefix literal.
+    fn unescaped_draft(&self) -> String {
+        let text = self.editor.expanded();
         if self.editor.is_restored_input() {
             return text;
         }
-        text.strip_prefix('\\')
+        let unescaped = text
+            .strip_prefix('\\')
             .filter(|rest| {
                 self.snapshot.as_ref().is_some_and(|snapshot| {
                     snapshot
@@ -213,7 +220,8 @@ impl Session {
                         .any(|action| rest.starts_with(action.prefix))
                 })
             })
-            .unwrap_or(text)
+            .map(str::to_owned);
+        unescaped.unwrap_or(text)
     }
 
     pub(super) fn message_pending(&self) -> bool {

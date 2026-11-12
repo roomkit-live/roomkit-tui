@@ -71,10 +71,9 @@ impl Clipboard {
                     Err(error) => error.to_string(),
                 },
                 Ok(Paste::Text(text))
-                    if session.editor.text().len().saturating_add(text.len()) <= 65_536 =>
+                    if session.editor.expanded_len().saturating_add(text.len()) <= 65_536 =>
                 {
-                    session.editor.insert(&text);
-                    session.refresh_menu();
+                    session.paste(&text);
                     String::new()
                 }
                 Ok(Paste::Text(_)) => "Input exceeds the 64 KiB composer limit".into(),

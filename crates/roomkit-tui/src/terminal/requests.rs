@@ -34,10 +34,10 @@ pub(super) fn paste(session: &mut Session, text: &str) {
             }
         }
         Focus::Composer => {
-            if session.draft().len().saturating_add(text.len())
+            if session.editor.expanded_len().saturating_add(text.len())
                 <= roomkit_tui_protocol::limits::MAX_TEXT_BYTES
             {
-                session.insert(text);
+                session.paste(text);
             } else {
                 session.notice = "Input exceeds the 64 KiB composer limit".into();
             }

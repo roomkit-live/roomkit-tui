@@ -38,6 +38,63 @@ fn unicode_editing_keeps_graphemes_intact_and_paste_does_not_submit() {
     assert!(editor.text().is_empty());
 }
 
+/// A block of a long paste edits as one character: the cursor moves over it,
+/// Backspace and Delete remove it whole, a vertical move never lands in it,
+/// and history recalls it as a block that still sends the paste.
+#[test]
+fn a_pasted_block_edits_as_one_character_and_history_keeps_it() {
+    let paste = "line 1\nline 2\nline 3\nline 4";
+    let block = "[Pasted text #1 · 4 lines]";
+    let mut editor = crate::editor::Editor::default();
+    editor.insert("a ");
+    editor.paste(paste);
+    editor.insert(" b");
+    assert_eq!(editor.text(), format!("a {block} b"));
+    assert_eq!(editor.expanded(), format!("a {paste} b"));
+    assert_eq!(editor.expanded_len(), editor.expanded().len());
+
+    editor.left();
+    editor.left();
+    assert_eq!(editor.cursor(), 2 + block.len(), "after the block");
+    editor.left();
+    assert_eq!(editor.cursor(), 2, "over the block");
+    editor.right();
+    assert_eq!(editor.cursor(), 2 + block.len());
+    editor.backspace();
+    assert_eq!(editor.text(), "a  b");
+    assert_eq!(editor.expanded(), "a  b");
+
+    editor.set(String::new());
+    editor.paste(paste);
+    editor.home();
+    editor.delete();
+    assert!(editor.text().is_empty(), "{}", editor.text());
+
+    // A vertical move toward the block's columns lands after it.
+    editor.insert("first line\n");
+    editor.paste(paste);
+    editor.home();
+    editor.vertical(true);
+    editor.end();
+    editor.vertical(false);
+    assert_eq!(editor.cursor(), editor.text().len());
+
+    editor.submitted();
+    editor.insert("unsent");
+    editor.history_previous();
+    // Numbers are never reused in a draft: two blocks never share a label.
+    assert!(editor.text().ends_with("[Pasted text #2 · 4 lines]"));
+    assert_eq!(editor.expanded(), format!("first line\n{paste}"));
+    editor.history_next();
+    assert_eq!(editor.text(), "unsent");
+    assert_eq!(editor.expanded(), "unsent");
+
+    // A short paste stays as it is.
+    editor.set(String::new());
+    editor.paste("one\ntwo");
+    assert_eq!(editor.text(), "one\ntwo");
+}
+
 #[test]
 fn filled_composer_centers_the_draft_and_keeps_unicode_caret_inside_the_surface() {
     use crate::UiOptions;

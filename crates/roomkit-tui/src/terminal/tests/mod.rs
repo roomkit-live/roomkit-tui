@@ -98,6 +98,35 @@ fn pasted_text_reaches_only_the_focused_editor() {
     assert_eq!(session.draft(), "hello");
 }
 
+/// A long paste filled the composer with lines the person could not read
+/// back there (2026-11-12). It is one block in the composer; the message
+/// sent carries the pasted text in its place.
+#[test]
+fn a_long_paste_is_one_block_in_the_composer_and_whole_in_the_message() {
+    let (mut session, client, host) = fixture(false);
+    let table = "┌───┬───┐\n│ 1 │ a │\n├───┼───┤\n│ 2 │ b │\n└───┴───┘";
+    paste(&mut session, "Voici la revue : ");
+    paste(&mut session, table);
+    paste(&mut session, " Merci.");
+    assert_eq!(
+        session.draft(),
+        "Voici la revue : [Pasted text #1 · 5 lines] Merci."
+    );
+    let frame = render::screen(&session, 100, 30, &Renderers::default());
+    let text = frame.lines.join("\n");
+    assert!(text.contains("[Pasted text #1 · 5 lines] Merci."), "{text}");
+    assert!(!text.contains("│ 1 │ a │"), "{text}");
+
+    press(&mut session, &client, key(KeyCode::Enter), Duration::ZERO);
+    assert_eq!(
+        host.try_recv().unwrap().command,
+        Command::Submit {
+            agent: "agent".into(),
+            text: format!("Voici la revue : {table} Merci."),
+        }
+    );
+}
+
 #[test]
 fn idle_polling_never_schedules_extra_frames_but_changes_are_immediate() {
     let mut redraw = Redraw::default();

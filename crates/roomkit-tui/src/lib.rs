@@ -17,6 +17,7 @@ mod markdown;
 mod menu;
 mod observation;
 mod panel;
+mod pasted;
 mod picker;
 mod question;
 pub mod render;

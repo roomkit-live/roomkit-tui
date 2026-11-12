@@ -88,7 +88,7 @@ fn composer_navigation(
 fn composer_editing(session: &mut Session, client: &Client, key: KeyEvent) {
     let control = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
-    let room = |extra: usize| session.editor.text().len() + extra <= MAX_INPUT_BYTES;
+    let room = |extra: usize| session.editor.expanded_len() + extra <= MAX_INPUT_BYTES;
     match key.code {
         KeyCode::Enter
             if key

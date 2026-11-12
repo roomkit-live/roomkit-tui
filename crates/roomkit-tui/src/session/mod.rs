@@ -333,9 +333,16 @@ impl Session {
         self.refresh_menu();
     }
 
-    /// Insert text at the caret, as typing or pasting would.
+    /// Insert text at the caret, as typing would.
     pub fn insert(&mut self, text: &str) {
         self.editor.insert(text);
+        self.refresh_menu();
+    }
+
+    /// Insert pasted text at the caret: a long paste goes in as one block,
+    /// which the message sent replaces by the paste.
+    pub fn paste(&mut self, text: &str) {
+        self.editor.paste(text);
         self.refresh_menu();
     }
 
