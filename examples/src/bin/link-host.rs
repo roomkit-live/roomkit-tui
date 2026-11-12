@@ -1,4 +1,4 @@
-//! Web links in conversation and form instructions, without a browser or network.
+//! Web links in conversation, code and form instructions, without a browser or network.
 
 use std::num::NonZeroUsize;
 use std::sync::mpsc::RecvTimeoutError;
@@ -23,6 +23,9 @@ fn serve(host: &Host) {
     snapshot
         .commands
         .push(CommandSpec::new("connect", "Show a link and return field"));
+    snapshot
+        .commands
+        .push(CommandSpec::new("code", "Show web addresses in code"));
     snapshot.items.push(Item::Message(Message::new(
         "message", "agent",
         format!("[Open guide](https://example.com/guide?view=full&lang=en)\n\nBare https://example.com/~person/guide_(terminal).\n\n{instructions}\n\nUse /connect to open the form."),
@@ -38,6 +41,12 @@ fn serve(host: &Host) {
             request: request.id,
             error: None,
         }));
+        if matches!(request.command, Command::Invoke { ref name, .. } if name == "code") {
+            drop(host.try_send(Event::Item {
+                conversation: "room".into(),
+                item: Item::Message(Message::new("code", "agent", code_links())),
+            }));
+        }
         if matches!(request.command, Command::Invoke { ref name, .. } if name == "connect") {
             let form = FormSpec::new(
                 "login",
@@ -52,6 +61,17 @@ fn serve(host: &Host) {
             }));
         }
     }
+}
+
+/// Addresses longer than a row, in inline code and in a highlighted block that
+/// splits them into several colors: each wrapped row links the entire URL.
+fn code_links() -> String {
+    let inline = format!("https://example.com/inline?token={}", "i".repeat(150));
+    let block = format!(
+        "https://example.com/block?state={}&scope=openid+profile",
+        "b".repeat(150)
+    );
+    format!("Inline `{inline}` code.\n\n```sh\ncurl {block}\n```")
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

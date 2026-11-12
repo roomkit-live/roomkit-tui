@@ -8,6 +8,8 @@ GUIDE = b"https://example.com/guide?view=full&lang=en"
 BARE = b"https://example.com/~person/guide_(terminal)"
 AUTH = (b"https://example.com/authorize?state=" + b"x" * 240
         + b"&scope=openid+profile&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fcallback")
+INLINE = b"https://example.com/inline?token=" + b"i" * 150
+BLOCK = b"https://example.com/block?state=" + b"b" * 150 + b"&scope=openid+profile"
 
 
 def links(output):
@@ -50,7 +52,18 @@ with Terminal([binary("link-host")], rows=30, cols=100) as terminal:
     terminal.mouse(0, 8, 4, release=True)
     terminal.send(b"\x1b")
     terminal.wait_for(b"Use /connect to open the form.")
+    # Code keeps its text, and every wrapped row links the entire URL: without
+    # it the terminal's own detection opens only the row clicked.
+    offset = len(terminal.output)
+    terminal.send(b"/code\r")
+    terminal.wait_for(b"Inline")
+    for url in (INLINE, BLOCK):
+        destination(terminal, url, offset)
+        fragments = [text for target, text in links(terminal.output[offset:]) if target == url]
+        require(len(fragments) > 1, f"The code URL {url[:30]!r} did not wrap into linked rows")
+        require(all(text and text in url for text in fragments),
+                f"A linked code fragment is not part of {url[:30]!r}")
     terminal.send(b"\x04")
     terminal.exited()
 
-print("Link PTY passed: Markdown labels, bare URLs, wrapped form links, mouse capture, resize and selection retain exact native destinations.")
+print("Link PTY passed: Markdown labels, bare URLs, code, wrapped form links, mouse capture, resize and selection retain exact native destinations.")

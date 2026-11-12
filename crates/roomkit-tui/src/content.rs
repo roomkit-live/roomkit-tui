@@ -6,7 +6,7 @@ use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::render::{Line, Span, Tone, sanitize};
+use crate::render::{Line, Span, Tone, link_code, sanitize};
 
 /// Display literal text, retaining indentation and line breaks, without controls.
 pub fn plain(text: &str) -> Vec<Line> {
@@ -17,8 +17,9 @@ pub fn plain(text: &str) -> Vec<Line> {
 }
 
 /// Highlight source using bundled syntaxes and application-defined semantic
-/// colors. Unknown languages remain literal code. No parser executes code or
-/// reads files. Input is limited to 64 KiB; very long lines skip syntax parsing.
+/// colors. Unknown languages remain literal code; web addresses carry native
+/// links without changing the text. No parser executes code or reads files.
+/// Input is limited to 64 KiB; very long lines skip syntax parsing.
 pub fn code(text: &str, language: &str) -> Vec<Line> {
     static SYNTAXES: OnceLock<SyntaxSet> = OnceLock::new();
     let text = sanitize(&crate::session::bounded(text, 65_536));
@@ -34,7 +35,7 @@ pub fn code(text: &str, language: &str) -> Vec<Line> {
         let visible = source.trim_end_matches('\n');
         let mut row = Vec::new();
         if source.len() > 2048 {
-            rows.push(vec![Span::new(visible, Tone::Code)]);
+            rows.push(link_code(vec![Span::new(visible, Tone::Code)]));
             parser = ParseState::new(syntax);
             scopes = ScopeStack::new();
             continue;
@@ -56,7 +57,7 @@ pub fn code(text: &str, language: &str) -> Vec<Line> {
             }
             Err(_) => row.push(Span::new(visible, Tone::Code)),
         }
-        rows.push(row);
+        rows.push(link_code(row));
     }
     rows
 }

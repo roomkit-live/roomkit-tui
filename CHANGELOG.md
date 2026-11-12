@@ -12,6 +12,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   characters) goes in as one block, `[Pasted text #1 · 13 lines]`, which the
   cursor moves over and Backspace or Delete remove whole; the message sent
   carries the pasted text in its place, and history recalls the block.
+
+- Web addresses in inline and fenced code carry native terminal links on every
+  wrapped row, so Cmd-click or Ctrl-click opens the complete URL; the code's
+  text and colors are unchanged.
+
 - Form guidance can opt into the conversation's Markdown renderer, including
   native links with labels. Plain form guidance and field help also share the
   conversation's URL detection.

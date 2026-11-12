@@ -75,7 +75,7 @@ fn question_mark_after_a_parenthesized_url_is_prose_but_a_query_is_preserved() {
 }
 
 #[test]
-fn links_in_tables_keep_their_destination_and_literal_code_stays_literal() {
+fn links_in_tables_keep_their_destination() {
     let url = "https://example.com/guide";
     for width in [16, 48, 100] {
         let rows = render(
@@ -84,9 +84,49 @@ fn links_in_tables_keep_their_destination_and_literal_code_stays_literal() {
         );
         assert!(linked_text(&rows, url).contains("Guide"));
     }
-    let rows = render(&format!("`{url}`\n\n```text\n{url}\n```"), 80);
-    assert!(rows.iter().flatten().all(|span| span.hyperlink.is_none()));
-    assert!(rows.iter().flatten().any(|span| span.tone == Tone::Code));
+}
+
+/// A wrapped address in code must carry its destination on every row: the
+/// terminal's own detection only sees the row clicked, so it opens a cut URL.
+#[test]
+fn urls_in_code_link_their_entire_destination_on_every_wrapped_row() {
+    let url = "https://example.com/authorize?state=abcdefghijklmnopqrstuvwxyz&scope=one+two";
+    for source in [
+        format!("Run `{url}` now."),
+        format!("```text\n{url}\n```"),
+        // Shell highlighting splits the address at `&` and `=` into several spans.
+        format!("```sh\ncurl {url} | jq .\n```"),
+        format!("```json\n{{\"url\": \"{url}\", \"ok\": true}}\n```"),
+    ] {
+        for width in [24, 40, 120] {
+            let rows = render(&source, width);
+            assert_eq!(linked_text(&rows, url), url, "{source} at width {width}");
+            let linked_rows = rows
+                .iter()
+                .filter(|row| row.iter().any(|span| span.hyperlink.is_some()))
+                .count();
+            if width < url.len() {
+                assert!(linked_rows > 1, "{source} must wrap at width {width}");
+            }
+            for span in rows
+                .iter()
+                .flatten()
+                .filter(|span| span.hyperlink.is_some())
+            {
+                assert_ne!(span.tone, Tone::Link, "Code keeps its own colors");
+                assert!(!span.emphasis.underline, "Code keeps its own emphasis");
+            }
+            let visible: String = rows
+                .iter()
+                .flatten()
+                .map(|span| span.text.as_str())
+                .collect();
+            assert!(
+                !visible.contains(&format!("({url})")),
+                "Code text is unchanged"
+            );
+        }
+    }
 }
 
 #[test]

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use super::{Line, Span, Tone};
 
 mod detect;
-pub(crate) use detect::annotate;
+pub(crate) use detect::{annotate, literal};
 
 /// A bounded HTTP(S) destination safe to include in an OSC 8 control sequence.
 /// Opening it remains the terminal emulator's explicit user action.

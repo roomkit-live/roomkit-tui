@@ -1,12 +1,20 @@
 //! Recognize visible web addresses before wrapping can split their destination.
 
+use std::ops::Range;
+
 use super::{Hyperlink, Line, Span, Tone};
 
+/// Link the web addresses of prose, which then looks like a link, and of code,
+/// which keeps its text and style: only the terminal's native link is added.
 pub(crate) fn annotate(line: Line) -> Line {
     let mut result = Vec::new();
     for span in line {
-        if span.hyperlink.is_some() || matches!(span.tone, Tone::Code | Tone::Link) {
+        if span.hyperlink.is_some() || span.tone == Tone::Link {
             crate::content::push(&mut result, span);
+        } else if span.tone == Tone::Code {
+            for part in literal(vec![span]) {
+                crate::content::push(&mut result, part);
+            }
         } else {
             annotate_span(span, &mut result);
         }
@@ -14,28 +22,48 @@ pub(crate) fn annotate(line: Line) -> Line {
     result
 }
 
+/// Link the web addresses of a highlighted code row without changing its text
+/// or style. An address is found in the row's whole text, so syntax colors that
+/// split it into several spans still give every fragment the entire URL.
+pub(crate) fn literal(line: Line) -> Line {
+    let text: String = line.iter().map(|span| span.text.as_str()).collect();
+    let links = find(&text);
+    if links.is_empty() {
+        return line;
+    }
+    let mut result = Vec::new();
+    let mut offset = 0;
+    for span in line {
+        let end = offset + span.text.len();
+        let mut cut = offset;
+        for (range, link) in links
+            .iter()
+            .filter(|(range, _)| range.start < end && range.end > offset)
+        {
+            let start = range.start.max(offset);
+            let stop = range.end.min(end);
+            crate::content::push(&mut result, fragment(&span, &text[cut..start]));
+            let mut linked = fragment(&span, &text[start..stop]);
+            linked.hyperlink = Some(link.clone());
+            crate::content::push(&mut result, linked);
+            cut = stop;
+        }
+        crate::content::push(&mut result, fragment(&span, &text[cut..end]));
+        offset = end;
+    }
+    result
+}
+
 fn annotate_span(span: Span, result: &mut Line) {
     let mut consumed = 0;
-    let mut search = 0;
-    for token in span.text.split_whitespace() {
-        let Some(offset) = span.text[search..].find(token) else {
-            continue;
-        };
-        let start = search + offset;
-        search = start + token.len();
-        let trimmed = token.trim_start_matches(['(', '[', '{', '<', '\'', '"']);
-        let first = start + token.len() - trimmed.len();
-        let last = first + url_end(trimmed);
-        let Some(link) = Hyperlink::new(&span.text[first..last]) else {
-            continue;
-        };
-        crate::content::push(result, fragment(&span, &span.text[consumed..first]));
-        let mut linked = fragment(&span, &span.text[first..last]);
+    for (range, link) in find(&span.text) {
+        crate::content::push(result, fragment(&span, &span.text[consumed..range.start]));
+        let mut linked = fragment(&span, &span.text[range.clone()]);
         linked.hyperlink = Some(link);
         linked.tone = Tone::Link;
         linked.emphasis.underline = true;
         crate::content::push(result, linked);
-        consumed = last;
+        consumed = range.end;
     }
     crate::content::push(
         result,
@@ -44,6 +72,27 @@ fn annotate_span(span: Span, result: &mut Line) {
             ..span
         },
     );
+}
+
+/// The web addresses among the whitespace-separated words of `text`, without
+/// the prose punctuation around them, in order and without overlap.
+fn find(text: &str) -> Vec<(Range<usize>, Hyperlink)> {
+    let mut links = Vec::new();
+    let mut search = 0;
+    for token in text.split_whitespace() {
+        let Some(offset) = text[search..].find(token) else {
+            continue;
+        };
+        let start = search + offset;
+        search = start + token.len();
+        let trimmed = token.trim_start_matches(['(', '[', '{', '<', '\'', '"']);
+        let first = start + token.len() - trimmed.len();
+        let last = first + url_end(trimmed);
+        if let Some(link) = Hyperlink::new(&text[first..last]) {
+            links.push((first..last, link));
+        }
+    }
+    links
 }
 
 fn fragment(span: &Span, text: &str) -> Span {
