@@ -72,13 +72,6 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
         footer::footer(session, cols, sidebar, view.elapsed)
     };
     let attachments = chrome::attachments(view, cols);
-    let activity = if welcome {
-        Vec::new()
-    } else {
-        chrome::activity(view, cols)
-    };
-    // The rows a notice takes below the activity row.
-    let notice = activity.len().saturating_sub(1);
     let selector_rows = if session.picker.is_some() {
         5
     } else if session.menu.visible {
@@ -86,6 +79,15 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
     } else {
         0
     };
+    let activity = if welcome {
+        Vec::new()
+    } else {
+        // A notice below the activity row leaves the composer one row.
+        let placed = header.len() + footer.len() + 2 + selector_rows + attachments.len();
+        chrome::activity(view, cols, rows.saturating_sub(placed + 1))
+    };
+    // The rows a notice takes below the activity row.
+    let notice = activity.len().saturating_sub(1);
     let fixed = header.len() + footer.len() + 2 + selector_rows + attachments.len() + notice;
     let allocation = allocate(view, &input, rows.saturating_sub(fixed).max(1));
     let available = rows.saturating_sub(

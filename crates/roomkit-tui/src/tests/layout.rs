@@ -239,6 +239,19 @@ fn a_long_notice_follows_the_activity_row_wrapped() {
         .collect();
     assert_eq!(rows.len(), 5, "{rows:#?}");
     assert!(rows[4].trim_end().ends_with('…'), "{rows:#?}");
+
+    // On a short terminal the notice gives way to the composer.
+    for height in 8..=12 {
+        let frame = render::screen(&session, 80, height, &renderers);
+        let text = frame.lines.join("\n");
+        assert!(frame.lines.len() <= usize::from(height), "{text}");
+        let cursor = frame.cursor.map(|(_, row)| row);
+        assert!(
+            cursor.is_some_and(|row| row < height),
+            "{height}: {cursor:?}\n{text}"
+        );
+        assert!(text.contains("word"), "{text}");
+    }
 }
 
 #[test]

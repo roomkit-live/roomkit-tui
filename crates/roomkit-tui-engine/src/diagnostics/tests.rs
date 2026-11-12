@@ -237,6 +237,8 @@ fn only_a_worded_refusal_shows_the_provider_s_words() {
         "the provider's stream failed: private",
         "openai (400): the provider answered HTTP 400:  ",
         "private failure",
+        // A failure worded like an envelope, by no provider the kit has.
+        "tool failed (404): /home/person/private.txt",
     ] {
         let diagnostic = super::Diagnostic::classify(raw);
         assert_eq!(super::explain(raw), diagnostic.summary, "{raw}");
@@ -269,6 +271,44 @@ fn the_provider_s_words_are_bounded_and_keep_no_key() {
         "{words}"
     );
     assert!(words.starts_with("word word"));
+}
+
+/// What a refusal names stays readable: a model ID, a link's path. A
+/// key-like run is masked alone, after `=`, in a link's query or in a token.
+#[test]
+fn the_provider_s_words_mask_keys_and_keep_names() {
+    for (said, shown) in [
+        (
+            "model: claude-3-5-sonnet-20241022 not found",
+            "model: claude-3-5-sonnet-20241022 not found",
+        ),
+        (
+            "Qwen/Qwen3-235B-A22B-Instruct-2507 is not served",
+            "Qwen/Qwen3-235B-A22B-Instruct-2507 is not served",
+        ),
+        (
+            "Select Global at https://opencode.ai/console/org_01M73ERKEHA617MYCY0SPPH0RK/settings",
+            "Select Global at https://opencode.ai/console/org_01M73ERKEHA617MYCY0SPPH0RK/settings",
+        ),
+        (
+            "api_key=sk-proj-Ab3dEf0123456789aBcDeF0123456789 is invalid",
+            "api_key=[redacted] is invalid",
+        ),
+        (
+            "see https://x.example/v1?key=AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUv",
+            "see https://x.example/v1?key=[redacted]",
+        ),
+        (
+            "request 123e4567-e89b-12d3-a456-426614174000 failed",
+            "request 123e4567-e89b-12d3-a456-426614174000 failed",
+        ),
+    ] {
+        let told = super::explain(&format!("anthropic (400): {said}"));
+        assert!(
+            told.ends_with(&format!("\nProvider says: {shown}")),
+            "{told}"
+        );
+    }
 }
 
 #[test]

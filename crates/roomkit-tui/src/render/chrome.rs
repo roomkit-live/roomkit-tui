@@ -73,9 +73,10 @@ const NOTICE_ROWS: usize = 5;
 
 /// The activity row, with the notice beside the status when it fits there on
 /// one line; otherwise the notice follows on rows of its own, wrapped at
-/// words, at most [`NOTICE_ROWS`]: a provider's refusal says on a second
-/// line what to change.
-pub(super) fn activity(view: &View<'_>, cols: usize) -> Vec<Line> {
+/// words, at most [`NOTICE_ROWS`] and `room`, the rows the screen leaves it:
+/// a provider's refusal says on a second line what to change. Without room,
+/// the notice stays beside the status, cut at the screen's edge.
+pub(super) fn activity(view: &View<'_>, cols: usize, room: usize) -> Vec<Line> {
     let mut row = status(view);
     let notice = view.session.notice.as_str();
     if notice.is_empty() {
@@ -83,22 +84,23 @@ pub(super) fn activity(view: &View<'_>, cols: usize) -> Vec<Line> {
     }
     let beside = format!(" · {notice}");
     let used: usize = row.iter().map(|span| columns(&span.text)).sum();
-    if !notice.contains('\n') && used + columns(&beside) <= cols {
+    let fits = !notice.contains('\n') && used + columns(&beside) <= cols;
+    if fits || room == 0 {
         row.push(span(beside, Tone::Muted));
         return vec![row];
     }
     let mut rows = vec![row];
-    rows.extend(notice_rows(notice, cols));
+    rows.extend(notice_rows(notice, cols, room.min(NOTICE_ROWS)));
     rows
 }
 
-/// `notice` wrapped at words below the activity row, at most
-/// [`NOTICE_ROWS`], the last one ending in `…` when more is left out.
-fn notice_rows(notice: &str, cols: usize) -> Vec<Line> {
+/// `notice` wrapped at words below the activity row, at most `most` rows,
+/// the last one ending in `…` when more is left out.
+fn notice_rows(notice: &str, cols: usize, most: usize) -> Vec<Line> {
     let width = cols.saturating_sub(1);
     let mut wrapped = wrap_words(notice, width);
-    if wrapped.len() > NOTICE_ROWS {
-        wrapped.truncate(NOTICE_ROWS);
+    if wrapped.len() > most {
+        wrapped.truncate(most);
         if let Some(last) = wrapped.last_mut() {
             *last = format!("{}…", fit(last, width.saturating_sub(1)));
         }
