@@ -209,8 +209,7 @@ impl View {
                     .stdout
                     .write_all(clipboard_sequence(&text).as_bytes())?;
                 self.terminal.stdout.flush()?;
-                self.session.notice =
-                    "Copy requested · clipboard access is controlled by your terminal".into();
+                self.session.confirm_copy();
             }
             Ok(None) => {}
             Err(message) => self.session.notice = message.into(),

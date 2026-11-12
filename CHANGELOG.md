@@ -133,6 +133,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A web address in a notice, such as the settings page a provider's refusal
+  names, carries a native link on every row it wraps onto, so Cmd-click or
+  Ctrl-click opens the complete URL. Copying a notice with the mouse no longer
+  replaces it with the copy confirmation.
+
 - Resuming or opening a conversation restores input recall from its saved local
   messages. Recall no longer mixes conversations or turns a saved message into
   a command when it begins with an action prefix.

@@ -10,6 +10,7 @@ AUTH = (b"https://example.com/authorize?state=" + b"x" * 240
         + b"&scope=openid+profile&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fcallback")
 INLINE = b"https://example.com/inline?token=" + b"i" * 150
 BLOCK = b"https://example.com/block?state=" + b"b" * 150 + b"&scope=openid+profile"
+NOTICE = b"https://example.com/console/" + b"n" * 60 + b"/settings/privacy#regions"
 
 
 def links(output):
@@ -63,7 +64,27 @@ with Terminal([binary("link-host")], rows=30, cols=100) as terminal:
         require(len(fragments) > 1, f"The code URL {url[:30]!r} did not wrap into linked rows")
         require(all(text and text in url for text in fragments),
                 f"A linked code fragment is not part of {url[:30]!r}")
+    # A notice wraps below the activity row: each row links the entire URL,
+    # and copying the notice with the mouse leaves it on screen.
+    offset = len(terminal.output)
+    terminal.send(b"/notice\r")
+    terminal.wait_for(b"use it.", after=offset)
+    destination(terminal, NOTICE, offset)
+    fragments = {text for target, text in links(terminal.output[offset:]) if target == NOTICE}
+    require(len(fragments) > 1, "The notice URL did not wrap into linked rows")
+    require(all(text and text in NOTICE for text in fragments),
+            "A linked notice fragment is not part of its URL")
+    row = 1 + next(index for index, text in enumerate(terminal.screen.text().split("\n"))
+                   if "Select Global" in text)
+    offset = len(terminal.output)
+    terminal.mouse(0, 2, row)
+    terminal.mouse(32, 30, row + 1)
+    terminal.mouse(0, 30, row + 1, release=True)
+    terminal.wait_for(b"\x1b]52;c;", after=offset)
+    terminal.send(b"\x1b")
+    terminal.pump(0.5)
+    require("Select Global" in terminal.screen.text(), "Copying the notice removed it")
     terminal.send(b"\x04")
     terminal.exited()
 
-print("Link PTY passed: Markdown labels, bare URLs, code, wrapped form links, mouse capture, resize and selection retain exact native destinations.")
+print("Link PTY passed: Markdown labels, bare URLs, code, notices, wrapped form links, mouse capture, resize and selection retain exact native destinations; a copied notice stays.")

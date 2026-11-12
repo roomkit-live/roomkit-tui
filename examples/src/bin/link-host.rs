@@ -26,6 +26,9 @@ fn serve(host: &Host) {
     snapshot
         .commands
         .push(CommandSpec::new("code", "Show web addresses in code"));
+    snapshot
+        .commands
+        .push(CommandSpec::new("notice", "Show a web address in a notice"));
     snapshot.items.push(Item::Message(Message::new(
         "message", "agent",
         format!("[Open guide](https://example.com/guide?view=full&lang=en)\n\nBare https://example.com/~person/guide_(terminal).\n\n{instructions}\n\nUse /connect to open the form."),
@@ -45,6 +48,18 @@ fn serve(host: &Host) {
             drop(host.try_send(Event::Item {
                 conversation: "room".into(),
                 item: Item::Message(Message::new("code", "agent", code_links())),
+            }));
+        }
+        // A provider's refusal names the settings page to open: an address
+        // longer than a row, below the activity row.
+        if matches!(request.command, Command::Invoke { ref name, .. } if name == "notice") {
+            let url = format!(
+                "https://example.com/console/{}/settings/privacy#regions",
+                "n".repeat(60)
+            );
+            drop(host.try_send(Event::Notice {
+                conversation: "room".into(),
+                text: format!("Select Global at {url} to use it."),
             }));
         }
         if matches!(request.command, Command::Invoke { ref name, .. } if name == "connect") {

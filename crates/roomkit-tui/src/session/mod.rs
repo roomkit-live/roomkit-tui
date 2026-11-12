@@ -44,6 +44,9 @@ type ToolKey = (ActorId, RunId, CallId);
 /// composer, or a click aimed elsewhere, never answer a request unseen.
 pub const APPROVAL_ARMING_DELAY: Duration = Duration::from_millis(500);
 
+/// The notice confirming that the terminal was asked to copy a selection.
+const COPY_REQUESTED: &str = "Copy requested · clipboard access is controlled by your terminal";
+
 #[derive(Debug)]
 struct ObservedRun {
     id: RunId,
@@ -320,6 +323,14 @@ impl Session {
     /// The current bounded, user-visible diagnostic; empty when there is none.
     pub fn notice(&self) -> &str {
         &self.notice
+    }
+
+    /// Confirm a copy request on a free notice line. Another notice stays:
+    /// the text copied is often that notice, such as a provider's refusal.
+    pub(crate) fn confirm_copy(&mut self) {
+        if self.notice.is_empty() {
+            self.notice = COPY_REQUESTED.into();
+        }
     }
 
     /// The composer's text.

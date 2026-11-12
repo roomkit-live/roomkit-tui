@@ -254,6 +254,90 @@ fn a_long_notice_follows_the_activity_row_wrapped() {
     }
 }
 
+/// A web address in a notice carries its whole destination on every row it
+/// wraps onto, and on the row that `…` cuts: without it, a terminal or
+/// multiplexer detects the address on the clicked row only, and opens a cut
+/// link.
+#[test]
+fn a_notice_links_its_web_address_on_every_wrapped_row() {
+    let renderers = Renderers::default();
+    let url = "https://opencode.ai/console/org_01M73ERKEHA617MYCY0SPPH0RK/settings/privacy#regions";
+    // The texts of the linked fragments at `width`, each linking all of `url`.
+    let linked = |session: &Session, width| {
+        let frame = render::screen(session, width, 24, &renderers);
+        let spans: Vec<_> = frame
+            .spans
+            .into_iter()
+            .flatten()
+            .filter(|span| span.hyperlink.is_some())
+            .collect();
+        assert!(
+            spans
+                .iter()
+                .all(|span| span.hyperlink.as_ref().unwrap().url() == url),
+            "{spans:#?}"
+        );
+        spans.into_iter().map(|span| span.text).collect::<Vec<_>>()
+    };
+    let mut session = session();
+    session.notice = format!("Provider says: Select Global at {url} to use it.");
+    let shown = linked(&session, 60);
+    assert!(shown.len() > 1, "the address wraps at 60: {shown:?}");
+    assert_eq!(shown.concat(), url);
+    assert_eq!(linked(&session, 100).concat(), url);
+
+    // The whole refusal needs more rows than a notice takes at 60 columns:
+    // the address, cut by `…`, still opens entirely.
+    session.notice = format!(
+        "Provider rejected the request format or parameters. Check model and tool-calling \
+         support.\nProvider says: This OpenCode Go model is hosted outside Europe and the \
+         United States. Select Global at {url} to use it."
+    );
+    let shown = linked(&session, 60).concat();
+    assert!(
+        !shown.is_empty() && shown.len() < url.len() && url.starts_with(&shown),
+        "{shown}"
+    );
+    let frame = render::screen(&session, 60, 24, &renderers);
+    let cut = frame
+        .lines
+        .iter()
+        .find(|line| line.contains(&shown))
+        .unwrap();
+    assert!(cut.trim_end().ends_with('…'), "{cut}");
+
+    session.notice = "Read https://example.com/guide".into();
+    let frame = render::screen(&session, 100, 24, &renderers);
+    assert!(
+        frame
+            .lines
+            .iter()
+            .any(|line| line.ends_with("· Read https://example.com/guide"))
+    );
+    assert!(frame.spans.iter().flatten().any(|span| {
+        span.text == "https://example.com/guide"
+            && span.hyperlink.as_ref().map(|link| link.url()) == Some("https://example.com/guide")
+    }));
+}
+
+/// Copying keeps the notice on screen: the text copied is often that
+/// notice, such as a provider's refusal. The copy is confirmed only on a free
+/// notice line.
+#[test]
+fn copying_keeps_the_notice_it_copies() {
+    let mut session = session();
+    session.notice = "Provider says: select Global".into();
+    session.confirm_copy();
+    assert_eq!(session.notice(), "Provider says: select Global");
+
+    session.notice.clear();
+    session.confirm_copy();
+    let confirmation = session.notice().to_owned();
+    assert!(confirmation.starts_with("Copy requested"), "{confirmation}");
+    session.confirm_copy();
+    assert_eq!(session.notice(), confirmation);
+}
+
 #[test]
 fn markdown_view_preserves_source_and_can_be_disabled_by_the_host() {
     let mut session = session();

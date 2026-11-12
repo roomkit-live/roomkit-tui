@@ -4,8 +4,8 @@
 use roomkit_tui_protocol::RunOutcome;
 use unicode_width::UnicodeWidthStr;
 
-use super::text::{columns, fit, format_duration, pad, wrap_words};
-use super::{BackToBottomTarget, Line, Tone, View, frame, line, span, spinner};
+use super::text::{columns, fit, format_duration, pad};
+use super::{BackToBottomTarget, Line, Tone, View, frame, line, link_text, span, spinner};
 use crate::LogoTile;
 /// A logo row's colored pieces, when they spell `written`, the row as the
 /// application set it: a row written after its pieces is drawn as text.
@@ -86,7 +86,7 @@ pub(super) fn activity(view: &View<'_>, cols: usize, room: usize) -> Vec<Line> {
     let used: usize = row.iter().map(|span| columns(&span.text)).sum();
     let fits = !notice.contains('\n') && used + columns(&beside) <= cols;
     if fits || room == 0 {
-        row.push(span(beside, Tone::Muted));
+        row.extend(link_text(vec![span(beside, Tone::Muted)]));
         return vec![row];
     }
     let mut rows = vec![row];
@@ -95,19 +95,24 @@ pub(super) fn activity(view: &View<'_>, cols: usize, room: usize) -> Vec<Line> {
 }
 
 /// `notice` wrapped at words below the activity row, at most `most` rows,
-/// the last one ending in `…` when more is left out.
+/// the last one ending in `…` when more is left out. A web address carries
+/// its whole destination on every row it wraps onto, so that a terminal
+/// opens all of it from any of them.
 fn notice_rows(notice: &str, cols: usize, most: usize) -> Vec<Line> {
     let width = cols.saturating_sub(1);
-    let mut wrapped = wrap_words(notice, width);
+    let linked = link_text(vec![span(notice, Tone::Muted)]);
+    let mut wrapped = crate::content::wrap(&[linked], width, true);
     if wrapped.len() > most {
         wrapped.truncate(most);
         if let Some(last) = wrapped.last_mut() {
-            *last = format!("{}…", fit(last, width.saturating_sub(1)));
+            let kept = frame(vec![std::mem::take(last)], width.saturating_sub(1), None);
+            *last = kept.spans.into_iter().next().unwrap_or_default();
+            last.push(span("…", Tone::Muted));
         }
     }
     wrapped
         .into_iter()
-        .map(|text| line(format!(" {text}"), Tone::Muted))
+        .map(|row| [vec![span(" ", Tone::Muted)], row].concat())
         .collect()
 }
 

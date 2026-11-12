@@ -320,7 +320,8 @@ below the interface.
 The default `SelectionMode::CopyOnSelect` enables tool clicks and captures
 visible text drags, sending an OSC 52 clipboard request on release, subject to
 terminal support and permissions (including across SSH or multiplexers). A copy
-request is not reported as confirmed clipboard success. A selection started on
+request is not reported as confirmed clipboard success; its confirmation never
+replaces a notice on screen, which is often the text copied. A selection started on
 the conversation's history scrolls it while the button is held, by the wheel or
 by holding the pointer above or below the history, and copies lines no longer
 on screen; once copied it stays highlighted and moves with its text. Any other
