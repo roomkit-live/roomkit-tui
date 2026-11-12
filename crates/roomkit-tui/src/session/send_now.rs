@@ -61,7 +61,7 @@ impl Session {
     }
 
     fn holds(&self, waiting: &Waiting) -> bool {
-        waiting.text == self.editor.text()
+        waiting.text == self.editor.expanded()
             && waiting.restored == self.editor.is_restored_input()
             && waiting.images == self.images
     }
@@ -81,7 +81,7 @@ impl Session {
             return Err(SessionError::NotInterruptible);
         }
         self.waiting = Some(Waiting {
-            text: self.editor.text().to_owned(),
+            text: self.editor.expanded(),
             restored: self.editor.is_restored_input(),
             images: self.images.clone(),
             answers,
@@ -190,7 +190,7 @@ impl Session {
     pub(crate) fn sent_waited(&mut self, id: RequestId) {
         self.flight = Some(Flight {
             request: id,
-            text: self.editor.text().to_owned(),
+            text: self.editor.expanded(),
             restored: self.editor.is_restored_input(),
         });
     }
@@ -246,7 +246,7 @@ impl Session {
             self.handed_answered_by_their_own_turn();
         }
         self.notice.clear();
-        if self.editor.text() == sent.text
+        if self.editor.expanded() == sent.text
             && self.editor.is_restored_input() == sent.restored
             && self.images.is_empty()
         {

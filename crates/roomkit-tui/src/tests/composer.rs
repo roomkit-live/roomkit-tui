@@ -38,6 +38,32 @@ fn unicode_editing_keeps_graphemes_intact_and_paste_does_not_submit() {
     assert!(editor.text().is_empty());
 }
 
+/// Review of the pasted blocks: an accent typed after a block merges with its
+/// `]`, yet Left and Backspace still take the block whole. A deleted block is
+/// forgotten: its label typed again stays as typed, and numbering restarts
+/// once no block is left.
+#[test]
+fn a_pasted_block_stays_whole_beside_an_accent_and_is_forgotten_once_deleted() {
+    let paste = "1\n2\n3";
+    let block = "[Pasted text #1 · 3 lines]";
+    let mut editor = crate::editor::Editor::default();
+    editor.paste(paste);
+    editor.insert("\u{301}");
+    editor.left();
+    assert_eq!(editor.cursor(), 0);
+    editor.end();
+    editor.backspace();
+    assert_eq!(editor.text(), "");
+    editor.insert(block);
+    assert_eq!(editor.expanded(), block);
+
+    editor.set(String::new());
+    editor.paste(paste);
+    editor.backspace();
+    editor.paste(paste);
+    assert_eq!(editor.text(), block);
+}
+
 /// A block of a long paste edits as one character: the cursor moves over it,
 /// Backspace and Delete remove it whole, a vertical move never lands in it,
 /// and history recalls it as a block that still sends the paste.
@@ -82,8 +108,8 @@ fn a_pasted_block_edits_as_one_character_and_history_keeps_it() {
     editor.submitted();
     editor.insert("unsent");
     editor.history_previous();
-    // Numbers are never reused in a draft: two blocks never share a label.
-    assert!(editor.text().ends_with("[Pasted text #2 · 4 lines]"));
+    // The deleted block was forgotten: numbering started again.
+    assert!(editor.text().ends_with("[Pasted text #1 · 4 lines]"));
     assert_eq!(editor.expanded(), format!("first line\n{paste}"));
     editor.history_next();
     assert_eq!(editor.text(), "unsent");

@@ -17,6 +17,9 @@ const BLOCK_CHARS: usize = 500;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Pasted {
     blocks: Vec<Block>,
+    /// The last block's number: never reused while a block is left, so two
+    /// blocks never share a label.
+    numbered: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,12 +41,22 @@ impl Pasted {
         } else {
             format!("{chars} characters")
         };
-        let label = format!("[Pasted text #{} · {size}]", self.blocks.len() + 1);
+        self.numbered += 1;
+        let label = format!("[Pasted text #{} · {size}]", self.numbered);
         self.blocks.push(Block {
             label: label.clone(),
             text: text.to_owned(),
         });
         Some(label)
+    }
+
+    /// Forget the blocks whose label `text` no longer holds, so that typing
+    /// a deleted block's label gives the label, not the paste.
+    pub fn forget_absent(&mut self, text: &str) {
+        self.blocks.retain(|block| text.contains(&block.label));
+        if self.blocks.is_empty() {
+            self.numbered = 0;
+        }
     }
 
     /// The label in `text` that ends at byte `at`.

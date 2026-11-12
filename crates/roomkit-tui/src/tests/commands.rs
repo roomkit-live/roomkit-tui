@@ -292,6 +292,12 @@ fn composer_actions_are_opt_in_verbatim_and_escapable() {
     assert!(
         matches!(session.input_command().unwrap(), Command::Submit { text, .. } if text == "!literal")
     );
+    // Only a typed `\` escapes: a long paste that starts with one keeps it.
+    session.set_draft(String::new());
+    session.paste("\\!literal\nsecond\nthird");
+    assert!(
+        matches!(session.input_command().unwrap(), Command::Submit { text, .. } if text == "\\!literal\nsecond\nthird")
+    );
     session.set_draft("!  \n");
     assert!(session.input_command().is_err());
     let mut bad = snapshot();

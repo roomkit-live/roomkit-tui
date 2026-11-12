@@ -107,6 +107,10 @@ impl Editor {
             .take_while(|i| *i < self.cursor)
             .last()
             .unwrap_or(0);
+        // A mark typed after a block merges with its `]`: step over it whole.
+        if let Some(block) = self.pasted.around(&self.text, self.cursor) {
+            self.cursor = block.start;
+        }
     }
 
     /// Move one grapheme right, or over a block.
@@ -122,6 +126,9 @@ impl Editor {
             .map(|(i, _)| i)
             .find(|i| *i > self.cursor)
             .unwrap_or(self.text.len());
+        if let Some(block) = self.pasted.around(&self.text, self.cursor) {
+            self.cursor = block.end;
+        }
     }
 
     /// Move to the start of the current line.
@@ -189,6 +196,7 @@ impl Editor {
         let end = self.cursor;
         self.left();
         self.text.replace_range(self.cursor..end, "");
+        self.pasted.forget_absent(&self.text);
         self.align_cursor();
     }
 
@@ -198,6 +206,7 @@ impl Editor {
         self.right();
         self.text.replace_range(start..self.cursor, "");
         self.cursor = start;
+        self.pasted.forget_absent(&self.text);
         self.align_cursor();
     }
 

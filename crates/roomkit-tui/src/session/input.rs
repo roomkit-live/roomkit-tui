@@ -207,7 +207,8 @@ impl Session {
     /// without the `\\` that keeps an input action's prefix literal.
     fn unescaped_draft(&self) -> String {
         let text = self.editor.expanded();
-        if self.editor.is_restored_input() {
+        // Only a typed `\\` escapes, never one a paste starts with.
+        if self.editor.is_restored_input() || !self.editor.text().starts_with('\\') {
             return text;
         }
         let unescaped = text

@@ -121,6 +121,27 @@ fn waiting_idle() -> (Session, Client, Host) {
     (session, client, host)
 }
 
+/// Review of the pasted blocks: numbering restarts with each draft, so a
+/// recalled message can show the waiting draft's label for another paste.
+/// The wait holds the draft by what it sends, not by its labels.
+#[test]
+fn a_recalled_paste_under_the_same_label_is_not_the_waiting_draft() {
+    let (mut session, client, host) = working();
+    session.paste("b\nb\nb");
+    session.editor.submitted();
+    started(&mut session);
+    session.paste("a\na\na");
+    ctrl_s(&mut session, &client);
+    assert_eq!(host.try_recv().unwrap().command, interrupt());
+    assert!(session.sends_after_interruption());
+    session.editor.history_previous();
+    assert_eq!(session.draft(), "[Pasted text #1 · 3 lines]");
+    assert!(
+        !session.sends_after_interruption(),
+        "The recalled paste would leave in place of the waiting one"
+    );
+}
+
 #[test]
 fn ctrl_s_during_a_turn_cuts_it_and_sends_the_draft_once_it_stopped() {
     for send_now in [ctrl(KeyCode::Char('s')), ctrl(KeyCode::Enter)] {
