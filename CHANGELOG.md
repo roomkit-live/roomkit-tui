@@ -98,6 +98,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A provider's refusal (HTTP 4xx) shows the provider's own words below its
+  explanation, within 300 characters and any key masked: OpenCode Go's "hosted
+  outside Europe and the United States, select Global" read only as "rejected
+  the request format or parameters". A notice too long for the activity row
+  follows it on up to five wrapped rows instead of being cut.
 - The engine follows roomkit-rs ee5d724, whose channel, hook and AI APIs it uses
   unchanged (RMK-1460).
 - The engine follows roomkit-rs c30375c, whose channel, hook and AI APIs it uses

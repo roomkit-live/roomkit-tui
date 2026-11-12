@@ -72,6 +72,13 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
         footer::footer(session, cols, sidebar, view.elapsed)
     };
     let attachments = chrome::attachments(view, cols);
+    let activity = if welcome {
+        Vec::new()
+    } else {
+        chrome::activity(view, cols)
+    };
+    // The rows a notice takes below the activity row.
+    let notice = activity.len().saturating_sub(1);
     let selector_rows = if session.picker.is_some() {
         5
     } else if session.menu.visible {
@@ -79,7 +86,7 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
     } else {
         0
     };
-    let fixed = header.len() + footer.len() + 2 + selector_rows + attachments.len();
+    let fixed = header.len() + footer.len() + 2 + selector_rows + attachments.len() + notice;
     let allocation = allocate(view, &input, rows.saturating_sub(fixed).max(1));
     let available = rows.saturating_sub(
         header.len()
@@ -88,12 +95,13 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
             + 1
             + allocation.gap
             + 2 * allocation.padding
-            + attachments.len(),
+            + attachments.len()
+            + notice,
     );
     let mut bottom = selector(view, cols, available);
     let activity_row = bottom.len();
     if !welcome {
-        bottom.push(chrome::activity(view));
+        bottom.extend(activity);
         bottom.extend((0..allocation.gap).map(|_| Vec::new()));
     }
     bottom.extend(attachments);

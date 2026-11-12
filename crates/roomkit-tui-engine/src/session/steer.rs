@@ -151,7 +151,7 @@ impl<S: ConversationStore> Steer<S> {
         let outcome = match self.kit.process_inbound(message, options).await {
             Ok(admitted) => self.settle(admitted).await,
             Err(error) => {
-                self.notice(crate::diagnostics::explain(&error.to_string()));
+                self.notice(&crate::diagnostics::explain(&error.to_string()));
                 TurnOutcome::Failed
             }
         };
@@ -196,7 +196,7 @@ impl<S: ConversationStore> Steer<S> {
         };
         match failure {
             Some(failure) => {
-                self.notice(crate::diagnostics::explain(&failure));
+                self.notice(&crate::diagnostics::explain(&failure));
                 TurnOutcome::Failed
             }
             None if interrupted => TurnOutcome::Interrupted,

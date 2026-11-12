@@ -125,7 +125,7 @@ struct Turn<S: ConversationStore> {
 /// How a delivery ended, before the host's lifecycle is told.
 struct Delivered {
     outcome: RunOutcome,
-    failure: Option<&'static str>,
+    failure: Option<String>,
     /// The run's stream already told the failure to the views.
     failure_told: bool,
     blocked: bool,
@@ -169,14 +169,18 @@ impl<S: ConversationStore> Turn<S> {
             }
         }
         let delivered = self.deliver(content).await;
-        if let Some(text) = delivered.failure.filter(|_| !delivered.failure_told) {
+        if let Some(text) = delivered
+            .failure
+            .as_deref()
+            .filter(|_| !delivered.failure_told)
+        {
             self.notice(text);
         }
         let stored = crate::approval_history::persist(&self.kit, &self.channel, &self.config).await;
         if stored.is_err() {
             self.notice("Decision accepted, but its history could not be saved. This does not change tool execution.");
         }
-        let outcome = match delivered.failure {
+        let outcome = match &delivered.failure {
             Some(_) => RunOutcome::Failed,
             None => delivered.outcome,
         };
@@ -275,10 +279,11 @@ impl<S: ConversationStore> Turn<S> {
         if let Some(error) = &admitted.error {
             failure = Some(self.failed(run.as_ref(), &error.message));
         } else if admitted.blocked {
-            failure =
-                Some("The engine blocked this message. Check the room state and host policy.");
+            failure = Some(
+                "The engine blocked this message. Check the room state and host policy.".into(),
+            );
         } else if cancelled.is_some() && outcome != RunOutcome::Interrupted {
-            failure = Some("Execution cancelled. Completed tool actions are retained.");
+            failure = Some("Execution cancelled. Completed tool actions are retained.".into());
         }
         if failure.is_some() {
             outcome = RunOutcome::Failed;
@@ -304,7 +309,7 @@ impl<S: ConversationStore> Turn<S> {
     /// Explain `error`. A refusal past the model's context window is also
     /// told with its `run`, before the run ends; a streamed run tells it from
     /// its stream.
-    fn failed(&self, run: Option<&RunId>, error: &str) -> &'static str {
+    fn failed(&self, run: Option<&RunId>, error: &str) -> String {
         let diagnostic = crate::diagnostics::Diagnostic::classify(error);
         if diagnostic.exceeds_context()
             && !self.channel.streams()
@@ -316,7 +321,7 @@ impl<S: ConversationStore> Turn<S> {
             self.channel
                 .publish(room, Event::ContextExceeded { conversation, run });
         }
-        diagnostic.summary
+        crate::diagnostics::told(&diagnostic, error)
     }
 }
 

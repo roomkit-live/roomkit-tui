@@ -195,6 +195,52 @@ fn history_return_control_stays_visible_and_preserves_the_draft() {
     assert!(session.tool_expanded(&"agent".into(), &"run-6".into(), &"call-1".into()));
 }
 
+/// A notice that fits stays beside the status; a longer one, or one on two
+/// lines (a provider's refusal, then its words), follows the activity row
+/// wrapped, within a few rows, instead of being cut at the screen's edge.
+#[test]
+fn a_long_notice_follows_the_activity_row_wrapped() {
+    let renderers = Renderers::default();
+    let mut session = session();
+    session.notice = "Saved".into();
+    let frame = render::screen(&session, 100, 24, &renderers);
+    assert!(frame.lines.iter().any(|line| line.ends_with("· Saved")));
+
+    session.notice = "Provider rejected the request format or parameters. Check model and \
+        tool-calling support.\nProvider says: This OpenCode Go model is hosted outside Europe \
+        and the United States. Select Global at \
+        https://opencode.ai/console/org_01ABC/settings/privacy#regions to use it."
+        .into();
+    for width in [100, 80] {
+        let frame = render::screen(&session, width, 24, &renderers);
+        let text = frame.lines.join("\n");
+        for shown in [
+            "tool-calling support.",
+            "Provider says: This OpenCode Go model",
+            "https://opencode.ai/console/org_01ABC/settings/privacy#regions",
+            "to use it.",
+        ] {
+            assert!(text.contains(shown), "{shown} at {width}:\n{text}");
+        }
+        assert!(
+            frame
+                .lines
+                .iter()
+                .all(|line| line.width() <= usize::from(width))
+        );
+    }
+
+    session.notice = "word ".repeat(200);
+    let frame = render::screen(&session, 80, 24, &renderers);
+    let rows: Vec<_> = frame
+        .lines
+        .iter()
+        .filter(|line| line.contains("word"))
+        .collect();
+    assert_eq!(rows.len(), 5, "{rows:#?}");
+    assert!(rows[4].trim_end().ends_with('…'), "{rows:#?}");
+}
+
 #[test]
 fn markdown_view_preserves_source_and_can_be_disabled_by_the_host() {
     let mut session = session();

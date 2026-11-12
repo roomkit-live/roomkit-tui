@@ -1,8 +1,11 @@
 mod provider;
+mod words;
 
 /// Classify known engine/provider failures without forwarding arbitrary error
 /// bodies, URLs, prompts or credentials to a client.
 /// A bounded, safe explanation that never contains the provider's raw payload.
+/// A view shows it with the words of a provider's refusal (HTTP 4xx), bounded
+/// and with any key masked: see `explain`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Diagnostic {
@@ -184,8 +187,19 @@ fn reads_as_context_overflow(lower: &str) -> bool {
     lower.contains("context too large") || roomkit_ai::is_context_overflow_message(lower)
 }
 
-pub(crate) fn explain(error: &str) -> &'static str {
-    Diagnostic::classify(error).summary
+/// What a view shows for `error`: its diagnostic's summary, with the words
+/// a provider refused the request with below it.
+pub(crate) fn explain(error: &str) -> String {
+    told(&Diagnostic::classify(error), error)
+}
+
+/// `diagnostic`'s summary for `error`, with the words a provider refused the
+/// request with below it.
+pub(crate) fn told(diagnostic: &Diagnostic, error: &str) -> String {
+    match words::says(error, diagnostic.http_status) {
+        Some(words) => format!("{}\nProvider says: {words}", diagnostic.summary),
+        None => diagnostic.summary.to_owned(),
+    }
 }
 
 #[cfg(test)]

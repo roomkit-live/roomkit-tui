@@ -285,7 +285,7 @@ impl<'a> Reader<'a> {
     fn fail(&mut self, error: &str) {
         self.outcome = RunOutcome::Failed;
         let diagnostic = crate::diagnostics::Diagnostic::classify(error);
-        self.notice(diagnostic.summary);
+        self.notice(&crate::diagnostics::told(&diagnostic, error));
         self.channel.failure_told(self.room, self.run);
         if diagnostic.exceeds_context() {
             self.publish(Event::ContextExceeded {

@@ -4,7 +4,7 @@
 use roomkit_tui_protocol::RunOutcome;
 use unicode_width::UnicodeWidthStr;
 
-use super::text::{fit, format_duration, pad};
+use super::text::{columns, fit, format_duration, pad, wrap_words};
 use super::{BackToBottomTarget, Line, Tone, View, frame, line, span, spinner};
 use crate::LogoTile;
 /// A logo row's colored pieces, when they spell `written`, the row as the
@@ -68,7 +68,49 @@ pub(super) fn header(view: &View<'_>, cols: usize, rows: usize) -> Vec<Line> {
     lines
 }
 
-pub(super) fn activity(view: &View<'_>) -> Line {
+/// The most rows a notice takes below the activity row.
+const NOTICE_ROWS: usize = 5;
+
+/// The activity row, with the notice beside the status when it fits there on
+/// one line; otherwise the notice follows on rows of its own, wrapped at
+/// words, at most [`NOTICE_ROWS`]: a provider's refusal says on a second
+/// line what to change.
+pub(super) fn activity(view: &View<'_>, cols: usize) -> Vec<Line> {
+    let mut row = status(view);
+    let notice = view.session.notice.as_str();
+    if notice.is_empty() {
+        return vec![row];
+    }
+    let beside = format!(" · {notice}");
+    let used: usize = row.iter().map(|span| columns(&span.text)).sum();
+    if !notice.contains('\n') && used + columns(&beside) <= cols {
+        row.push(span(beside, Tone::Muted));
+        return vec![row];
+    }
+    let mut rows = vec![row];
+    rows.extend(notice_rows(notice, cols));
+    rows
+}
+
+/// `notice` wrapped at words below the activity row, at most
+/// [`NOTICE_ROWS`], the last one ending in `…` when more is left out.
+fn notice_rows(notice: &str, cols: usize) -> Vec<Line> {
+    let width = cols.saturating_sub(1);
+    let mut wrapped = wrap_words(notice, width);
+    if wrapped.len() > NOTICE_ROWS {
+        wrapped.truncate(NOTICE_ROWS);
+        if let Some(last) = wrapped.last_mut() {
+            *last = format!("{}…", fit(last, width.saturating_sub(1)));
+        }
+    }
+    wrapped
+        .into_iter()
+        .map(|text| line(format!(" {text}"), Tone::Muted))
+        .collect()
+}
+
+/// The status of the run: working, stopping or how it ended, and for how long.
+fn status(view: &View<'_>) -> Line {
     let session = view.session;
     let (text, tone) = if session.interrupting() {
         let spinner = spinner(view.options, view.elapsed);
@@ -98,9 +140,6 @@ pub(super) fn activity(view: &View<'_>) -> Line {
             |duration| format_duration(duration, finished),
         );
         row.push(span(format!(" · {duration}"), Tone::Muted));
-    }
-    if !session.notice.is_empty() {
-        row.push(span(format!(" · {}", session.notice), Tone::Muted));
     }
     row
 }

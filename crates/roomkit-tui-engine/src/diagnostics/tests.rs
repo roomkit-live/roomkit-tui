@@ -5,8 +5,11 @@ fn diagnostics_explain_failures_without_echoing_private_provider_text() {
             "the completion request failed: operation timed out https://private.invalid/?key=secret",
             "timed out",
         ),
-        ("the provider answered HTTP 401: secret", "access denied"),
-        ("the provider answered HTTP 429: secret", "quota"),
+        ("the provider answered HTTP 503: secret", "server failed"),
+        (
+            "openai (500): the provider's stream failed: secret",
+            "server failed",
+        ),
         ("HTTP 400 maximum context length secret", "context limit"),
         ("private failure secret", "Engine execution failed"),
         (
@@ -188,6 +191,84 @@ fn a_chatgpt_usage_limit_explains_the_plan_or_app_limit() {
         assert!(!diagnostic.exceeds_context());
         assert!(!diagnostic.summary.contains("private account details"));
     }
+}
+
+/// The fallback for a 400 no rule knows.
+const REJECTED: &str =
+    "Provider rejected the request format or parameters. Check model and tool-calling support.";
+
+/// A refusal (HTTP 4xx) shows the words the provider gave it below the
+/// summary: OpenCode Go refuses a model the organization's region setting
+/// excludes, which no summary names (2026-11-12).
+#[test]
+fn a_provider_refusal_shows_the_provider_s_words() {
+    let words = "This OpenCode Go model is hosted outside Europe and the United States. \
+        Select Global at https://opencode.ai/console/org_01ABC/settings/privacy#regions to use it.";
+    for raw in [
+        format!("openai (400): the provider answered HTTP 400 (invalid_request_error): {words}"),
+        format!("the provider answered HTTP 400: {words}"),
+        format!("openai (400): the provider's stream failed: {words}"),
+        format!("openai (400): the provider answered with an error: {words}"),
+        format!("provider failed: anthropic (400): {words}"),
+    ] {
+        assert_eq!(
+            super::explain(&raw),
+            format!("{REJECTED}\nProvider says: {words}"),
+            "{raw}"
+        );
+    }
+    let told = super::explain("openai (403): the provider answered HTTP 403: Model not allowed");
+    assert!(
+        told.starts_with("Provider access denied.")
+            && told.ends_with("\nProvider says: Model not allowed"),
+        "{told}"
+    );
+}
+
+/// A server failure, a status without the provider's words, or a failure
+/// with no status shows the summary alone.
+#[test]
+fn only_a_worded_refusal_shows_the_provider_s_words() {
+    for raw in [
+        "the provider answered HTTP 503: private",
+        "openai (500): the provider answered HTTP 500: private",
+        "HTTP 400 maximum context length private",
+        "HTTP 429: private",
+        "the provider's stream failed: private",
+        "openai (400): the provider answered HTTP 400:  ",
+        "private failure",
+    ] {
+        let diagnostic = super::Diagnostic::classify(raw);
+        assert_eq!(super::explain(raw), diagnostic.summary, "{raw}");
+    }
+}
+
+/// The provider's words stay within 300 characters, and a token that
+/// reads as a key is masked, the punctuation around it kept.
+#[test]
+fn the_provider_s_words_are_bounded_and_keep_no_key() {
+    let key = "sk-proj-abcdef0123456789abcdef0123456789";
+    let raw = format!(
+        "openai (401): the provider answered HTTP 401 (invalid_request_error, invalid_api_key): \
+         Incorrect API key provided: {key}. See https://platform.example/account/api-keys."
+    );
+    let told = super::explain(&raw);
+    assert!(
+        told.ends_with(
+            "\nProvider says: Incorrect API key provided: [redacted]. \
+             See https://platform.example/account/api-keys."
+        ),
+        "{told}"
+    );
+
+    let long = "word ".repeat(200);
+    let told = super::explain(&format!("anthropic (400): {long}"));
+    let (_, words) = told.split_once("\nProvider says: ").unwrap_or_default();
+    assert!(
+        words.chars().count() <= 300 && words.ends_with('…'),
+        "{words}"
+    );
+    assert!(words.starts_with("word word"));
 }
 
 #[test]
