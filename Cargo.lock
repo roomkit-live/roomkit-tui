@@ -39,6 +39,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arraydeque"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d902e3d592a523def97af8f317b08ce16b7ab854c1985a0c671e6f15cebc236"
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -97,6 +103,12 @@ dependencies = [
  "tower-layer",
  "tower-service",
 ]
+
+[[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64"
@@ -422,6 +434,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fancy-regex"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a2e16b9a584b602f1e0e5e22c30ca0906786088c27500653e432d086def8b53"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "fax"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -693,7 +716,7 @@ version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddc03d96684f9226b8a787cdb71488417b53ab5ea8fdb1dac946cb9431cc8bff"
 dependencies = [
- "base64",
+ "base64 0.23.1",
  "bytes",
  "futures-channel",
  "futures-util",
@@ -1368,7 +1391,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029"
 dependencies = [
- "base64",
+ "base64 0.23.1",
  "bytes",
  "futures-core",
  "http",
@@ -1415,7 +1438,7 @@ dependencies = [
 [[package]]
 name = "roomkit"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=f110fcccd6f9d08929212dc74c5133dfa3971b85#f110fcccd6f9d08929212dc74c5133dfa3971b85"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93b5fa1b046fa416953b3870119b8ac1562c3e6e#93b5fa1b046fa416953b3870119b8ac1562c3e6e"
 dependencies = [
  "futures-core",
  "getrandom 0.4.3",
@@ -1424,6 +1447,7 @@ dependencies = [
  "scrypt",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tracing",
@@ -1433,13 +1457,17 @@ dependencies = [
 [[package]]
 name = "roomkit-ai"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=f110fcccd6f9d08929212dc74c5133dfa3971b85#f110fcccd6f9d08929212dc74c5133dfa3971b85"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93b5fa1b046fa416953b3870119b8ac1562c3e6e#93b5fa1b046fa416953b3870119b8ac1562c3e6e"
 dependencies = [
+ "base64 0.22.1",
+ "fancy-regex 0.20.2",
  "futures-core",
  "roomkit",
  "roomkit-core",
+ "saphyr-parser",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tracing",
@@ -1450,7 +1478,7 @@ dependencies = [
 [[package]]
 name = "roomkit-core"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=f110fcccd6f9d08929212dc74c5133dfa3971b85#f110fcccd6f9d08929212dc74c5133dfa3971b85"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93b5fa1b046fa416953b3870119b8ac1562c3e6e#93b5fa1b046fa416953b3870119b8ac1562c3e6e"
 dependencies = [
  "jiff",
  "serde",
@@ -1464,7 +1492,7 @@ dependencies = [
 [[package]]
 name = "roomkit-openai"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=f110fcccd6f9d08929212dc74c5133dfa3971b85#f110fcccd6f9d08929212dc74c5133dfa3971b85"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93b5fa1b046fa416953b3870119b8ac1562c3e6e#93b5fa1b046fa416953b3870119b8ac1562c3e6e"
 dependencies = [
  "futures-core",
  "jiff",
@@ -1485,7 +1513,7 @@ dependencies = [
 [[package]]
 name = "roomkit-provider-http"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=f110fcccd6f9d08929212dc74c5133dfa3971b85#f110fcccd6f9d08929212dc74c5133dfa3971b85"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93b5fa1b046fa416953b3870119b8ac1562c3e6e#93b5fa1b046fa416953b3870119b8ac1562c3e6e"
 dependencies = [
  "reqwest",
  "rustls",
@@ -1496,7 +1524,7 @@ dependencies = [
 [[package]]
 name = "roomkit-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=f110fcccd6f9d08929212dc74c5133dfa3971b85#f110fcccd6f9d08929212dc74c5133dfa3971b85"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=93b5fa1b046fa416953b3870119b8ac1562c3e6e#93b5fa1b046fa416953b3870119b8ac1562c3e6e"
 dependencies = [
  "roomkit",
  "roomkit-core",
@@ -1513,7 +1541,7 @@ name = "roomkit-tui"
 version = "0.2.0"
 dependencies = [
  "arboard",
- "base64",
+ "base64 0.23.1",
  "crossterm",
  "png",
  "pulldown-cmark",
@@ -1718,6 +1746,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "saphyr-parser"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48cf5a82d41247a625f040af08e91008fec945bce3b0bffba992c44af092caa2"
+dependencies = [
+ "arraydeque",
+ "thiserror",
 ]
 
 [[package]]
@@ -1995,7 +2033,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "656b45c05d95a5704399aeef6bd0ddec7b2b3531b7c9e900abbf7c4d2190c925"
 dependencies = [
  "bincode",
- "fancy-regex",
+ "fancy-regex 0.16.2",
  "flate2",
  "fnv",
  "once_cell",

@@ -228,6 +228,7 @@ mod tests {
             provider: Some("openai".into()),
             model: Some("model".into()),
             usage: report.as_object().unwrap().clone(),
+            partial: false,
         };
         let run = crate::projection::run_id(&row.source.channel_id, "evt_1");
         let Some(Event::ContextUpdated { usage, .. }) = told("room", &run, &marker) else {
