@@ -327,14 +327,14 @@ fn a_notice_links_its_web_address_on_every_wrapped_row() {
 fn copying_keeps_the_notice_it_copies() {
     let mut session = session();
     session.notice = "Provider says: select Global".into();
-    session.confirm_copy();
+    session.confirm_copy(false);
     assert_eq!(session.notice(), "Provider says: select Global");
 
     session.notice.clear();
-    session.confirm_copy();
+    session.confirm_copy(false);
     let confirmation = session.notice().to_owned();
     assert!(confirmation.starts_with("Copy requested"), "{confirmation}");
-    session.confirm_copy();
+    session.confirm_copy(false);
     assert_eq!(session.notice(), confirmation);
 }
 

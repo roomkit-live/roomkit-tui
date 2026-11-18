@@ -26,7 +26,8 @@ pub enum SelectionMode {
     /// Leave selection and copy shortcuts to the terminal emulator.
     Native,
     /// Enable tool clicks and request clipboard writes on mouse selection release.
-    /// The terminal must support and permit OSC 52; no clipboard contents are read.
+    /// The terminal must support and permit OSC 52; on macOS, outside SSH, the
+    /// Mac's own clipboard is written too. No clipboard contents are read.
     #[default]
     CopyOnSelect,
 }

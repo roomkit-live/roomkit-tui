@@ -2,8 +2,9 @@
 
 import base64
 import re
+import sys
 
-from terminal_pty import Terminal, binary, require
+from terminal_pty import Terminal, binary, pasteboard, require
 
 example = binary("order-support")
 
@@ -14,7 +15,8 @@ def scenario(allow, enhanced=False, escape=False):
         args += ["--no-color", "--no-animation", "--brand", "TerminalFixture", "--command-prefix", "$"]
     else:
         args += ["--native-selection"]
-    with Terminal(args) as terminal:
+    # Run as on the Mac itself: over SSH its clipboard is not the person's.
+    with Terminal(args, env={"SSH_CONNECTION": "", "SSH_TTY": ""}) as terminal:
 
         def click(marker):
             row = terminal.screen.row_of(marker)
@@ -65,6 +67,12 @@ def scenario(allow, enhanced=False, escape=False):
             terminal.send(b"\x1b[<0;2;1M\x1b[<32;16;1M\x1b[<0;16;1m")
             expected = b"\x1b]52;c;" + base64.b64encode(b"TerminalFixture") + b"\x07"
             terminal.wait_for(expected)
+            if sys.platform == "darwin":
+                # macOS's Terminal ignores OSC 52 and iTerm2 refuses it by
+                # default: the copy also writes the Mac's own clipboard.
+                terminal.wait_until(lambda: pasteboard() == "TerminalFixture",
+                                    "the Mac's clipboard holding the selection")
+                terminal.wait_for(b"Copied")
             if re.search(rb"\x1b\[(?:38|48);", terminal.output):
                 raise RuntimeError("Monochrome mode emitted palette colors")
         # Resize the real terminal before detaching.

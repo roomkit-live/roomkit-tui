@@ -1,5 +1,7 @@
-//! Explicit native clipboard reads, isolated from the terminal event loop.
+//! Explicit native clipboard reads, and copies, isolated from the terminal
+//! event loop.
 use crate::Session;
+use crate::selection::clipboard_sequence;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use roomkit_tui_protocol::{ConversationId, ImageUpload, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS};
 use std::time::Duration;
@@ -15,12 +17,68 @@ pub(crate) enum Paste {
 
 type PendingPaste = (Receiver<Result<Paste, String>>, Option<ConversationId>, u64);
 
+/// Writes copied text to the clipboard of the computer the application runs
+/// on.
+type Writer = fn(&str) -> Result<(), String>;
+
 #[derive(Default)]
 pub(crate) struct Clipboard {
     pending: Option<PendingPaste>,
     suppress_until: Duration,
+    /// Where a copy also writes the computer's own clipboard.
+    writer: Option<Writer>,
+    /// The answer of that write, while it runs.
+    written: Option<Receiver<Result<(), String>>>,
 }
 impl Clipboard {
+    /// A clipboard copying as the computer running the application allows.
+    pub fn native() -> Self {
+        Self {
+            writer: native_writer(),
+            ..Self::default()
+        }
+    }
+    /// Copy `text`: the terminal is asked through OSC 52, and the computer's
+    /// own clipboard written where a writer applies.
+    pub fn copy(
+        &mut self,
+        session: &mut Session,
+        out: &mut impl Write,
+        text: &str,
+    ) -> io::Result<()> {
+        out.write_all(clipboard_sequence(text).as_bytes())?;
+        out.flush()?;
+        let Some(writer) = self.writer else {
+            session.confirm_copy(false);
+            return Ok(());
+        };
+        let (tx, rx) = mpsc::sync_channel(1);
+        let text = text.to_owned();
+        let spawn = std::thread::Builder::new()
+            .name("clipboard-write".into())
+            .spawn(move || {
+                let _ = tx.send(writer(&text));
+            });
+        match spawn {
+            Ok(_) => self.written = Some(rx),
+            Err(_) => session.confirm_copy(false),
+        }
+        Ok(())
+    }
+    /// Tell a finished copy's write; true when it answered.
+    fn poll_written(&mut self, session: &mut Session) -> bool {
+        let Some(rx) = &self.written else {
+            return false;
+        };
+        let copied = match rx.try_recv() {
+            Ok(result) => result.is_ok(),
+            Err(TryRecvError::Empty) => return false,
+            Err(TryRecvError::Disconnected) => false,
+        };
+        self.written = None;
+        session.confirm_copy(copied);
+        true
+    }
     pub fn reset_repeat(&mut self) {
         self.suppress_until = Duration::ZERO;
     }
@@ -51,6 +109,10 @@ impl Clipboard {
         session.notice = "Reading clipboard…".into();
     }
     pub fn poll(&mut self, session: &mut Session, now: Duration) -> bool {
+        let written = self.poll_written(session);
+        self.poll_paste(session, now) || written
+    }
+    fn poll_paste(&mut self, session: &mut Session, now: Duration) -> bool {
         let Some((rx, conversation, epoch)) = &self.pending else {
             return false;
         };
@@ -84,6 +146,23 @@ impl Clipboard {
         }
         true
     }
+}
+
+/// macOS's Terminal ignores OSC 52 and iTerm2 refuses it by default, so a
+/// copy there also writes the Mac's own clipboard, unless the application
+/// runs on it over SSH, where that clipboard is not the person's. Elsewhere
+/// the terminal alone copies.
+fn native_writer() -> Option<Writer> {
+    let over_ssh = ["SSH_CONNECTION", "SSH_TTY"]
+        .into_iter()
+        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()));
+    (cfg!(target_os = "macos") && !over_ssh).then_some(write as Writer)
+}
+
+fn write(text: &str) -> Result<(), String> {
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.set_text(text))
+        .map_err(|error| error.to_string())
 }
 
 fn read() -> Result<Paste, String> {
@@ -171,6 +250,69 @@ mod tests {
         assert!(!format!("{image:?}").contains(&image.data));
         Ok(())
     }
+    /// Poll until the copy's own write of the clipboard has answered.
+    fn written(clipboard: &mut Clipboard, session: &mut Session) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !clipboard.poll(session, Duration::ZERO) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no clipboard write answered"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// macOS's Terminal ignores OSC 52 and iTerm2 refuses it by default: a
+    /// copy also writes the computer's own clipboard where it is the
+    /// person's, and says so once that write succeeds. A failed write leaves
+    /// the terminal's copy to tell; without a writer the terminal alone is
+    /// asked.
+    #[test]
+    fn a_copy_writes_the_computer_s_clipboard_beside_asking_the_terminal() {
+        static WRITTEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        fn writer(text: &str) -> Result<(), String> {
+            WRITTEN.lock().map_err(|_| "poisoned")?.push(text.into());
+            Ok(())
+        }
+        fn failing(_: &str) -> Result<(), String> {
+            Err("No pasteboard".into())
+        }
+        let mut session = Session::default();
+        let mut clipboard = Clipboard {
+            writer: Some(writer),
+            ..Clipboard::default()
+        };
+        let mut out = Vec::new();
+        assert!(clipboard.copy(&mut session, &mut out, "selected").is_ok());
+        assert_eq!(out, clipboard_sequence("selected").as_bytes());
+        written(&mut clipboard, &mut session);
+        assert!(WRITTEN.lock().is_ok_and(|texts| *texts == ["selected"]));
+        assert_eq!(session.notice(), "Copied");
+
+        session.notice.clear();
+        clipboard.writer = Some(failing);
+        assert!(
+            clipboard
+                .copy(&mut session, &mut Vec::new(), "other")
+                .is_ok()
+        );
+        written(&mut clipboard, &mut session);
+        assert!(
+            session.notice().starts_with("Copy requested"),
+            "{}",
+            session.notice()
+        );
+
+        session.notice.clear();
+        clipboard.writer = None;
+        let mut out = Vec::new();
+        assert!(clipboard.copy(&mut session, &mut out, "alone").is_ok());
+        assert_eq!(out, clipboard_sequence("alone").as_bytes());
+        assert!(!clipboard.poll(&mut session, Duration::ZERO));
+        assert!(session.notice().starts_with("Copy requested"));
+        assert!(WRITTEN.lock().is_ok_and(|texts| texts.len() == 1));
+    }
+
     #[test]
     fn late_clipboard_result_cannot_resurrect_a_cleared_draft() {
         let mut session = Session::default();

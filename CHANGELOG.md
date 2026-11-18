@@ -133,6 +133,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Copying with the mouse works on macOS whatever the terminal: outside SSH, a
+  copy also writes the Mac's own clipboard, beside OSC 52, which Terminal
+  ignores and iTerm2 refuses by default. The notice then reads `Copied`.
+
 - A web address in a notice, such as the settings page a provider's refusal
   names, carries a native link on every row it wraps onto, so Cmd-click or
   Ctrl-click opens the complete URL. Copying a notice with the mouse no longer

@@ -101,7 +101,7 @@ fn run_session(
         client,
         renderers,
         selection: None,
-        clipboard: Clipboard::default(),
+        clipboard: Clipboard::native(),
         redraw: Redraw::default(),
         frame: None,
         started: Instant::now(),

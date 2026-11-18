@@ -46,8 +46,9 @@ drive it.
 - **Customizable**: branding, dark, light or terminal-palette themes,
   `NO_COLOR` support, configurable composer, optional sidebar and welcome
   screen.
-- **Mouse support**: click to expand tool details, drag to copy through OSC 52,
-  or leave selection entirely to the terminal.
+- **Mouse support**: click to expand tool details, drag to copy through OSC 52
+  (and to the Mac's own clipboard on macOS), or leave selection entirely to
+  the terminal.
 - **Clipboard images**: attach PNG images with Ctrl+V when the host accepts them.
 - **Terminal integration**: optional [OSC 7501](https://www.superlogical.com/rex/docs/build/program-status)
   program status reporting.
@@ -453,7 +454,9 @@ Commands are not reconstructed from conversation messages after a restart.
 
 Linux and macOS are supported and tested in CI, including a pseudo-terminal
 test of the interactive session. Windows is not tested yet. Clipboard copy
-relies on OSC 52, which depends on your terminal's support and settings.
+relies on OSC 52, which depends on your terminal's support and settings. On
+macOS, outside SSH, a copy also writes the Mac's own clipboard: Terminal
+ignores OSC 52, and iTerm2 refuses it by default.
 Pasting images needs a local desktop session: over SSH, the remote host cannot
 read your computer's clipboard.
 

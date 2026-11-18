@@ -4,7 +4,7 @@
 //! with its text; any other one freezes the frame it was made in.
 
 use std::borrow::Cow;
-use std::io::{self, Write};
+use std::io;
 use std::time::Duration;
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
@@ -13,7 +13,7 @@ use roomkit_tui_protocol::Command;
 use super::{View, send};
 use crate::Session;
 use crate::render::{self, Frame, PermissionTarget, ToolTarget};
-use crate::selection::{Edge, TextSelection, clipboard_sequence};
+use crate::selection::{Edge, TextSelection};
 use crate::session::Focus;
 
 const WHEEL_LINES: usize = 3;
@@ -196,8 +196,8 @@ impl View {
         }
     }
 
-    /// Ask the terminal to put the selected text on the clipboard. Lines
-    /// off screen are laid out again as the conversation shows them.
+    /// Put the selected text on the clipboard. Lines off screen are laid out
+    /// again as the conversation shows them.
     fn copy(&mut self, selected: &TextSelection, now: Duration) -> io::Result<()> {
         let text = selected.text(&self.session, |items, width| {
             let options = &self.terminal.options;
@@ -205,11 +205,8 @@ impl View {
         });
         match text {
             Ok(Some(text)) => {
-                self.terminal
-                    .stdout
-                    .write_all(clipboard_sequence(&text).as_bytes())?;
-                self.terminal.stdout.flush()?;
-                self.session.confirm_copy();
+                self.clipboard
+                    .copy(&mut self.session, &mut self.terminal.stdout, &text)?;
             }
             Ok(None) => {}
             Err(message) => self.session.notice = message.into(),

@@ -14,6 +14,7 @@ import select
 import signal
 import struct
 import subprocess
+import sys
 import termios
 import time
 
@@ -36,6 +37,11 @@ def binary(name):
     return Path(metadata["target_directory"]) / "debug" / name
 
 
+def pasteboard():
+    """The text on the Mac's clipboard."""
+    return subprocess.run(["pbpaste"], capture_output=True, text=True, check=True).stdout
+
+
 class Terminal:
     """One program on a pseudo-terminal of `rows` by `cols` cells."""
 
@@ -45,6 +51,9 @@ class Terminal:
         self.process = None
         self.resize(rows, cols)
         self.original = termios.tcgetattr(self.slave)
+        # On macOS a copy also writes the Mac's own clipboard: the text it
+        # held comes back when the program closes.
+        self.saved_pasteboard = pasteboard() if sys.platform == "darwin" else None
         self.output = bytearray()
         self.process = subprocess.Popen(
             [str(arg) for arg in args], stdin=self.slave, stdout=self.slave, stderr=self.slave,
@@ -151,3 +160,5 @@ class Terminal:
             self.process.wait(timeout=5)
         os.close(self.master)
         os.close(self.slave)
+        if self.saved_pasteboard is not None:
+            subprocess.run(["pbcopy"], input=self.saved_pasteboard, text=True, check=False)
