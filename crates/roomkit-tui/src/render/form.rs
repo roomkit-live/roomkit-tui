@@ -9,7 +9,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::chrome::screen_notice;
 use super::footer::quit_hint;
-use super::text::{fit, sanitize, wrap};
+use super::text::{caret_window, fit, sanitize};
 use super::{Frame, Line, Renderers, Tone, View, frame, line};
 use crate::{FormState, Session};
 
@@ -132,27 +132,15 @@ fn input(form: &FormState, width: usize) -> (Vec<Line>, (usize, usize)) {
         }
         _ => (sanitize(editor.text()), sanitize(prefix)),
     };
-    let mut rows = wrap(&text, width);
-    let before = wrap(&prefix, width);
-    let mut caret = (
-        before.last().map_or(0, |line| line.width()),
-        before.len().saturating_sub(1),
-    );
-    if caret.0 == width {
-        caret = (0, caret.1 + 1);
-    }
-    while rows.len() <= caret.1 {
-        rows.push(String::new());
-    }
-    let offset = caret.1.saturating_sub(INPUT_ROWS - 1);
-    let lines = (offset..offset + INPUT_ROWS)
+    let (rows, caret) = caret_window(&text, &prefix, width, INPUT_ROWS);
+    let lines = (0..INPUT_ROWS)
         .map(|index| {
             let text = fit(rows.get(index).map_or("", String::as_str), width);
             let padding = " ".repeat(width.saturating_sub(text.width()));
             line(format!("  {text}{padding}  "), Tone::Input)
         })
         .collect();
-    (lines, (caret.0, caret.1 - offset))
+    (lines, caret)
 }
 
 /// The editing keys, the notice and the save keys.

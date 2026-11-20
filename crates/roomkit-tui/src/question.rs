@@ -278,6 +278,11 @@ impl QuestionCard {
     pub fn id(&self) -> &QuestionId {
         &self.question.id
     }
+
+    /// The caret's byte offset in the own words of the question shown.
+    pub(crate) fn own_cursor(&self) -> usize {
+        self.other[self.current].cursor()
+    }
 }
 
 #[cfg(test)]

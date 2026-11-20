@@ -26,10 +26,7 @@ pub(super) fn card_screen(
     caret: Option<(usize, usize)>,
 ) -> Option<Placed> {
     let session = view.session;
-    let needed = card.len() + usize::from(!session.notice.is_empty());
-    if needed > rows {
-        return None;
-    }
+    card_room(view, rows, card.len())?;
     let notice = if session.notice.is_empty() {
         Vec::new()
     } else {
@@ -52,6 +49,12 @@ pub(super) fn card_screen(
         frame: frame(lines, cols, cursor),
         top,
     })
+}
+
+/// The rows `rows` leaves beside a card of `used` rows and the notice's
+/// first row, which a card always leaves; `None` when they do not fit.
+pub(super) fn card_room(view: &View<'_>, rows: usize, used: usize) -> Option<usize> {
+    rows.checked_sub(used + usize::from(!view.session.notice.is_empty()))
 }
 
 /// The screen asking for a larger terminal, saying what for.

@@ -4,34 +4,47 @@
 
 use unicode_width::UnicodeWidthStr;
 
-use super::card::{card_screen, enlarge, filled_row, surface_rows};
+use super::card::{card_room, card_screen, enlarge, filled_row, surface_rows};
 use super::footer::quit_hint;
-use super::text::{pad, wrap_words};
+use super::text::{caret_window, pad, sanitize, wrap_words};
 use super::{Frame, Line, Tone, View, frame, line, span};
 use crate::QuestionCard;
+
+/// The most rows the person's own words take, the caret's among them.
+const OWN_ROWS: usize = 3;
 
 pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
     let session = view.session;
     let Some(card) = session.question() else {
         return frame(Vec::new(), cols, None);
     };
-    let armed = session.question_armed(view.elapsed);
-    let (mut lines, own_row) = card_lines(view, card, cols);
-    let hint = quit_hint(session, view.elapsed).unwrap_or_else(|| hint(card, armed));
-    for text in wrap_words(&hint, cols.saturating_sub(4)) {
-        lines.push(filled(&text, cols, Tone::Muted));
-    }
-    lines.push(filled("", cols, Tone::Input));
-    let caret = (card.typing() && !card.sent).then(|| {
-        let column = own_prefix(card).width() + card.own_words().width();
-        (column.min(cols.saturating_sub(1)), own_row)
-    });
+    let mut lines = heading(view, card, cols);
+    lines.extend(options(card, cols));
+    let tail = keys(view, card, cols);
+    // The own words grow on the rows the card leaves, so that it stays shown.
+    let room = card_room(view, rows, lines.len() + tail.len()).unwrap_or(0);
+    let (own, caret) = own_words(card, cols, room.clamp(1, OWN_ROWS));
+    let caret = caret.map(|(column, row)| (column, lines.len() + row));
+    lines.extend(own);
+    lines.extend(tail);
     let Some(placed) = card_screen(view, cols, rows, lines, caret) else {
         return enlarge("Enlarge terminal to read these questions", cols);
     };
     let mut result = placed.frame;
     result.question = Some(card.id().clone());
     result
+}
+
+/// The rows below the own words: the keys that answer, between blank rows.
+fn keys(view: &View<'_>, card: &QuestionCard, cols: usize) -> Vec<Line> {
+    let armed = view.session.question_armed(view.elapsed);
+    let hint = quit_hint(view.session, view.elapsed).unwrap_or_else(|| hint(card, armed));
+    let mut rows = vec![filled("", cols, Tone::Input)];
+    for text in wrap_words(&hint, cols.saturating_sub(4)) {
+        rows.push(filled(&text, cols, Tone::Muted));
+    }
+    rows.push(filled("", cols, Tone::Input));
+    rows
 }
 
 /// The keys that answer, once the card could be read.
@@ -59,23 +72,26 @@ fn hint(card: &QuestionCard, armed: bool) -> String {
     format!("↑↓ choose · 1-{keys} pick · {space} · Enter confirm{next} · Esc don't answer")
 }
 
-/// The card above its hint: who asks, the question, its options and the
-/// own-words row, whose index it returns.
-fn card_lines(view: &View<'_>, card: &QuestionCard, cols: usize) -> (Vec<Line>, usize) {
-    let mut lines = heading(view, card, cols);
-    lines.extend(options(card, cols));
-    let own_row = lines.len();
+/// The person's own words beside their number, hard-wrapped as the editor
+/// moves its caret, on at most `most` rows around the caret, and the caret's
+/// `(column, row)` among them while they are written.
+fn own_words(card: &QuestionCard, cols: usize, most: usize) -> (Vec<Line>, Option<(usize, usize)>) {
+    let prefix = own_prefix(card);
+    let selected = card.cursor() == card.item().options.len() && !card.typing();
+    let tone = choice_tone(selected);
     let own = card.own_words();
-    let shown = if own.is_empty() && !card.typing() {
-        "Other…".to_owned()
-    } else {
-        own.to_owned()
-    };
-    let text = format!("{}{shown}", own_prefix(card));
-    let on_own = card.cursor() == card.item().options.len();
-    lines.push(selectable(&text, cols, on_own && !card.typing()));
-    lines.push(filled("", cols, Tone::Input));
-    (lines, own_row)
+    if own.is_empty() && !card.typing() {
+        return (
+            hanging(&prefix, vec![line("Other…", tone)], cols, selected),
+            None,
+        );
+    }
+    let before = own.get(..card.own_cursor()).unwrap_or(own);
+    let width = cols.saturating_sub(prefix.width() + 2).max(1);
+    let (shown, (column, row)) = caret_window(&sanitize(own), &sanitize(before), width, most);
+    let rows = shown.into_iter().map(|text| line(text, tone)).collect();
+    let caret = (card.typing() && !card.sent).then_some((prefix.width() + column, row));
+    (hanging(&prefix, rows, cols, selected), caret)
 }
 
 /// Who asks, which question of how many, and the question itself.
@@ -180,11 +196,4 @@ fn own_prefix(card: &QuestionCard) -> String {
 
 fn filled(text: &str, cols: usize, tone: Tone) -> Line {
     line(pad(&format!("  {text}"), cols), tone)
-}
-
-fn selectable(text: &str, cols: usize, selected: bool) -> Line {
-    let tone = choice_tone(selected);
-    let mut row = line(pad(text, cols), tone);
-    row[0].emphasis.bold = selected;
-    row
 }

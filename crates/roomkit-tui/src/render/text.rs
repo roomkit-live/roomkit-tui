@@ -91,6 +91,33 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
     rows
 }
 
+/// `text` hard-wrapped at `width` columns as an editor shows it, with the
+/// caret after `before`, the part of `text` before it: the rows of a window
+/// of at most `rows` that shows the caret, and the caret's `(column, row)` in
+/// that window. A caret after a full row starts the next one.
+pub(super) fn caret_window(
+    text: &str,
+    before: &str,
+    width: usize,
+    rows: usize,
+) -> (Vec<String>, (usize, usize)) {
+    let mut wrapped = wrap(text, width);
+    let leading = wrap(before, width);
+    let mut caret = (
+        leading.last().map_or(0, |row| row.width()),
+        leading.len().saturating_sub(1),
+    );
+    if caret.0 == width {
+        caret = (0, caret.1 + 1);
+    }
+    while wrapped.len() <= caret.1 {
+        wrapped.push(String::new());
+    }
+    let first = caret.1.saturating_sub(rows.saturating_sub(1));
+    let shown = wrapped.into_iter().skip(first).take(rows).collect();
+    (shown, (caret.0, caret.1 - first))
+}
+
 // Prose wraps at word boundaries; the editor deliberately keeps hard wrapping
 // so its caret position remains a direct projection of the underlying text.
 pub(super) fn wrap_words(text: &str, width: usize) -> Vec<String> {
