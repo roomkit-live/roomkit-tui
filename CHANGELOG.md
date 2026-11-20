@@ -9,10 +9,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - A conversation the view left tells the room shown when it waits on the
-  person (RMK-1838): a question an agent asks there, or an approval asked
-  without a group, gives the notice `An agent of a conversation you left asks
-  you a question: /resume it to answer`, as an approval of a group left
-  already did. The card shows once the view is back in that room.
+  person (RMK-1838): a question an agent asks there gives the notice `An agent
+  of a conversation you left asks you a question`, and an approval asked
+  without a group `… is waiting for your approval`, as an approval of a group
+  left already did. The notice ends with `/resume it to answer` when the host
+  offers `/resume`, and with `open it again to answer` otherwise. The card
+  shows once the view is back in that room.
 
 ## [0.3.0] - 2026-11-20
 

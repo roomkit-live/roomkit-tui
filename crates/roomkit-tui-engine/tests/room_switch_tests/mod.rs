@@ -86,6 +86,14 @@ fn commanded() -> SessionConfig {
     view
 }
 
+/// `commanded`, with the host's command that opens a conversation again.
+fn resumable() -> SessionConfig {
+    let mut view = commanded();
+    view.commands
+        .push(CommandSpec::new("resume", "Open a conversation").with_arguments("id"));
+    view
+}
+
 fn go(from: &str, to: &str) -> Request {
     let command = Command::Invoke {
         name: "go".into(),
@@ -545,7 +553,8 @@ async fn a_view_answers_for_a_room_of_its_group_it_never_showed() {
 }
 
 /// A conversation left for one of another group is not reachable from it:
-/// no card comes there, only a notice that it waits.
+/// no card comes there, only a notice that it waits, naming the host's
+/// `/resume` to get back.
 #[tokio::test]
 async fn an_approval_outside_the_group_only_leaves_a_notice() {
     let kit = RoomKit::new(Default::default());
@@ -556,7 +565,7 @@ async fn an_approval_outside_the_group_only_leaves_a_notice() {
     let held = Arc::new(Notify::new());
     hold_answers(&kit, gate, held.clone());
     let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+    let view = LocalSession::new(kit.clone(), channel.clone(), resumable());
     let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
     next(&client).await;
     client.try_send(request("ask")).unwrap();
@@ -627,9 +636,9 @@ async fn a_request_of_no_group_in_a_room_left_waits_for_the_view_s_return() {
         }
     }
     assert!(
-        notices
-            .iter()
-            .any(|text| text.contains("approval") && text.contains("/resume")),
+        notices.iter().any(
+            |text| text.contains("waiting for your approval") && text.contains("open it again")
+        ),
         "The room shown hears that the room left waits: {notices:?}"
     );
 
@@ -704,7 +713,7 @@ async fn a_question_in_a_room_left_leaves_a_notice_where_the_view_is() {
         };
         assert_eq!(shown.as_str(), elsewhere);
         assert!(
-            notice.contains("question") && notice.contains("/resume"),
+            notice.contains("asks you a question") && notice.contains("open it again"),
             "{elsewhere}: {notice}"
         );
 
@@ -718,4 +727,85 @@ async fn a_question_in_a_room_left_leaves_a_notice_where_the_view_is() {
         drop(client);
         task.await.unwrap().unwrap();
     }
+}
+
+/// The view leaves a room of its group where its agent works for a room of
+/// another group. A question and an approval of no group asked there each
+/// give the room shown one notice, and both cards show on the view's return.
+#[tokio::test]
+async fn a_room_left_for_another_group_tells_each_ask_once() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    with_other_room(&kit, &channel).await;
+    with_room(&kit, &channel, "alone").await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_answers(&kit, gate, held.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+    let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
+    next(&client).await;
+    client.try_send(go("room", "other")).unwrap();
+    until_snapshot(&client, "other").await;
+    let mut ask = request("ask");
+    ask.conversation = "other".into();
+    client.try_send(ask).unwrap();
+    started_run(&client).await;
+    held.notified().await;
+    client.try_send(go("other", "alone")).unwrap();
+    until_snapshot(&client, "alone").await;
+
+    let other = RoomId::new("other").unwrap();
+    let items = vec![QuestionItem::new(
+        "Database",
+        "Which database?",
+        vec![QuestionOption::new("SQLite", "")],
+    )];
+    let question = roomkit_tui_engine::QuestionRequest::new("q1", items);
+    assert!(channel.ask_question(&other, &config().agent, question));
+    let (room, agent, asker) = (other.clone(), config().agent, channel.clone());
+    let asked = tokio::spawn(async move {
+        let request = PermissionRequest::new("Allow it?", "d", Duration::from_secs(30));
+        asker.ask_permission(&room, &agent, request).await
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let mut notices = Vec::new();
+    while let Ok(event) = client.try_recv() {
+        match event {
+            Event::Notice { text, .. } => notices.push(text),
+            Event::QuestionAsked { .. } | Event::PermissionRequested { .. } => {
+                panic!("A card crossed rooms: {event:?}")
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(notices.len(), 2, "One notice per ask: {notices:?}");
+    assert!(
+        notices
+            .iter()
+            .any(|text| text.contains("asks you a question"))
+    );
+    assert!(
+        notices
+            .iter()
+            .any(|text| text.contains("waiting for your approval"))
+    );
+
+    client.try_send(go("alone", "other")).unwrap();
+    let back = until_snapshot(&client, "other").await;
+    assert!(
+        back.iter()
+            .any(|event| matches!(event, Event::QuestionAsked { .. })),
+        "{back:?}"
+    );
+    assert!(
+        back.iter()
+            .any(|event| matches!(event, Event::PermissionRequested { .. })),
+        "{back:?}"
+    );
+    asked.abort();
+    open.send_replace(true);
+    drop(client);
+    task.await.unwrap().unwrap();
 }

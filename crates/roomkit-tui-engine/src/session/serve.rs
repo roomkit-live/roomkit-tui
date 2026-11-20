@@ -207,7 +207,7 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 Ok(true)
             }
             // A conversation the view left still waits on the person.
-            Ok((room, event)) if waiting_notice(&event).is_some() && self.left(&room) => {
+            Ok((room, event)) if self.waits_in_a_room_left(&room, &event) => {
                 self.tell_waiting(&event)
             }
             Ok((room, Event::Notice { text, .. })) if self.tells_notices_of(&room) => {
@@ -224,23 +224,44 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
     }
 
     /// Tell the room shown that `event`, asked in a conversation the view
-    /// left, waits on the person there.
+    /// left, waits on the person there, and how to get back to it: the
+    /// host's `/resume` when it offers one.
     fn tell_waiting(&self, event: &Event) -> Result<bool, AdapterError> {
-        if let Some(text) = waiting_notice(event) {
-            self.send(Event::Notice {
-                conversation: self.session.config.conversation().into(),
-                text: text.into(),
-            })?;
-        }
+        let what = match event {
+            Event::QuestionAsked { .. } => "asks you a question",
+            _ => "is waiting for your approval",
+        };
+        let back = if self.session.config.advertises("resume") {
+            "/resume it to answer"
+        } else {
+            "open it again to answer"
+        };
+        self.send(Event::Notice {
+            conversation: self.session.config.conversation().into(),
+            text: format!("An agent of a conversation you left {what}: {back}"),
+        })?;
         Ok(true)
     }
 
-    /// Whether `room`, a room or a group events are published under, is one
-    /// this view left and still answers for: a room it keeps, or a group
-    /// whose work runs on.
-    fn left(&self, room: &str) -> bool {
-        room != self.session.config.conversation()
-            && (self.parked.contains_key(room) || self.left_group(room))
+    /// Whether `event`, published under `room`, waits on the person in a
+    /// conversation this view left and still answers for, and is not shown
+    /// where the view is. An approval of a group is published under its
+    /// group, so it counts for a group the view left; an approval of no group
+    /// and a question are published under their room, so they count for a
+    /// room the view keeps.
+    fn waits_in_a_room_left(&self, room: &str, event: &Event) -> bool {
+        if room == self.session.config.conversation() {
+            return false;
+        }
+        match event {
+            Event::PermissionRequested { permission, .. } if permission.origin.is_some() => {
+                self.left_group(room)
+            }
+            Event::PermissionRequested { .. } | Event::QuestionAsked { .. } => {
+                self.parked.contains_key(room)
+            }
+            _ => false,
+        }
     }
 
     /// Whether `group` is another group this view left, whose work runs on.
@@ -374,20 +395,6 @@ fn of_the_group(event: &Event) -> bool {
     match event {
         Event::PermissionRequested { permission, .. } => permission.origin.is_some(),
         event => decides(event),
-    }
-}
-
-/// What tells a view that `event`, asked in a conversation it left and not
-/// shown where it is, waits on the person there: an approval or a question.
-fn waiting_notice(event: &Event) -> Option<&'static str> {
-    match event {
-        Event::PermissionRequested { .. } => Some(
-            "An agent of a conversation you left is waiting for your approval: /resume it to answer",
-        ),
-        Event::QuestionAsked { .. } => {
-            Some("An agent of a conversation you left asks you a question: /resume it to answer")
-        }
-        _ => None,
     }
 }
 
