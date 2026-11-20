@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use roomkit_tui_protocol::{ConversationCost, SidebarContent, Snapshot};
 
-use super::text::{ellipsize, sanitize};
+use super::text::{fit, sanitize};
 use super::{Line, Session, Span, Tone, line, span};
 use unicode_width::UnicodeWidthStr;
 
@@ -224,8 +224,7 @@ fn whole_parts(parts: Line, width: usize) -> Line {
         // The room ` …` takes stays free.
         if used + size(&piece) + 2 > width {
             if kept.is_empty() {
-                let text = ellipsize(&piece.text, width);
-                return vec![Span { text, ..piece }];
+                return vec![cut_first(piece, width)];
             }
             break;
         }
@@ -234,6 +233,16 @@ fn whole_parts(parts: Line, width: usize) -> Line {
     }
     kept.push(span(" …", Tone::Muted));
     kept
+}
+
+/// The first of the parts, alone on a row too narrow for it and ` …`: cut
+/// to end in `…`, which says that more is left out, even where it fits.
+fn cut_first(piece: Span, width: usize) -> Span {
+    let text = match width {
+        0 => String::new(),
+        _ => format!("{}…", fit(&piece.text, width - 1)),
+    };
+    Span { text, ..piece }
 }
 
 /// `part` cut before each ` · ` it holds, every piece in its style.

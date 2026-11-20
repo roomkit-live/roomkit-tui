@@ -442,3 +442,23 @@ fn a_narrow_footer_drops_whole_parts_and_never_cuts_a_figure() {
         }
     }
 }
+
+/// However narrow the footer, a row that leaves something out ends in `…`,
+/// also where its first part fits with no room left for ` …`.
+#[test]
+fn a_narrow_footer_always_says_it_left_something_out() {
+    let session = measured_turn();
+    let row = |width| {
+        let frame = render::screen(&session, width, 30, &Renderers::default());
+        let row = frame.lines.into_iter().find(|l| l.contains("context"));
+        let row = row.unwrap();
+        row[row.find("context").unwrap()..].trim_end().to_owned()
+    };
+    let whole = row(400);
+    for width in 12..=60 {
+        let shown = row(width);
+        if shown != whole {
+            assert!(shown.ends_with('…'), "{width}: {shown}");
+        }
+    }
+}
