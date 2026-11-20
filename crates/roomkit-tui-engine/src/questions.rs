@@ -118,14 +118,19 @@ impl Questions {
     }
 
     /// The questions of `room` that `event` ends, no longer waiting: those
-    /// of a run that finished, and the one a call that settled asked.
+    /// of a run that finished, and the one a call of its run that settled
+    /// asked; another run's call may reuse its identity.
     pub(crate) fn ended_by(&self, room: &str, event: &Event) -> Vec<QuestionId> {
         let ends = |asked: &Asked| match event {
             Event::RunFinished { run, .. } => &asked.question.run == run,
             Event::Item {
-                item: Item::Tool { call, .. },
+                item: Item::Tool { run, call, .. },
                 ..
-            } => call.state.is_settled() && asked.call.as_deref() == Some(call.id.as_str()),
+            } => {
+                call.state.is_settled()
+                    && &asked.question.run == run
+                    && asked.call.as_deref() == Some(call.id.as_str())
+            }
             _ => false,
         };
         let mut rooms = self.lock();
@@ -251,6 +256,28 @@ mod tests {
             [QuestionId::new("b")]
         );
         assert!(questions.pending(("room", "agent")).is_empty());
+    }
+
+    /// ENG-9: a call of another run, settled under the identity of the
+    /// call that asked, withdrew the question: providers reuse call ids.
+    #[test]
+    fn a_call_of_another_run_never_withdraws_a_question() {
+        let questions = Questions::default();
+        questions.add("room", question("a", "run1"), Some("c1".into()));
+        let done = ToolCall::new("c1", "ask_user", json!({}), ToolState::Succeeded);
+        let settled = |run: &str| Event::Item {
+            conversation: "room".into(),
+            item: Item::Tool {
+                actor: "agent".into(),
+                run: run.into(),
+                call: done.clone(),
+            },
+        };
+        assert!(questions.ended_by("room", &settled("run2")).is_empty());
+        assert_eq!(
+            questions.ended_by("room", &settled("run1")),
+            [QuestionId::new("a")]
+        );
     }
 
     #[test]
