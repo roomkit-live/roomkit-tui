@@ -47,14 +47,21 @@ impl Session {
     /// without answering it.
     pub(crate) fn handed_to_a_live_turn(&self) -> Option<&MessageId> {
         let handed = self.handed.as_ref()?;
-        let can_cut = self
+        let can_answer = self
             .snapshot
             .as_ref()
             .is_some_and(|s| s.can_interrupt && s.can_answer);
-        if !can_cut || !self.is_live(&handed.run) {
+        if !can_answer || !self.can_cut_to_send() || !self.is_live(&handed.run) {
             return None;
         }
         handed.messages.last()
+    }
+
+    /// Whether the host lets a message cut the run under way to be sent at
+    /// once (Ctrl+S); it does not where stopping the run stops more than the
+    /// turn.
+    pub(crate) fn can_cut_to_send(&self) -> bool {
+        self.snapshot.as_ref().is_some_and(|s| s.can_cut_to_send)
     }
 
     /// Whether a message may be sent while the agent's turn runs: the host

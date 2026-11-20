@@ -87,6 +87,35 @@ fn a_steered_message_shows_where_it_went() {
     assert_eq!(session.steering(&message), Some(Steering::OwnTurn));
 }
 
+/// Review STA-4: where the host forbids cutting a turn to send, the line of a
+/// handed message still offered Ctrl+S to cut it, and Ctrl+S then asked for
+/// a message.
+#[test]
+fn a_host_that_forbids_cutting_offers_no_cut_for_a_handed_message() {
+    let mut snapshot = snapshot();
+    snapshot.can_steer = true;
+    snapshot.can_answer = true;
+    snapshot.can_cut_to_send = false;
+    let mut session = Session::default();
+    session.apply(Event::Snapshot(snapshot));
+    started(&mut session, "agent:m1");
+    session.apply(Event::Item {
+        conversation: "room-a".into(),
+        item: Item::Message(Message::new("m2", "person:alice", "Stop and do this")),
+    });
+    session.apply(Event::MessageSteered {
+        conversation: "room-a".into(),
+        message: "m2".into(),
+        run: "agent:m1".into(),
+    });
+    assert_eq!(session.handed_to_a_live_turn(), None);
+    let text = render::screen(&session, 80, 24, &Renderers::default())
+        .lines
+        .join("\n");
+    assert!(text.contains("↳ sent to the running turn"), "{text}");
+    assert!(!text.contains("Ctrl+S to cut it now"), "{text}");
+}
+
 #[test]
 fn steering_of_another_conversation_is_ignored() {
     let mut session = steering_session();
