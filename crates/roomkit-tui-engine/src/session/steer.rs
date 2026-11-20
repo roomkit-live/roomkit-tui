@@ -132,7 +132,7 @@ impl<S: ConversationStore> Steer<S> {
     }
 
     async fn deliver(&mut self, content: EventContent) -> TurnOutcome {
-        let key = self.idempotency_key();
+        let key = turn::idempotency_key(&self.config, &self.channel, &self.operation);
         // Its own turn, should it get one, starts as any turn.
         let _own_turn = self.lifecycle.clone().map(|lifecycle| {
             let (config, operation) = (self.config.clone(), self.operation.clone());
@@ -183,18 +183,6 @@ impl<S: ConversationStore> Steer<S> {
         turn::publish_usage(&self.kit, &self.channel, &self.config, &row).await;
         let explain = |error: &str| verdict::explained(&self.channel, &room, Some(&own), error);
         Verdict::judge(&settled, explain).heard_from(&self.channel, &room, Some(&own))
-    }
-
-    /// The message's key in the room, from the operation it was sent as.
-    fn idempotency_key(&self) -> String {
-        let config = &self.config;
-        let key = [
-            config.conversation(),
-            self.channel.id().as_str(),
-            &config.sender,
-            self.operation.as_str(),
-        ];
-        serde_json::json!(key).to_string()
     }
 
     fn notice(&self, text: &str) {

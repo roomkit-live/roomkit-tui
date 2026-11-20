@@ -197,13 +197,7 @@ impl<S: ConversationStore> Turn<S> {
             // Never stored, it holds no key to replay under: RoomKit refuses one.
             message.event_type = EventType::Instruction;
         } else {
-            let key = [
-                config.conversation(),
-                channel.id().as_str(),
-                &config.sender,
-                self.operation.as_str(),
-            ];
-            message.idempotency_key = Some(serde_json::json!(key).to_string());
+            message.idempotency_key = Some(idempotency_key(config, channel, &self.operation));
         }
         let options = ProcessInboundOptions {
             room_id: Some(config.room.clone()),
@@ -247,6 +241,22 @@ impl<S: ConversationStore> Turn<S> {
         buffered.finish(&settled.result, verdict.outcome);
         verdict.heard_from(&self.channel, &room, run.as_ref())
     }
+}
+
+/// The key of a message in its room, from the operation it was sent as: a
+/// client resending the operation replays it, never sends it twice.
+pub(super) fn idempotency_key(
+    config: &SessionConfig,
+    channel: &ConversationChannel,
+    operation: &OperationId,
+) -> String {
+    let key = [
+        config.conversation(),
+        channel.id().as_str(),
+        &config.sender,
+        operation.as_str(),
+    ];
+    serde_json::json!(key).to_string()
 }
 
 /// Tell the views what the turn on `trigger` measured, once its delivery is
