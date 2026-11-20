@@ -59,9 +59,8 @@ fn context_of(last: &Metadata) -> Option<ContextUsage> {
 }
 
 /// A report's whole input: what it billed uncached, what it read from the
-/// prompt cache and what it wrote there, which a Chat Completions usage
-/// reports apart from its `input_tokens` since roomkit-rs f86cbb1; none when
-/// it reported no input.
+/// prompt cache and what it wrote there, which a report counts apart from
+/// its `input_tokens`; none when it reported no input.
 fn input_of(report: &Metadata) -> Option<u64> {
     let input = report.get("input_tokens")?.as_u64()?;
     Some(

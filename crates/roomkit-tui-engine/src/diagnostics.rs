@@ -1,11 +1,11 @@
 mod provider;
 mod words;
 
-/// Classify known engine/provider failures without forwarding arbitrary error
-/// bodies, URLs, prompts or credentials to a client.
-/// A bounded, safe explanation that never contains the provider's raw payload.
-/// A view shows it with the words of a provider's refusal (HTTP 4xx), bounded
-/// and with any key masked: see `explain`.
+/// A known engine or provider failure, classified: a fixed explanation that
+/// never carries the error's text. A view shows it alone, except for a
+/// provider's refusal (HTTP 4xx), whose words follow it on one line, cut at
+/// 300 characters, any key in them masked and a link's path kept: see
+/// `explain`. No other error body, prompt or credential reaches a client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Diagnostic {
