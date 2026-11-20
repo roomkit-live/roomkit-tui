@@ -1,6 +1,7 @@
 //! Store confirmed decisions after delivery settles, outside model context.
 //! Keeping writes out of the decision loop also keeps interruption responsive
 //! while the engine owns the room lock. Unwritten receipts remain retryable.
+use crate::approvals::Receipt;
 use crate::{AdapterError, ConversationChannel, SessionConfig};
 use roomkit::model::{
     EventId, EventSource, EventType, ParticipantId, RoomEvent, TextContent, Timestamp, Visibility,
@@ -36,6 +37,8 @@ impl Writers {
     }
 }
 
+/// Store the decisions taken in the room of `config` that are not stored
+/// yet, each as a receipt row, linked to its call when it has one.
 pub(crate) async fn persist<S: ConversationStore>(
     kit: &RoomKit<S>,
     channel: &ConversationChannel,
@@ -43,56 +46,52 @@ pub(crate) async fn persist<S: ConversationStore>(
 ) -> Result<(), AdapterError> {
     let _storing = channel.storing_decisions.of(config.room.as_str()).await;
     for saved in channel.approvals.receipts(config.room.as_str()) {
-        let receipt = saved.decision;
-        let mut source =
-            EventSource::new(channel.id().clone(), roomkit::model::ChannelType::WEBSOCKET);
-        source.participant_id = Some(
-            ParticipantId::new(
-                receipt
-                    .decided_by
-                    .as_str()
-                    .strip_prefix("person:")
-                    .unwrap_or(receipt.decided_by.as_str()),
-            )
-            .map_err(|_| AdapterError::InvalidBinding)?,
-        );
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| AdapterError::InvalidBinding)?
-            .as_millis();
-        let timestamp = Timestamp::from_unix_millis(
-            i64::try_from(now).map_err(|_| AdapterError::InvalidBinding)?,
-        )
-        .map_err(|_| AdapterError::InvalidBinding)?;
-        let mut row = RoomEvent::new(
-            config.room.clone(),
-            source,
-            TextContent::new("Human permission decision"),
-        );
-        row.id = EventId::new(format!("{RECEIPT_ID_PREFIX}{}", receipt.permission.id))
-            .map_err(|_| AdapterError::InvalidBinding)?;
-        row.r#type = EventType::Observation;
-        row.created_at = timestamp;
-        row.visibility = Visibility::channels([channel.id().clone()])
-            .map_err(|_| AdapterError::InvalidBinding)?;
-        row.metadata
-            .insert(RECEIPT_KEY.into(), serde_json::json!(receipt));
-        if let Some(tool_id) = saved.tool_call_id {
-            row.metadata.insert(RECEIPT_TOOL_KEY.into(), tool_id.into());
-        }
-        kit.commit_event(
-            &config.room,
-            row,
-            CommitEventOptions {
-                organization_id: config.organization.clone(),
-            },
-        )
-        .await?;
-        channel
-            .approvals
-            .recorded(config.room.as_str(), &receipt.permission.id);
+        let permission = saved.decision.permission.id.clone();
+        let row = receipt_row(channel, config, saved)?;
+        let options = CommitEventOptions {
+            organization_id: config.organization.clone(),
+        };
+        kit.commit_event(&config.room, row, options).await?;
+        let room = config.room.as_str();
+        channel.approvals.recorded(room, &permission);
     }
     Ok(())
+}
+
+/// The row `saved` is stored as: an observation only this channel sees,
+/// by the person who decided, named by the request it answers.
+fn receipt_row(
+    channel: &ConversationChannel,
+    config: &SessionConfig,
+    saved: Receipt,
+) -> Result<RoomEvent, AdapterError> {
+    let receipt = saved.decision;
+    let mut source = EventSource::new(channel.id().clone(), roomkit::model::ChannelType::WEBSOCKET);
+    let person = receipt.decided_by.as_str();
+    let person = person.strip_prefix("person:").unwrap_or(person);
+    source.participant_id =
+        Some(ParticipantId::new(person).map_err(|_| AdapterError::InvalidBinding)?);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| AdapterError::InvalidBinding)?
+        .as_millis();
+    let timestamp =
+        Timestamp::from_unix_millis(i64::try_from(now).map_err(|_| AdapterError::InvalidBinding)?)
+            .map_err(|_| AdapterError::InvalidBinding)?;
+    let content = TextContent::new("Human permission decision");
+    let mut row = RoomEvent::new(config.room.clone(), source, content);
+    row.id = EventId::new(format!("{RECEIPT_ID_PREFIX}{}", receipt.permission.id))
+        .map_err(|_| AdapterError::InvalidBinding)?;
+    row.r#type = EventType::Observation;
+    row.created_at = timestamp;
+    row.visibility =
+        Visibility::channels([channel.id().clone()]).map_err(|_| AdapterError::InvalidBinding)?;
+    row.metadata
+        .insert(RECEIPT_KEY.into(), serde_json::json!(receipt));
+    if let Some(tool_id) = saved.tool_call_id {
+        row.metadata.insert(RECEIPT_TOOL_KEY.into(), tool_id.into());
+    }
+    Ok(row)
 }
 
 /// Persistence is deferred until the room lock is released. Present receipts
