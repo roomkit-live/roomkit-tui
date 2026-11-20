@@ -1,6 +1,7 @@
 //! One view of a room: its configuration, the application's command policy,
 //! and the bounded projection restored from the engine.
 
+mod answers;
 mod buffered;
 mod requests;
 mod restore;

@@ -8,7 +8,7 @@ use roomkit_tui_protocol::limits::{
     MAX_OPERATION_ID_BYTES, MAX_TEXT_BYTES,
 };
 use roomkit_tui_protocol::{
-    Command, ErrorCode, Event, QuestionAnswer, QuestionId, Rejection, Request, RunId, Snapshot,
+    Command, Decision, ErrorCode, Event, PermissionId, Rejection, Request, RunId, Snapshot,
 };
 
 use super::serve::{CatchUnwind, Pending, View, send};
@@ -118,18 +118,7 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 permission,
                 decision,
             } => {
-                let scope = (config.conversation(), config.agent.as_str());
-                let answer = self.session.channel.approvals.decide_in(
-                    scope,
-                    config.group_name(),
-                    permission,
-                    *decision,
-                    &config.sender,
-                );
-                if let Ok(room) = &answer {
-                    self.store_decisions_of(room);
-                }
-                self.reply(&request, answer.err())?;
+                self.decide(&request, permission, *decision)?;
                 Ok(None)
             }
             Command::Interrupt { run } => {
@@ -154,6 +143,25 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         }
     }
 
+    /// Answer the request `permission` with `decision`, and store it unless
+    /// this view's work stores it as it ends.
+    fn decide(
+        &self,
+        request: &Request,
+        permission: &PermissionId,
+        decision: Decision,
+    ) -> Result<(), AdapterError> {
+        let config = &self.session.config;
+        let scope = (config.conversation(), config.agent.as_str());
+        let group = config.group_name();
+        let approvals = &self.session.channel.approvals;
+        let answer = approvals.decide_in(scope, group, permission, decision, &config.sender);
+        if let Ok(room) = &answer {
+            self.store_decisions_of(room);
+        }
+        self.reply(request, answer.err())
+    }
+
     /// Stores what was decided for `room`, unless this view's work runs
     /// there, which stores its decisions as it ends: another run has no such
     /// end, and no view may ever open that room.
@@ -171,80 +179,6 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         tokio::spawn(async move {
             let _ = crate::approval_history::persist(&kit, &channel, &config).await;
         });
-    }
-
-    /// Take the person's answers to `id`, or their refusal, to the kit's
-    /// human-input request, from a separate task; the question leaves every
-    /// view of the room at once, and the reply says whether the asking call
-    /// read it.
-    fn answer_question(
-        &self,
-        request: &Request,
-        id: QuestionId,
-        answers: Option<Vec<QuestionAnswer>>,
-    ) -> Result<(), AdapterError> {
-        let room = self.session.config.conversation().to_owned();
-        let agent = self.session.config.agent.as_str();
-        let fits = |question: &roomkit_tui_protocol::Question| {
-            answers
-                .as_ref()
-                .is_none_or(|answers| question.answered_by(answers))
-        };
-        let taken = self
-            .session
-            .channel
-            .questions
-            .take_if((&room, agent), &id, fits);
-        let question = match taken {
-            Ok(question) => question,
-            Err(crate::questions::Untaken::Gone) => {
-                let error = Rejection::invalid("This question is no longer asked");
-                return self.reply(request, Some(error));
-            }
-            Err(crate::questions::Untaken::Unfit) => {
-                let error = Rejection::invalid("These answers do not fit the question");
-                return self.reply(request, Some(error));
-            }
-        };
-        let (kit, channel) = (self.session.kit.clone(), self.session.channel.clone());
-        let (host, reply_to) = (self.host.clone(), request.id);
-        tokio::spawn(async move {
-            let settled = match answers {
-                Some(answers) => {
-                    let text = crate::questions::answer_text(&question, &answers);
-                    kit.answer_input(id.as_str(), &text).await
-                }
-                None => {
-                    let options = roomkit::RejectInputOptions {
-                        reason: crate::questions::DECLINED.to_owned(),
-                    };
-                    kit.reject_input(id.as_str(), options).await
-                }
-            };
-            let conversation = room.as_str().into();
-            channel.publish(
-                &room,
-                Event::QuestionResolved {
-                    conversation,
-                    question: id,
-                },
-            );
-            let error = match settled {
-                Ok(true) => None,
-                Ok(false) => Some(Rejection::unavailable(
-                    "The question was settled otherwise first",
-                )),
-                Err(_) => Some(Rejection::unavailable("The engine is closing")),
-            };
-            let _ = send(
-                &host,
-                Event::Reply {
-                    request: reply_to,
-                    error,
-                },
-            );
-        });
-        Ok(())
     }
 
     /// Answer from a separate task: a stopping engine can take a moment.
@@ -324,6 +258,16 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 return self.reply(&request, Some(error)).map(|()| None);
             }
         };
+        self.start_submission(request, reserved)
+    }
+
+    /// Start the validated submission `request` in the room this view
+    /// reserved: a turn at once, or once the application prepared its images.
+    fn start_submission(
+        &mut self,
+        request: Request,
+        reserved: Active,
+    ) -> Result<Option<Pending<'h>>, AdapterError> {
         let message = match &request.command {
             Command::SubmitImages { message, .. } => message.clone(),
             Command::Submit { text, .. } => {
