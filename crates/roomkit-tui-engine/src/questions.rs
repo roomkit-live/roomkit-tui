@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use roomkit_tui_protocol::limits::MAX_PENDING_QUESTIONS;
 use roomkit_tui_protocol::{Event, Item, Question, QuestionAnswer, QuestionId, QuestionItem};
 
 /// What the agent reads when the person closes its questions unanswered.
@@ -67,9 +68,17 @@ impl Questions {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    pub(crate) fn add(&self, room: &str, question: Question, call: Option<String>) {
-        let asked = Asked { question, call };
-        self.lock().entry(room.to_owned()).or_default().push(asked);
+    /// Wait for the answer to `question`, unless as many questions as a
+    /// terminal holds already wait in `room`, whoever asks them: checked and
+    /// added under one lock, so questions asked at once never pass it.
+    pub(crate) fn add(&self, room: &str, question: Question, call: Option<String>) -> bool {
+        let mut rooms = self.lock();
+        let waiting = rooms.entry(room.to_owned()).or_default();
+        if waiting.len() >= MAX_PENDING_QUESTIONS {
+            return false;
+        }
+        waiting.push(Asked { question, call });
+        true
     }
 
     /// The question `id` that `agent` asks in `room`, no longer waiting,
@@ -99,6 +108,7 @@ impl Questions {
     }
 
     /// How many questions wait in `room`, whoever asks them.
+    #[cfg(test)]
     pub(crate) fn waiting(&self, room: &str) -> usize {
         self.lock().get(room).map_or(0, Vec::len)
     }
@@ -229,8 +239,8 @@ mod tests {
     #[test]
     fn a_run_s_end_or_its_call_s_end_withdraws_a_question() {
         let questions = Questions::default();
-        questions.add("room", question("a", "run1"), Some("c1".into()));
-        questions.add("room", question("b", "run2"), None);
+        assert!(questions.add("room", question("a", "run1"), Some("c1".into())));
+        assert!(questions.add("room", question("b", "run2"), None));
         let running = ToolCall::new("c1", "ask_user", json!({}), ToolState::Running);
         let item = |call: ToolCall| Event::Item {
             conversation: "room".into(),
@@ -263,7 +273,7 @@ mod tests {
     #[test]
     fn a_call_of_another_run_never_withdraws_a_question() {
         let questions = Questions::default();
-        questions.add("room", question("a", "run1"), Some("c1".into()));
+        assert!(questions.add("room", question("a", "run1"), Some("c1".into())));
         let done = ToolCall::new("c1", "ask_user", json!({}), ToolState::Succeeded);
         let settled = |run: &str| Event::Item {
             conversation: "room".into(),
@@ -283,7 +293,7 @@ mod tests {
     #[test]
     fn a_question_is_taken_once_and_only_when_its_answers_fit() {
         let questions = Questions::default();
-        questions.add("room", question("a", "run"), None);
+        assert!(questions.add("room", question("a", "run"), None));
         let id = QuestionId::new("a");
         assert_eq!(
             questions.take_if(("room", "agent"), &id, |_| false),
@@ -308,7 +318,7 @@ mod tests {
     #[test]
     fn only_a_view_of_the_asking_agent_answers_or_sees_a_question() {
         let questions = Questions::default();
-        questions.add("room", question("a", "run"), None);
+        assert!(questions.add("room", question("a", "run"), None));
         let id = QuestionId::new("a");
         assert!(questions.pending(("room", "another")).is_empty());
         assert_eq!(

@@ -128,12 +128,10 @@ impl ConversationChannel {
         };
         let question =
             roomkit_tui_protocol::Question::new(request.id, agent.as_str(), run, request.items);
-        let waiting = self.questions.waiting(room.as_str());
-        if !question.fits() || waiting >= roomkit_tui_protocol::limits::MAX_PENDING_QUESTIONS {
+        let call = request.tool_call_id;
+        if !question.fits() || !self.questions.add(room.as_str(), question.clone(), call) {
             return false;
         }
-        self.questions
-            .add(room.as_str(), question.clone(), request.tool_call_id);
         let conversation = room.as_str().into();
         self.publish(
             room.as_str(),
@@ -382,6 +380,43 @@ mod tests {
         );
         channel.publish("room", finished("agent:evt_1"));
         assert_eq!(channel.questions.waiting("room"), 0);
+    }
+
+    /// ENG-10: the limit of questions waiting in a room was read, then a
+    /// question added, under two locks: questions asked at once passed it.
+    #[test]
+    fn questions_asked_at_once_never_pass_the_limit() {
+        use roomkit_tui_protocol::limits::MAX_PENDING_QUESTIONS;
+        let (room, agent) = (
+            RoomId::new("room").unwrap(),
+            ChannelId::new("agent").unwrap(),
+        );
+        let mut passed = 0;
+        for _ in 0..200 {
+            let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
+            channel.publish("room", started("agent:evt_1"));
+            for waiting in 1..MAX_PENDING_QUESTIONS {
+                assert!(channel.ask_question(&room, &agent, asked(&format!("q{waiting}"))));
+            }
+            let at_once = Arc::new(std::sync::Barrier::new(8));
+            let asking: Vec<_> = (0..8)
+                .map(|id| {
+                    let (channel, at_once) = (channel.clone(), at_once.clone());
+                    let (room, agent) = (room.clone(), agent.clone());
+                    std::thread::spawn(move || {
+                        at_once.wait();
+                        channel.ask_question(&room, &agent, asked(&format!("t{id}")))
+                    })
+                })
+                .collect();
+            let shown = asking
+                .into_iter()
+                .filter_map(|a| a.join().ok())
+                .filter(|shown| *shown);
+            let shown = shown.count();
+            passed += usize::from(shown > 1);
+        }
+        assert_eq!(passed, 0, "Questions asked at once passed the limit");
     }
 
     /// ENG-1: two runs failing in one room each keep their mark.
