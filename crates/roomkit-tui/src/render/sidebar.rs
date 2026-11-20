@@ -4,8 +4,7 @@
 use roomkit_tui_protocol::{SidebarAction, SidebarContent, SidebarEntry, SidebarTone};
 use unicode_width::UnicodeWidthStr;
 
-use super::text::wrap_words;
-use super::{ActionTarget, Frame, Line, Span, Tone, frame, line, span};
+use super::{ActionTarget, Frame, Line, Span, Tone, frame, line, prose, span};
 use crate::session::Focus;
 use crate::{Session, SidebarState, UiOptions};
 
@@ -181,11 +180,10 @@ fn entry_rows(entry: &SidebarEntry, index: Option<usize>, inner: usize) -> Vec<R
         _ => Tone::Text,
     };
     let marker = if entry.action.is_some() { "› " } else { "" };
-    let details = wrap_words(&entry.detail, inner)
+    let details = prose::rows(&entry.detail, inner, Tone::Muted, true)
         .into_iter()
-        .filter(|line| !line.is_empty())
-        .take(3)
-        .map(|detail| line(detail, Tone::Muted));
+        .filter(|row| !row.is_empty())
+        .take(3);
     std::iter::once(line(format!("{marker}{}", entry.label), tone))
         .chain(details)
         .map(|line| Row {

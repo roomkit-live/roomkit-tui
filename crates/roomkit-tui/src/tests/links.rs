@@ -257,3 +257,27 @@ fn a_tool_s_arguments_link_an_address_in_compact_json_on_every_row() {
     );
     assert_linked_on_every_row(&frame, url);
 }
+
+#[test]
+fn a_sidebar_entry_links_the_address_of_its_detail_on_every_row() {
+    let url = "https://example.com/records/42?view=summary&tab=links";
+    let entry = SidebarEntry::new("Record 42").with_detail(format!("Source {url}"));
+    let section = SidebarSection::new(
+        "Records",
+        SidebarContent::Entries {
+            entries: vec![entry],
+        },
+    );
+    let mut session = session();
+    session.apply(Event::SidebarChanged {
+        conversation: "room-a".into(),
+        sidebar: Some(SidebarSpec::new("Session", vec![section])),
+    });
+    session.sidebar_visible = Some(true);
+    let frame = render::screen(&session, 140, 30, &Renderers::default());
+    assert!(
+        frame.lines.iter().any(|l| l.contains("Record 42")),
+        "the sidebar shows"
+    );
+    assert_linked_on_every_row(&frame, url);
+}
