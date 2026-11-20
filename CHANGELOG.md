@@ -6,6 +6,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-20
+
+`roomkit-tui` breaks one API: `SessionObservation` has a new field, and the
+session observations are `#[non_exhaustive]`. `roomkit-tui-protocol` and
+`roomkit-tui-transport` only add. `roomkit-tui-engine` stays on Git, as
+roomkit-rs is not on crates.io; it follows roomkit-rs 0.2.0, which is public.
+
 ### Added
 
 - A long paste in the composer (three lines or more, or over 500
@@ -349,6 +356,7 @@ Initial public release.
 - A panic on the terminal thread restores the terminal before it is reported.
 - `roomkit-chat` refuses to send an API key over plain HTTP to another host.
 
-[Unreleased]: https://github.com/roomkit-live/roomkit-tui/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit-tui/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/roomkit-live/roomkit-tui/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/roomkit-live/roomkit-tui/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/roomkit-live/roomkit-tui/releases/tag/v0.1.0
