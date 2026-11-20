@@ -72,10 +72,11 @@ pub(super) fn header(view: &View<'_>, cols: usize, rows: usize) -> Vec<Line> {
 const NOTICE_ROWS: usize = 5;
 
 /// The activity row, with the notice beside the status when it fits there on
-/// one line; otherwise the notice follows on rows of its own, wrapped at
-/// words, at most [`NOTICE_ROWS`] and `room`, the rows the screen leaves it:
-/// a provider's refusal says on a second line what to change. Without room,
-/// the notice stays beside the status, cut at the screen's edge.
+/// one line, left of the row's controls; otherwise the notice follows on rows
+/// of its own, wrapped at words, at most [`NOTICE_ROWS`] and `room`, the rows
+/// the screen leaves it: a provider's refusal says on a second line what to
+/// change. Without room, the notice stays beside the status, cut at the
+/// controls.
 pub(super) fn activity(view: &View<'_>, cols: usize, room: usize) -> Vec<Line> {
     let mut row = status(view);
     let notice = view.session.notice.as_str();
@@ -84,7 +85,8 @@ pub(super) fn activity(view: &View<'_>, cols: usize, room: usize) -> Vec<Line> {
     }
     let beside = format!(" · {notice}");
     let used: usize = row.iter().map(|span| columns(&span.text)).sum();
-    let fits = !notice.contains('\n') && used + columns(&beside) <= cols;
+    let width = beside_controls(view, cols, may_show_back(view));
+    let fits = !notice.contains('\n') && used + columns(&beside) <= width;
     if fits || room == 0 {
         row.extend(link_text(vec![span(beside, Tone::Muted)]));
         return vec![row];
@@ -166,15 +168,29 @@ pub(super) fn attachments(view: &View<'_>, cols: usize) -> Vec<Line> {
     vec![line(text, Tone::Primary)]
 }
 
-/// Right-aligned controls on the activity row: background work and, while
-/// browsing history, the way back to the latest activity.
-pub(super) fn controls(
-    view: &View<'_>,
-    row: &mut Line,
-    cols: usize,
-    screen_row: usize,
-    more_below: bool,
-) -> (Option<BackToBottomTarget>, Vec<super::ActionTarget>) {
+/// Whether the activity row may offer the way back to the latest activity:
+/// while browsing history or following a tool, before the history is laid out.
+fn may_show_back(view: &View<'_>) -> bool {
+    view.session.scroll > 0 || view.session.has_tool_focus()
+}
+
+/// The columns the activity row's controls leave its status and notice,
+/// a blank column apart from them.
+fn beside_controls(view: &View<'_>, cols: usize, more_below: bool) -> usize {
+    let reserved: usize = labels(view, cols, more_below)
+        .iter()
+        .map(|(label, _)| label.width())
+        .sum();
+    if reserved == 0 {
+        cols
+    } else {
+        cols.saturating_sub(reserved + 1)
+    }
+}
+
+/// The labels of the activity row's controls, each saying whether it opens
+/// the background work.
+fn labels(view: &View<'_>, cols: usize, more_below: bool) -> Vec<(String, bool)> {
     let back = more_below.then_some(match cols {
         80.. => " ↓ Back to bottom · Ctrl+End ",
         36.. => " ↓ Back to bottom ",
@@ -193,6 +209,19 @@ pub(super) fn controls(
         }
     }
     controls.extend(back.map(|label| (label.to_string(), false)));
+    controls
+}
+
+/// Right-aligned controls on the activity row: background work and, while
+/// browsing history, the way back to the latest activity.
+pub(super) fn controls(
+    view: &View<'_>,
+    row: &mut Line,
+    cols: usize,
+    screen_row: usize,
+    more_below: bool,
+) -> (Option<BackToBottomTarget>, Vec<super::ActionTarget>) {
+    let controls = labels(view, cols, more_below);
     let reserved: usize = controls.iter().map(|(label, _)| label.width()).sum();
     if reserved == 0 {
         return (None, Vec::new());

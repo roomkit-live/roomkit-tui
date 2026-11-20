@@ -113,6 +113,41 @@ fn background_and_return_to_bottom_share_a_bounded_activity_row() {
     }
 }
 
+/// A notice that fits the activity row's width but not the columns its
+/// controls leave goes on rows of its own, whole, rather than being cut.
+#[test]
+fn a_notice_too_wide_beside_the_activity_controls_wraps_below_them() {
+    let notice = "Provider refused the request: select Global in the settings to use it.";
+    // ` ○ Ready · {notice}` fits 100 columns alone.
+    assert!(" ○ Ready · ".width() + notice.width() <= 100);
+    let shown = |s: &Session| render::screen(s, 100, 24, &Renderers::default()).lines;
+
+    let mut beside_jobs = session();
+    beside_jobs.notice = notice.into();
+    beside_jobs.apply(Event::BackgroundChanged {
+        conversation: "room-a".into(),
+        status: Some(BackgroundStatus::new(
+            "Processes: 2 running",
+            "summarize",
+            "open",
+        )),
+    });
+    let lines = shown(&beside_jobs);
+    assert!(lines.iter().any(|l| l.contains(notice)), "{lines:#?}");
+    assert!(lines.iter().any(|l| l.contains("Processes: 2 running")));
+
+    let mut scrolled = session();
+    scrolled.notice = notice.into();
+    scrolled.apply(Event::Item {
+        conversation: "room-a".into(),
+        item: Item::Message(Message::new("long", "agent", "history line\n\n".repeat(60))),
+    });
+    scrolled.scroll = 12;
+    let lines = shown(&scrolled);
+    assert!(lines.iter().any(|l| l.contains(notice)), "{lines:#?}");
+    assert!(lines.iter().any(|l| l.contains("Back to bottom")));
+}
+
 #[test]
 fn centered_welcome_reuses_the_composer_and_restores_conversation_layout() {
     use crate::{UiOptions, WelcomeScreen};
