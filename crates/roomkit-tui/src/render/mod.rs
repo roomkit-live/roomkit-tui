@@ -3,6 +3,7 @@
 mod activity;
 mod approval;
 pub(crate) mod cache;
+mod card;
 mod chrome;
 mod composer;
 mod context;

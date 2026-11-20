@@ -2,9 +2,9 @@
 
 use roomkit_tui_protocol::{Decision, Permission, PermissionDecision};
 
+use super::card::{card_screen, enlarge};
 use super::footer::quit_hint;
-use super::text::{format_duration, pad, wrap, wrap_words};
-use super::timeline::timeline;
+use super::text::{format_duration, pad, wrap_words};
 use super::{Frame, Line, PermissionTarget, Tone, View, frame, line, span};
 use crate::Session;
 
@@ -42,66 +42,68 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
     card.push(filled(""));
     let choice_start = card.len();
     card.extend(choices(session, cols, waiting, armed));
+    let shown = (start + count).min(detail.len());
+    let help = quit_hint(session, view.elapsed).unwrap_or_else(|| {
+        format!(
+            "PgUp/PgDn details {shown}/{} · {}",
+            detail.len(),
+            cancel_hint(session)
+        )
+    });
+    card.push(filled(&help));
+    card.push(filled(""));
+    // Never show part of what a person is asked to approve.
+    let Some(placed) = card_screen(view, cols, rows, card, None) else {
+        return enlarge("Enlarge terminal to review this request", cols);
+    };
+    let mut result = placed.frame;
+    result.permission_scroll = Some(start);
+    result.approval = Some(permission.id.clone());
+    if !waiting {
+        result.permission_targets = targets(session, permission, placed.top + choice_start, cols);
+    }
+    result
+}
+
+/// What Esc does on the card, and whether more requests wait behind it.
+fn cancel_hint(session: &Session) -> String {
+    let cancel = if session.permission_elsewhere().is_some() {
+        "Esc refuse · o open its room"
+    } else if session.card_refuses_on_cancel() {
+        "Esc refuse"
+    } else {
+        "Esc interrupt"
+    };
     let more = if session.permissions().len() > 1 {
         " · more requests pending"
     } else {
         ""
     };
-    let shown = (start + count).min(detail.len());
-    let help = quit_hint(session, view.elapsed).unwrap_or_else(|| {
-        format!(
-            "PgUp/PgDn details {shown}/{} · {}{more}",
-            detail.len(),
-            if session.permission_elsewhere().is_some() {
-                "Esc refuse · o open its room"
-            } else if session.card_refuses_on_cancel() {
-                "Esc refuse"
-            } else {
-                "Esc interrupt"
-            }
-        )
-    });
-    card.push(filled(&help));
-    card.push(filled(""));
-    let notice = usize::from(!session.notice.is_empty());
-    if card.len() + notice > rows {
-        // Never show part of what a person is asked to approve.
-        let text = wrap("Enlarge terminal to review this request", cols);
-        return frame(
-            text.into_iter().map(|t| line(t, Tone::Muted)).collect(),
-            cols,
-            None,
-        );
-    }
-    let top = rows.saturating_sub(card.len() + notice);
-    let history = timeline(view, cols, top.saturating_sub(1), 0).lines;
-    let mut lines: Vec<_> = history
+    format!("{cancel}{more}")
+}
+
+/// The click targets of the answers, whose first row is screen row `row`.
+fn targets(
+    session: &Session,
+    permission: &Permission,
+    row: usize,
+    cols: usize,
+) -> Vec<PermissionTarget> {
+    let Some(snapshot) = &session.snapshot else {
+        return Vec::new();
+    };
+    CHOICES
         .into_iter()
-        .rev()
-        .take(top.saturating_sub(1))
-        .collect();
-    lines.reverse();
-    lines.resize_with(top, Vec::new);
-    lines.extend(card);
-    if notice > 0 {
-        lines.push(line(format!(" {}", session.notice), Tone::Warning));
-    }
-    let mut result = frame(lines, cols, None);
-    result.permission_scroll = Some(start);
-    result.approval = Some(permission.id.clone());
-    if !waiting && let Some(snapshot) = &session.snapshot {
-        for (index, (_, decision)) in CHOICES.into_iter().enumerate() {
-            result.permission_targets.push(PermissionTarget {
-                conversation: snapshot.conversation.clone(),
-                permission: permission.id.clone(),
-                decision,
-                row: top + choice_start + index,
-                start: 0,
-                end: cols,
-            });
-        }
-    }
-    result
+        .enumerate()
+        .map(|(index, (_, decision))| PermissionTarget {
+            conversation: snapshot.conversation.clone(),
+            permission: permission.id.clone(),
+            decision,
+            row: row + index,
+            start: 0,
+            end: cols,
+        })
+        .collect()
 }
 
 /// The two answers, highlighted only while an answer would be accepted,
