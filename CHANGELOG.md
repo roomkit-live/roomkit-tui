@@ -22,11 +22,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   conversation's URL detection.
 
 - HTTP(S) links in conversation text and Markdown labels carry native terminal
-  destinations through wrapping and tables; OSC 8 output matches Codex's BEL
-  termination and form links are visibly underlined.
+  destinations through wrapping and tables; OSC 8 output ends with BEL, and form
+  links are visibly underlined.
 
 - Standalone HTTP(S) links in form instructions use native OSC 8 hyperlinks;
   wrapped fragments keep the complete destination for browser opening.
+
+- Web addresses are linked wherever an agent's or a host's text shows: a
+  question and its options, an approval's detail, the notices under a card, a
+  form or a panel, the welcome screen, a panel's output, a model's reasoning, a
+  tool's arguments (compact JSON included) and a sidebar entry's detail, also
+  in Unicode quotes or before Unicode punctuation. A notice under a card, a
+  form or a panel wraps instead of being cut to a row.
 
 - Host forms can show scrollable instructions beside their fields, notify the
   host on cancellation, and display an asynchronous result while still open.
@@ -94,8 +101,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   generation, in the capacity the session configured; a stopped run keeps what its
   generations told, a steered message's own turn too, and a turn with no record
   is not told the last one's. A run the kit's close cuts ends `Interrupted`, not
-  `Completed`. A person's message no longer clears the restored measure. Pinned to
-  roomkit-rs dcaf5053.
+  `Completed`. A person's message no longer clears the restored measure.
 
 - A model's reasoning (RMK-1325): `Event::ThinkingDelta`, which the engine sends
   from the kit's `StreamItem::Thinking`, and `Item::Thinking`, a block the view
@@ -105,24 +111,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no snapshot holds it, so it does not come back with a conversation.
   Reasoning also tells when a turn read a message it was handed.
 
-### Changed
-
-- A provider's refusal (HTTP 4xx) shows the provider's own words below its
-  explanation, within 300 characters and any key masked: OpenCode Go's "hosted
-  outside Europe and the United States, select Global" read only as "rejected
-  the request format or parameters". A notice too long for the activity row
-  follows it on up to five wrapped rows instead of being cut.
-- The engine follows roomkit-rs ee5d724, whose channel, hook and AI APIs it uses
-  unchanged (RMK-1460).
-- The engine follows roomkit-rs c30375c, whose channel, hook and AI APIs it uses
-  unchanged (RMK-1324). A model the kit refuses before any request, for the API
-  or the tools it serves, reads as `provider_model_refused`.
-- A call the engine refused reads "refused", in its group and its details, in
-  place of "declined" and "denied": a rule or its own arguments refuse it as
-  often as a person does.
-
-### Added
-
 - Cut a turn for a message already handed to it (RMK-1311): its line says
   `Ctrl+S to cut it now` while the turn runs. Ctrl+S on an empty composer cuts the
   turn, and `Command::Answer` starts a turn of its own that reads what it was
@@ -131,7 +119,34 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `SessionLifecycle::admit_answer`, which is `admit` by default. The row below
   names Ctrl+S only for what is typed during a run.
 
+### Changed
+
+- A provider's refusal (HTTP 4xx) shows the provider's own words below its
+  explanation, within 300 characters and any key masked: OpenCode Go's "hosted
+  outside Europe and the United States, select Global" read only as "rejected
+  the request format or parameters". A notice too long for the activity row
+  follows it on up to five wrapped rows instead of being cut.
+- The engine follows roomkit-rs 0.2.0 (4f271c6), which is public: any host can
+  build `roomkit-tui-engine` from Git. A model the kit refuses before any
+  request, for the API or the tools it serves, reads as
+  `provider_model_refused`.
+- `SessionObservation`, `RunObservation` and `OperationObservation` are
+  `#[non_exhaustive]`: a host reads them, and builds or matches them only with
+  `..`. `SessionObservation` gained `questions`, a breaking change for code
+  that built it, hence 0.3.0.
+- A call the engine refused reads "refused", in its group and its details, in
+  place of "declined" and "denied": a rule or its own arguments refuse it as
+  often as a person does.
+
 ### Fixed
+
+- A steered message's own turn is judged as any turn: it ends `Interrupted`
+  only when the person's cut was accepted, and a cut by the kit's close ends
+  it `Failed`.
+- A slow admission that fails still ends its preparation run.
+- A narrow footer drops whole figures instead of cutting one (`/ 45` for 4567
+  output tokens).
+- A notice the activity row's controls would cut wraps below them.
 
 - Copying with the mouse works on macOS whatever the terminal: outside SSH, a
   copy also writes the Mac's own clipboard, beside OSC 52, which Terminal
@@ -169,9 +184,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with a completed generation but no text or tool reports a missing answer,
   preserving the engine's retries and usage updates.
 
-- A provider failure in a streamed run is explained once. The run's stream
-  told it, then the turn that delivered the message told it again: a client
-  printing notices showed "Cannot reach the model server" twice.
+- A provider failure in a streamed run is explained once, a steered message's
+  own turn included. The run's stream told it, then the turn that delivered the
+  message told it again: a client printing notices showed "Cannot reach the
+  model server" twice.
 
 - A request refused past the model's context window says so. The kit's own
   failure when its compaction cannot make room, `Context too large but …`, read
