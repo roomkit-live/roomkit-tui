@@ -297,14 +297,10 @@ async fn host_work_keeps_its_approvals_while_another_channel_turn_runs() {
     kit.close().await.unwrap();
 }
 
-/// ENG-2: once its view had run a turn, a decision for a run the view did not
-/// start, here a turn for another channel's message, waited for the view's
-/// next turn to be stored: none came, and it was never stored.
-#[tokio::test]
-async fn a_decision_for_another_channel_s_turn_is_stored_after_a_turn_of_the_view() {
-    use roomkit::ProcessInboundOptions;
-    use roomkit::model::{EventContent, InboundMessage, TextContent};
-
+/// A room where a message of another channel, `sms`, starts a turn of the
+/// view's agent that asks before its tool: the kit, the view's channel and
+/// `sms`.
+async fn room_with_another_channel() -> (RoomKit, ConversationChannel, ConversationChannel) {
     let kit = RoomKit::new(Default::default());
     let provider = ScriptedProvider::new([
         ScriptedRound::answering("Hello"),
@@ -314,8 +310,7 @@ async fn a_decision_for_another_channel_s_turn_is_stored_after_a_turn_of_the_vie
     let channel = prepare(&kit, provider, Arc::default(), false).await;
     let sms = ConversationChannel::buffered(ChannelId::new("sms").unwrap());
     kit.register_channel(sms.clone()).unwrap();
-    let room = config().room;
-    kit.attach_channel(&room, sms.id(), Default::default())
+    kit.attach_channel(&config().room, sms.id(), Default::default())
         .await
         .unwrap();
     let asking = channel.clone();
@@ -336,30 +331,31 @@ async fn a_decision_for_another_channel_s_turn_is_stored_after_a_turn_of_the_vie
         hook_options("permission"),
     )
     .unwrap();
-    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
-    let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
-    next(&client).await;
-    client.try_send(request("greeting")).unwrap();
-    collect_operation(&client).await;
+    (kit, channel, sms)
+}
 
+/// `sms` sends a message to the view's agent, from a task of its own.
+fn message_from(
+    kit: &RoomKit,
+    sms: &ConversationChannel,
+) -> tokio::task::JoinHandle<Result<(), roomkit::RoomKitError>> {
+    use roomkit::ProcessInboundOptions;
+    use roomkit::model::{EventContent, InboundMessage, TextContent};
     let text = EventContent::Text(TextContent::new("Status?"));
     let mut message = InboundMessage::new(sms.id().clone(), "carol", text);
     message.addressed_to = Some(vec![config().agent]);
     let options = ProcessInboundOptions {
-        room_id: Some(room.clone()),
+        room_id: Some(config().room),
         organization_id: None,
         defer_delivery: false,
     };
-    let inbound = {
-        let kit = kit.clone();
-        tokio::spawn(async move { kit.process_inbound(message, options).await.map(|_| ()) })
-    };
-    let permission = requested(&client).await;
-    client
-        .try_send(decide(2, &permission, Decision::Allow))
-        .unwrap();
-    assert_eq!(reply(&client, 2).await, None);
-    inbound.await.unwrap().unwrap();
+    let kit = kit.clone();
+    tokio::spawn(async move { kit.process_inbound(message, options).await.map(|_| ()) })
+}
+
+/// Whether a decision row is stored in the room within two seconds.
+async fn decision_stored(kit: &RoomKit) -> bool {
+    let room = config().room;
     let stored = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let rows = kit
@@ -375,16 +371,91 @@ async fn a_decision_for_another_channel_s_turn_is_stored_after_a_turn_of_the_vie
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     });
-    assert!(stored.await.is_ok(), "The decision is stored");
+    stored.await.is_ok()
+}
+
+/// A decision for a run the view did not start, here a turn for another
+/// channel's message, is stored at once, also once the view has run a turn:
+/// no later turn of the view is waited for.
+#[tokio::test]
+async fn a_decision_for_another_channel_s_turn_is_stored_after_a_turn_of_the_view() {
+    let (kit, channel, sms) = room_with_another_channel().await;
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
+    next(&client).await;
+    client.try_send(request("greeting")).unwrap();
+    collect_operation(&client).await;
+    let inbound = message_from(&kit, &sms);
+    let permission = requested(&client).await;
+    client
+        .try_send(decide(2, &permission, Decision::Allow))
+        .unwrap();
+    assert_eq!(reply(&client, 2).await, None);
+    inbound.await.unwrap().unwrap();
+    assert!(decision_stored(&kit).await, "The decision is stored");
     drop(client);
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }
 
-/// ENG-11: decisions were stored one room at a time across the channel. A
-/// room whose lock a turn held kept its decisions waiting to be stored, and
-/// every other room's with them: a view could not attach elsewhere until
-/// that turn ended.
+/// Holds the end of the view's turn, as a host's slow `finished` does,
+/// telling `entered` once it holds it.
+#[derive(Debug, Default)]
+struct HoldFinished {
+    entered: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+}
+
+impl roomkit_tui_engine::SessionLifecycle for HoldFinished {
+    fn finished<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        _: &'a OperationId,
+        _: roomkit_tui_engine::TurnOutcome,
+    ) -> roomkit_tui_engine::LifecycleFuture<'a, ()> {
+        Box::pin(async move {
+            self.entered.notify_one();
+            self.release.notified().await;
+        })
+    }
+}
+
+/// A decision taken while the view's turn ends, past the store of its own
+/// decisions, is stored: the ended turn takes no interruption any more, so
+/// the decision is not left to it.
+#[tokio::test]
+async fn a_decision_taken_while_the_view_s_turn_ends_is_stored() {
+    let (kit, channel, sms) = room_with_another_channel().await;
+    let hold = Arc::new(HoldFinished::default());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session =
+        LocalSession::new(kit.clone(), channel.clone(), config()).with_lifecycle(hold.clone());
+    let task = tokio::spawn(session.run(host));
+    next(&client).await;
+    client.try_send(request("greeting")).unwrap();
+    hold.entered.notified().await;
+    let inbound = message_from(&kit, &sms);
+    // The view's own run ends meanwhile: `requested` would take it for the end.
+    let permission = loop {
+        if let Event::PermissionRequested { permission, .. } = next(&client).await {
+            break permission;
+        }
+    };
+    client
+        .try_send(decide(2, &permission, Decision::Allow))
+        .unwrap();
+    assert_eq!(reply(&client, 2).await, None);
+    let stored = decision_stored(&kit).await;
+    hold.release.notify_one();
+    let _ = tokio::time::timeout(Duration::from_secs(5), inbound).await;
+    assert!(stored, "The decision is stored while the turn ends");
+    drop(client);
+    let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
+}
+
+/// Decisions are stored one room at a time per room: a room whose lock a
+/// turn holds keeps its own decisions waiting, never another room's, and a
+/// view attaches elsewhere meanwhile.
 #[tokio::test]
 async fn a_room_whose_decisions_wait_for_its_lock_holds_no_other_room() {
     use roomkit::ProcessInboundOptions;
