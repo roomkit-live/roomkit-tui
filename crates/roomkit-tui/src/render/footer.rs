@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use roomkit_tui_protocol::{ConversationCost, SidebarContent, Snapshot};
 
-use super::text::sanitize;
+use super::text::{ellipsize, sanitize};
 use super::{Line, Session, Span, Tone, line, span};
 use unicode_width::UnicodeWidthStr;
 
@@ -198,15 +198,59 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
         .chain(&parts)
         .map(|part| sanitize(&part.text).width())
         .sum();
-    if settings.is_empty() || combined_width.saturating_add(2) <= width {
-        if !settings.is_empty() {
-            settings.push(span(" ·", Tone::Muted));
-        }
+    if settings.is_empty() {
+        vec![whole_parts(parts, width)]
+    } else if combined_width.saturating_add(2) <= width {
+        settings.push(span(" ·", Tone::Muted));
         settings.extend(parts);
         vec![settings]
     } else {
-        vec![settings, parts]
+        vec![settings, whole_parts(parts, width)]
     }
+}
+
+/// The parts that `width` columns hold whole, cut only before a ` · `, then
+/// `…` when some are left out: a figure cut short, as `total ≈ $1` for
+/// $133.32, would read as another. A first part too wide alone ends in `…`.
+fn whole_parts(parts: Line, width: usize) -> Line {
+    let pieces: Line = parts.into_iter().flat_map(separated).collect();
+    let size = |piece: &Span| sanitize(&piece.text).width();
+    if pieces.iter().map(size).sum::<usize>() <= width {
+        return pieces;
+    }
+    let mut kept = Vec::new();
+    let mut used = 0;
+    for piece in pieces {
+        // The room ` …` takes stays free.
+        if used + size(&piece) + 2 > width {
+            if kept.is_empty() {
+                let text = ellipsize(&piece.text, width);
+                return vec![Span { text, ..piece }];
+            }
+            break;
+        }
+        used += size(&piece);
+        kept.push(piece);
+    }
+    kept.push(span(" …", Tone::Muted));
+    kept
+}
+
+/// `part` cut before each ` · ` it holds, every piece in its style.
+fn separated(part: Span) -> Vec<Span> {
+    let mut cuts: Vec<usize> = part.text.match_indices(" · ").map(|(at, _)| at).collect();
+    cuts.retain(|&at| at > 0);
+    cuts.push(part.text.len());
+    let mut start = 0;
+    cuts.into_iter()
+        .map(|end| {
+            let text = part.text[std::mem::replace(&mut start, end)..end].to_owned();
+            Span {
+                text,
+                ..part.clone()
+            }
+        })
+        .collect()
 }
 
 /// The context's occupancy, saying first when it is an earlier report or

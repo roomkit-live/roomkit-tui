@@ -384,3 +384,55 @@ fn a_refusal_after_an_earlier_step_reads_as_a_last_report_in_the_footer() {
         "{screen}"
     );
 }
+
+/// A footer too narrow for all its parts drops the last whole ones and ends
+/// in `…`: a figure is never cut, as `total ≈ $1` for $133.32 would read.
+#[test]
+fn a_narrow_footer_drops_whole_parts_and_never_cuts_a_figure() {
+    let mut session = session();
+    started(&mut session, "run-1");
+    session.apply(Event::UsageUpdated {
+        conversation: "room-a".into(),
+        run: "run-1".into(),
+        provider: "local".into(),
+        model: "model-a".into(),
+        context: Some(ContextUsage::new(15_165).with_capacity(128_000)),
+        usage: TokenUsage::complete(4_567, 85, 1_200),
+    });
+    session.apply(Event::CostUpdated {
+        conversation: "room-a".into(),
+        cost: ConversationCost::new(12_500_000, "USD", true),
+    });
+    session.apply(related(
+        "room-a",
+        Some(ConversationCost::new(120_820_000, "USD", true)),
+    ));
+    // The figures' row from the context on: the agent's settings share it
+    // when there is room for them all.
+    let row = |width| {
+        let frame = render::screen(&session, width, 30, &Renderers::default());
+        let row = frame.lines.into_iter().find(|l| l.contains("context"));
+        let row = row.unwrap();
+        row[row.find("context").unwrap()..].trim_end().to_owned()
+    };
+    let whole = row(400);
+    assert!(whole.ends_with("total ≈ $133.32"), "{whole}");
+    let parts: Vec<&str> = whole.split(" · ").collect();
+    for width in (30..=240).rev() {
+        let shown = row(width);
+        let pieces: Vec<&str> = shown
+            .trim_end_matches('…')
+            .trim_end()
+            .split(" · ")
+            .collect();
+        for piece in &pieces {
+            assert!(
+                parts.contains(piece),
+                "{piece:?} is cut at {width}: {shown}"
+            );
+        }
+        if pieces.len() < parts.len() {
+            assert!(shown.ends_with('…'), "{shown}");
+        }
+    }
+}
