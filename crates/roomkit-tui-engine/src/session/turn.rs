@@ -9,15 +9,16 @@ use roomkit_tui_protocol::limits::{
     MAX_IMAGE_BASE64_BYTES, MAX_IMAGE_NAME_BYTES, MAX_IMAGE_PIXELS, MAX_IMAGES, MAX_TEXT_BYTES,
 };
 use roomkit_tui_protocol::{
-    Command, Event, ImageMessage, OperationId, Rejection, Request, RunId, RunOutcome,
+    Command, Event, ImageMessage, OperationId, Rejection, Request, RunOutcome,
 };
 
 use super::buffered::Buffered;
 use super::serve::View;
+use super::verdict::{self, Settled, Verdict};
 use super::{AdapterError, CommandHandler, SessionConfig, restore};
 use crate::activity::Active;
 use crate::execution::{Interrupter, Operation};
-use crate::{ConversationChannel, SessionLifecycle, TurnOutcome, cancellation, projection};
+use crate::{ConversationChannel, SessionLifecycle, cancellation, projection};
 
 /// What a turn started without a new message is told. It is an instruction:
 /// never stored, and never shown as anyone's words.
@@ -122,15 +123,6 @@ struct Turn<S: ConversationStore> {
     answer: bool,
 }
 
-/// How a delivery ended, before the host's lifecycle is told.
-struct Delivered {
-    outcome: RunOutcome,
-    failure: Option<String>,
-    /// The run's stream already told the failure to the views.
-    failure_told: bool,
-    blocked: bool,
-}
-
 impl<S: ConversationStore> Turn<S> {
     async fn run(self, content: EventContent, processing: Operation) {
         let (channel, room) = (self.channel.clone(), self.config.room.to_string());
@@ -168,34 +160,18 @@ impl<S: ConversationStore> Turn<S> {
                 return outcome;
             }
         }
-        let delivered = self.deliver(content).await;
-        if let Some(text) = delivered
-            .failure
-            .as_deref()
-            .filter(|_| !delivered.failure_told)
-        {
-            self.notice(text);
-        }
+        let verdict = self.deliver(content).await;
+        verdict.tell(&self.channel, self.config.conversation());
         let stored = crate::approval_history::persist(&self.kit, &self.channel, &self.config).await;
         if stored.is_err() {
             self.notice("Decision accepted, but its history could not be saved. This does not change tool execution.");
         }
-        let outcome = match &delivered.failure {
-            Some(_) => RunOutcome::Failed,
-            None => delivered.outcome,
-        };
         if let Some(lifecycle) = &self.lifecycle {
-            let ended = match outcome {
-                _ if delivered.blocked => TurnOutcome::Blocked,
-                RunOutcome::Completed => TurnOutcome::Completed,
-                RunOutcome::Interrupted => TurnOutcome::Interrupted,
-                _ => TurnOutcome::Failed,
-            };
             lifecycle
-                .finished(&self.config, &self.operation, ended)
+                .finished(&self.config, &self.operation, verdict.ended())
                 .await;
         }
-        outcome
+        verdict.outcome
     }
 
     fn notice(&self, text: &str) {
@@ -207,7 +183,7 @@ impl<S: ConversationStore> Turn<S> {
         self.channel.publish(room, event);
     }
 
-    async fn deliver(&mut self, content: EventContent) -> Delivered {
+    async fn deliver(&mut self, content: EventContent) -> Verdict {
         let (config, channel) = (&self.config, &self.channel);
         let mut message = InboundMessage::new(channel.id().clone(), &config.sender, content);
         message.addressed_to = Some(vec![config.agent.clone()]);
@@ -233,17 +209,12 @@ impl<S: ConversationStore> Turn<S> {
         };
         match self.kit.process_inbound(message, options).await {
             Ok(admitted) => self.settle(admitted).await,
-            Err(error) => Delivered {
-                outcome: RunOutcome::Failed,
-                failure: Some(crate::diagnostics::explain(&error.to_string())),
-                failure_told: false,
-                blocked: false,
-            },
+            Err(error) => Verdict::failed(crate::diagnostics::explain(&error.to_string())),
         }
     }
 
-    /// Wait for the delivery while interruption stays live, then classify it.
-    async fn settle(&mut self, mut admitted: InboundResult) -> Delivered {
+    /// Wait for the delivery while interruption stays live, then judge it.
+    async fn settle(&mut self, admitted: InboundResult) -> Verdict {
         let room = self.config.conversation().to_owned();
         let run = admitted
             .event
@@ -258,70 +229,20 @@ impl<S: ConversationStore> Turn<S> {
             .clone()
             .filter(|_| !self.channel.streams() && !admitted.blocked);
         let buffered = Buffered::start(&self.channel, &room, announced);
-        let mut failure = None;
-        let mut interrupted = false;
-        if let (Some(delivery), Some(waiting)) = (admitted.delivery.clone(), run.clone()) {
-            let waited =
-                cancellation::wait(delivery, waiting, &room, &self.channel, &mut self.controls)
-                    .await;
-            interrupted = waited.1;
-            match waited.0 {
-                Ok(done) => admitted = done,
-                Err(error) => failure = Some(self.failed(run.as_ref(), &error.to_string())),
+        let settled = match run.clone() {
+            Some(run) => {
+                let controls = &mut self.controls;
+                Settled::wait(admitted, run, &room, &self.channel, controls).await
             }
-        }
-        let cancelled = admitted.cancellation_reason.as_deref();
-        let mut outcome = if interrupted && cancelled == Some("caller_cancelled") {
-            RunOutcome::Interrupted
-        } else {
-            RunOutcome::Completed
+            None => Settled::now(admitted),
         };
-        if let Some(error) = &admitted.error {
-            failure = Some(self.failed(run.as_ref(), &error.message));
-        } else if admitted.blocked {
-            failure = Some(
-                "The engine blocked this message. Check the room state and host policy.".into(),
-            );
-        } else if cancelled.is_some() && outcome != RunOutcome::Interrupted {
-            failure = Some("Execution cancelled. Completed tool actions are retained.".into());
-        }
-        if failure.is_some() {
-            outcome = RunOutcome::Failed;
-        }
-        if let Some(trigger) = &admitted.event {
+        let explain = |error: &str| verdict::explained(&self.channel, &room, run.as_ref(), error);
+        let verdict = Verdict::judge(&settled, explain);
+        if let Some(trigger) = &settled.result.event {
             publish_usage(&self.kit, &self.channel, &self.config, trigger).await;
         }
-        buffered.finish(&admitted, outcome);
-        Delivered {
-            outcome,
-            failure_told: failure.is_some() && self.told_by_stream(run.as_ref()),
-            failure,
-            blocked: admitted.blocked,
-        }
-    }
-
-    /// Whether the stream of `run` already told the views why it failed.
-    fn told_by_stream(&self, run: Option<&RunId>) -> bool {
-        let room = self.config.conversation();
-        run.is_some_and(|run| self.channel.take_failure_told(room, run))
-    }
-
-    /// Explain `error`. A refusal past the model's context window is also
-    /// told with its `run`, before the run ends; a streamed run tells it from
-    /// its stream.
-    fn failed(&self, run: Option<&RunId>, error: &str) -> String {
-        let diagnostic = crate::diagnostics::Diagnostic::classify(error);
-        if diagnostic.exceeds_context()
-            && !self.channel.streams()
-            && let Some(run) = run
-        {
-            let room = self.config.conversation();
-            let conversation = room.into();
-            let run = run.clone();
-            self.channel
-                .publish(room, Event::ContextExceeded { conversation, run });
-        }
-        crate::diagnostics::told(&diagnostic, error)
+        buffered.finish(&settled.result, verdict.outcome);
+        verdict.heard_from(&self.channel, &room, run.as_ref())
     }
 }
 

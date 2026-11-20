@@ -8,6 +8,7 @@ mod serve;
 mod steer;
 mod switching;
 mod turn;
+mod verdict;
 
 use std::collections::BTreeMap;
 use std::future::Future;

@@ -351,3 +351,63 @@ async fn an_answer_passes_the_host_s_gate() {
     task.await.unwrap().unwrap();
     channel_idle(&kit).await;
 }
+
+/// The notices `client` received until the host was told how `operation`
+/// ended, and the few that follow at once.
+async fn notices_until_finished(
+    client: &Client,
+    lifecycle: &Recording,
+    operation: &str,
+) -> Vec<String> {
+    let mut notices = Vec::new();
+    let mut take = |event: Event| {
+        if let Event::Notice { text, .. } = event {
+            notices.push(text);
+        }
+    };
+    let finished = lifecycle.finished(operation);
+    tokio::pin!(finished);
+    loop {
+        tokio::select! {
+            _ = &mut finished => break,
+            event = next(client) => take(event),
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    while let Ok(event) = client.try_recv() {
+        take(event);
+    }
+    notices
+}
+
+/// ENG-1: the stream of a steered message's own turn told its provider's
+/// failure, and the message's delivery told it again.
+#[tokio::test]
+async fn a_steered_message_s_failing_turn_is_told_once() {
+    let kit = RoomKit::new(Default::default());
+    let rounds = vec![
+        ScriptedRound::answering("First answer"),
+        ScriptedRound::answering("").refusing(503, "connect error"),
+    ];
+    let (channel, provider) = steering_room(&kit, rounds).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_first_answer(&kit, gate, held.clone());
+    let lifecycle = Recording::new(provider, None);
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let session =
+        LocalSession::new(kit.clone(), channel, config()).with_lifecycle(lifecycle.clone());
+    let task = tokio::spawn(session.run(host));
+    next(&client).await;
+    steer_into_its_own_turn(&client, &open, &held).await;
+    let notices = notices_until_finished(&client, &lifecycle, "two").await;
+    assert_eq!(
+        notices,
+        ["Cannot reach the model server. Check its address, network and availability."]
+    );
+    let calls = lifecycle.calls("two");
+    assert_eq!(calls.last(), Some(&Call::Finished(TurnOutcome::Failed)));
+    drop(client);
+    task.await.unwrap().unwrap();
+    channel_idle(&kit).await;
+}

@@ -1,6 +1,6 @@
 //! The RoomKit transport channel shared by local views of a room.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use roomkit::ToolCallEvent;
@@ -17,6 +17,9 @@ use crate::{PermissionRequest, projection};
 
 /// Events retained for a slow view before it must reattach.
 const EVENT_BUFFER: usize = 1_024;
+/// Runs whose stream told why they failed, kept until the turn that
+/// delivered them asks; past this, the oldest is forgotten.
+const FAILURES_TOLD: usize = 64;
 
 /// A RoomKit transport shared by independent local client connections.
 ///
@@ -45,9 +48,9 @@ pub struct ConversationChannel {
     answers: Arc<Mutex<BTreeMap<String, String>>>,
     /// The questions waiting for the person in each room.
     pub(crate) questions: Questions,
-    /// The latest run of each room whose stream told why it failed, so that
-    /// the turn that delivered it does not tell it again.
-    failures_told: Arc<Mutex<BTreeMap<String, RunId>>>,
+    /// The runs, by room, whose stream told why they failed, so that the
+    /// turn that delivered one does not tell it again.
+    failures_told: Arc<Mutex<VecDeque<(String, RunId)>>>,
 }
 
 /// The answer turn of a room being delivered; dropping it forgets who asked.
@@ -144,18 +147,21 @@ impl ConversationChannel {
 
     /// The stream of `run` in `room` told why it failed.
     pub(crate) fn failure_told(&self, room: &str, run: &RunId) {
-        lock(&self.failures_told).insert(room.to_owned(), run.clone());
+        let mut told = lock(&self.failures_told);
+        if told.len() == FAILURES_TOLD {
+            told.pop_front();
+        }
+        told.push_back((room.to_owned(), run.clone()));
     }
 
     /// Whether the stream of `run` in `room` told why it failed; the turn
     /// asking is the last to need it.
     pub(crate) fn take_failure_told(&self, room: &str, run: &RunId) -> bool {
         let mut told = lock(&self.failures_told);
-        let was = told.get(room) == Some(run);
-        if was {
-            told.remove(room);
-        }
-        was
+        let at = told
+            .iter()
+            .position(|(r, failed)| r == room && failed == run);
+        at.and_then(|at| told.remove(at)).is_some()
     }
 
     /// Identity used when the application registers and attaches this channel.
@@ -317,5 +323,24 @@ impl ConversationChannel {
             .filter(|_| cancelled == Some(true))?;
         let run: RunId = projection::run_id(&row.source.channel_id, trigger);
         self.stopping.take_draft(row.room_id.as_str(), &run)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, reason = "Test fixture failures are assertions")]
+    use super::*;
+
+    /// ENG-1: two runs failing in one room each keep their mark.
+    #[test]
+    fn each_failed_run_of_a_room_is_told_once() {
+        let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
+        let (first, second) = (RunId::new("agent:one"), RunId::new("agent:two"));
+        channel.failure_told("room", &first);
+        channel.failure_told("room", &second);
+        assert!(channel.take_failure_told("room", &first));
+        assert!(channel.take_failure_told("room", &second));
+        assert!(!channel.take_failure_told("room", &second), "Taken once");
+        assert!(!channel.take_failure_told("other", &first));
     }
 }

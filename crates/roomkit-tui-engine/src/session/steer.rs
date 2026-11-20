@@ -14,6 +14,7 @@ use roomkit_tui_protocol::{Command, Event, MessageId, OperationId, Rejection, Re
 
 use super::serve::View;
 use super::turn;
+use super::verdict::{self, Settled, Verdict};
 use super::{AdapterError, CommandHandler, SessionConfig};
 use crate::activity::Active;
 use crate::cancellation::{self, Receiver};
@@ -148,60 +149,40 @@ impl<S: ConversationStore> Steer<S> {
             organization_id: config.organization.clone(),
             defer_delivery: true,
         };
-        let outcome = match self.kit.process_inbound(message, options).await {
+        let verdict = match self.kit.process_inbound(message, options).await {
             Ok(admitted) => self.settle(admitted).await,
-            Err(error) => {
-                self.notice(&crate::diagnostics::explain(&error.to_string()));
-                TurnOutcome::Failed
-            }
+            Err(error) => Verdict::failed(crate::diagnostics::explain(&error.to_string())),
         };
+        verdict.tell(&self.channel, self.config.conversation());
         // Decisions taken in the message's own turn are kept, as a turn's.
         let stored = crate::approval_history::persist(&self.kit, &self.channel, &self.config);
         if stored.await.is_err() {
             self.notice("Decision accepted, but its history could not be saved. This does not change tool execution.");
         }
-        outcome
+        verdict.ended()
     }
 
     /// Show the committed message, say which turn it went to, and wait for
-    /// its delivery, which a turn of its own may extend.
-    async fn settle(&mut self, admitted: InboundResult) -> TurnOutcome {
-        if admitted.blocked {
-            self.notice("The engine blocked this message. Check the room state and host policy.");
-            return TurnOutcome::Blocked;
-        }
-        let Some(row) = &admitted.event else {
-            return TurnOutcome::Completed;
+    /// its delivery, which a turn of its own may extend: judged as any turn.
+    async fn settle(&mut self, admitted: InboundResult) -> Verdict {
+        let room = self.config.conversation().to_owned();
+        let (false, Some(row)) = (admitted.blocked, admitted.event.clone()) else {
+            return Verdict::judge(&Settled::now(admitted), crate::diagnostics::explain);
         };
-        self.channel.row(row);
-        let room = self.config.conversation();
+        self.channel.row(&row);
         let event = Event::MessageSteered {
-            conversation: room.into(),
+            conversation: room.as_str().into(),
             message: MessageId::new(row.id.to_string()),
             run: self.turn.clone(),
         };
-        self.channel.publish(room, event);
-        let Some(delivery) = admitted.delivery else {
-            return TurnOutcome::Completed;
-        };
+        self.channel.publish(&room, event);
         // The run a turn of its own would be, which Esc may stop.
         let own = projection::run_id(&self.config.agent, &row.id);
-        let room = room.to_owned();
-        let (done, interrupted) =
-            cancellation::wait(delivery, own, &room, &self.channel, &mut self.controls).await;
-        turn::publish_usage(&self.kit, &self.channel, &self.config, row).await;
-        let failure = match done {
-            Ok(done) => done.error.map(|error| error.message),
-            Err(error) => Some(error.to_string()),
-        };
-        match failure {
-            Some(failure) => {
-                self.notice(&crate::diagnostics::explain(&failure));
-                TurnOutcome::Failed
-            }
-            None if interrupted => TurnOutcome::Interrupted,
-            None => TurnOutcome::Completed,
-        }
+        let (channel, controls) = (&self.channel, &mut self.controls);
+        let settled = Settled::wait(admitted, own.clone(), &room, channel, controls).await;
+        turn::publish_usage(&self.kit, &self.channel, &self.config, &row).await;
+        let explain = |error: &str| verdict::explained(&self.channel, &room, Some(&own), error);
+        Verdict::judge(&settled, explain).heard_from(&self.channel, &room, Some(&own))
     }
 
     /// The message's key in the room, from the operation it was sent as.
