@@ -106,39 +106,14 @@ impl FormState {
     }
 
     pub(crate) fn key(&mut self, key: KeyEvent) {
-        if self.scroll_description(key.code) {
+        if self.scroll_description(key.code)
+            || self.move_between_fields(key)
+            || self.cycle_choice(key.code)
+        {
             return;
         }
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
-        if key.code == KeyCode::Tab
-            || key.code == KeyCode::BackTab
-            || (key.code == KeyCode::Enter && !alt)
-        {
-            let count = self.editors.len();
-            self.selected = (self.selected
-                + if key.code == KeyCode::BackTab {
-                    count - 1
-                } else {
-                    1
-                })
-                % count;
-            return;
-        }
-        if let FieldKind::Choice { choices } = &self.spec.fields[self.selected].kind {
-            let editor = &mut self.editors[self.selected];
-            let index = choices
-                .iter()
-                .position(|c| c.value == editor.text())
-                .unwrap_or(0);
-            let next = match key.code {
-                KeyCode::Left | KeyCode::Up => (index + choices.len() - 1) % choices.len(),
-                KeyCode::Right | KeyCode::Down | KeyCode::Char(' ') => (index + 1) % choices.len(),
-                _ => return,
-            };
-            editor.set(choices[next].value.clone());
-            return;
-        }
         match key.code {
             KeyCode::Char(c) if !control && !alt => self.insert(&c.to_string()),
             KeyCode::Enter if alt => self.insert("\n"),
@@ -149,6 +124,41 @@ impl FormState {
                 self.editors[self.selected].edit_key(key);
             }
         }
+    }
+
+    /// Tab or Enter moves to the next field, Shift+Tab to the previous one;
+    /// Alt+Enter is left to the field. Whether `key` moved.
+    fn move_between_fields(&mut self, key: KeyEvent) -> bool {
+        let count = self.editors.len();
+        self.selected = match key.code {
+            KeyCode::BackTab => (self.selected + count - 1) % count,
+            KeyCode::Tab => (self.selected + 1) % count,
+            KeyCode::Enter if !key.modifiers.contains(KeyModifiers::ALT) => {
+                (self.selected + 1) % count
+            }
+            _ => return false,
+        };
+        true
+    }
+
+    /// On a choice field, the arrows and Space move to the previous or the
+    /// next choice. Whether the field is a choice: it takes no other key.
+    fn cycle_choice(&mut self, key: KeyCode) -> bool {
+        let FieldKind::Choice { choices } = &self.spec.fields[self.selected].kind else {
+            return false;
+        };
+        let editor = &mut self.editors[self.selected];
+        let index = choices
+            .iter()
+            .position(|c| c.value == editor.text())
+            .unwrap_or(0);
+        let next = match key {
+            KeyCode::Left | KeyCode::Up => (index + choices.len() - 1) % choices.len(),
+            KeyCode::Right | KeyCode::Down | KeyCode::Char(' ') => (index + 1) % choices.len(),
+            _ => return true,
+        };
+        editor.set(choices[next].value.clone());
+        true
     }
 
     pub(crate) fn submission(&mut self) -> Result<Command, SessionError> {
