@@ -90,31 +90,12 @@ impl Channel for ConversationChannel {
         // Announce the run before the broker records it: a refusal is told
         // once the run exists, and a terminal clears its notice on RunStarted.
         self.publish(&room, started);
-        // A trigger from elsewhere has no one here to answer for it; only a turn
-        // with no trigger may be an answer turn, whose instruction is never stored.
-        let requester = match trigger {
-            Some(row) => self.requester(row),
-            None => self.answer_requester(&room),
-        };
+        let requester = self.run_requester(trigger, &room);
         let agent = responder.as_str().to_owned();
         let approvals = self.approvals.start(&room, &agent, run.clone(), requester);
         let mut reader = Reader::new(self, &room, &run, agent.as_str().into());
         self.start_own_turn(trigger, &room, &run).await;
-        while let Some(next) = stream.next().await {
-            match next {
-                Ok(item) => reader.read(item),
-                Err(error) => {
-                    reader.fail(&error.to_string());
-                    reader.failure = Some(error);
-                    break;
-                }
-            }
-        }
-        // A read stopped from outside hands its target the stream's end: the
-        // run was cut, it did not complete.
-        if stream.cut() {
-            reader.outcome = RunOutcome::Interrupted;
-        }
+        reader.read_all(&mut stream).await;
         // Unanswered requests go before RunFinished; the room stays busy until
         // RunFinished is out, so no view starts work before its terminal saw
         // this run end, and a view's own work stays its earliest run.
@@ -126,6 +107,17 @@ impl Channel for ConversationChannel {
 }
 
 impl ConversationChannel {
+    /// The person who may answer the approvals of the run `trigger` starts
+    /// in `room`. A trigger from elsewhere has no one here to answer for it;
+    /// only a turn with no trigger may be an answer turn, whose instruction
+    /// is never stored.
+    fn run_requester(&self, trigger: Option<&RoomEvent>, room: &str) -> Option<String> {
+        match trigger {
+            Some(row) => self.requester(row),
+            None => self.answer_requester(room),
+        }
+    }
+
     /// The person who sent a trigger through this channel, if any. Only they
     /// may answer approvals of the run it starts.
     fn requester(&self, trigger: &RoomEvent) -> Option<String> {
@@ -202,6 +194,25 @@ impl<'a> Reader<'a> {
             failure: None,
             generated: false,
             visible: false,
+        }
+    }
+
+    /// Read `stream` to its end, or to its first failure. A read stopped
+    /// from outside hands its target the stream's end: the run was cut, it
+    /// did not complete.
+    async fn read_all(&mut self, stream: &mut DeliveryStream) {
+        while let Some(next) = stream.next().await {
+            match next {
+                Ok(item) => self.read(item),
+                Err(error) => {
+                    self.fail(&error.to_string());
+                    self.failure = Some(error);
+                    break;
+                }
+            }
+        }
+        if stream.cut() {
+            self.outcome = RunOutcome::Interrupted;
         }
     }
 
