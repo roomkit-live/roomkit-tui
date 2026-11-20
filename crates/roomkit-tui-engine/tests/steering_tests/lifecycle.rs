@@ -380,8 +380,8 @@ async fn notices_until_finished(
     notices
 }
 
-/// ENG-1: the stream of a steered message's own turn told its provider's
-/// failure, and the message's delivery told it again.
+/// The provider's failure in a steered message's own turn is told once:
+/// by its stream, not again by the message's delivery.
 #[tokio::test]
 async fn a_steered_message_s_failing_turn_is_told_once() {
     let kit = RoomKit::new(Default::default());

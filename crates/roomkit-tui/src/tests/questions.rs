@@ -217,8 +217,8 @@ fn finished(session: &mut Session, run: &str) {
     });
 }
 
-/// Review STA-2: a run that ended kept its questions. A card already sent
-/// takes no key, Esc included, so a host that never resolved it kept the
+/// A run that ends takes its questions with it: a card already sent takes
+/// no key, Esc included, and a host that never resolves it does not keep the
 /// composer out of reach.
 #[test]
 fn a_run_that_ends_takes_its_questions_with_it() {
@@ -236,8 +236,8 @@ fn a_run_that_ends_takes_its_questions_with_it() {
     assert!(session.observation().unwrap().questions.is_empty());
 }
 
-/// Review STA-2: a run the view stops following, past its bound on live
-/// runs, takes its questions with it too.
+/// A run the view stops following, past its bound on live runs, takes its
+/// questions with it too.
 #[test]
 fn a_run_the_view_stops_following_takes_its_questions_with_it() {
     let mut session = session();

@@ -304,9 +304,9 @@ impl SessionLifecycle for PanicsWhilePreparing {
     }
 }
 
-/// ENG-4: a host failing past the moment its preparation is announced left
-/// the preparation's run started for good: never finished, it was told
-/// again to every view arriving in the room.
+/// A host failing past the moment its preparation is announced still
+/// finishes the preparation's run, which is then not told again to a view
+/// arriving in the room.
 #[tokio::test]
 async fn a_preparation_the_host_fails_still_finishes_its_run() {
     let kit = RoomKit::new(Default::default());

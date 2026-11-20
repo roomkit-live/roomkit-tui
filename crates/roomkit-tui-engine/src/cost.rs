@@ -256,8 +256,8 @@ mod tests {
         assert_eq!(other, ConversationCost::new(18_700, "USD", false));
     }
 
-    /// ENG-5: a restore prices the turns of the view's agent alone, while a
-    /// live report of another agent's turn in the room was priced too.
+    /// A live report prices the turns of the view's agent alone, as a restore
+    /// does: another agent's turn in the room is not priced.
     #[test]
     fn another_agent_s_turn_is_not_priced() {
         let (config, mut costs) = (config(), Costs::default());

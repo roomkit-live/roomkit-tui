@@ -285,8 +285,8 @@ fn the_next_turn_writes_below_what_the_last_one_did_not_read() {
     assert_eq!(order(&session), ["a0", "sent", "d9"]);
 }
 
-/// Review of 9c540f0: blanks go on the draft of one answer, and the first of
-/// them said the stop the message waited for has passed.
+/// Blanks go on the draft of one answer, however many: none of them says
+/// the stop the message waits for has passed.
 #[test]
 fn blanks_after_the_calls_are_one_answer_however_many() {
     let mut session = turn();
@@ -397,8 +397,7 @@ fn what_another_run_does_neither_reads_nor_goes_above() {
     assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
 }
 
-/// Review of 583e681: a call another run has under way says nothing of this
-/// turn's calls.
+/// A call another run has under way says nothing of this turn's calls.
 #[test]
 fn a_call_another_run_has_running_hides_no_stop() {
     let mut session = turn();
@@ -411,8 +410,8 @@ fn a_call_another_run_has_running_hides_no_stop() {
     assert_eq!(steering(&session, "sent"), Some(Steering::Read));
 }
 
-/// Review STA-3: the end of another run's answer marked the message handed
-/// to this turn read, and put this turn's next text below it.
+/// The end of another run's answer does not mark the message handed to this
+/// turn read, nor put this turn's next text below it.
 #[test]
 fn an_answer_another_run_ends_reads_nothing() {
     let mut session = turn();
@@ -425,8 +424,8 @@ fn an_answer_another_run_ends_reads_nothing() {
     assert_eq!(order(&session), ["d1", "sent", "a9"]);
 }
 
-/// Review STA-3: told once that run ended, another run's answer still says
-/// nothing of this turn's stops.
+/// Told once that run ended, another run's answer still says nothing of
+/// this turn's stops.
 #[test]
 fn an_answer_another_run_ends_after_its_end_reads_nothing() {
     let mut session = turn();
@@ -465,7 +464,7 @@ fn a_decision_of_another_run_goes_below() {
     assert_eq!(order(&session), ["sent", "other"]);
 }
 
-/// Review of 583e681: the host says where a message went once the hooks that
+/// The host says where a message went once the hooks that
 /// admit it returned, which the next turn may outlast. That turn keeps what it
 /// was handed.
 #[test]

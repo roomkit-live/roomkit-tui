@@ -432,8 +432,8 @@ mod tests {
         assert!(!format!("{card:?}").contains("private words"));
     }
 
-    /// Review STA-8: on a single choice, Esc out of the own words kept the
-    /// option picked before, and the answer sent both.
+    /// On a single choice, the answer is the option picked or the own
+    /// words, never both, Esc out of the own words included.
     #[test]
     fn a_single_choice_is_an_option_or_own_words_never_both() {
         let mut card = card(false);

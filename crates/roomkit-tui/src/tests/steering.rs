@@ -87,9 +87,8 @@ fn a_steered_message_shows_where_it_went() {
     assert_eq!(session.steering(&message), Some(Steering::OwnTurn));
 }
 
-/// Review STA-4: where the host forbids cutting a turn to send, the line of a
-/// handed message still offered Ctrl+S to cut it, and Ctrl+S then asked for
-/// a message.
+/// Where the host forbids cutting a turn to send, the line of a handed
+/// message offers no Ctrl+S to cut it.
 #[test]
 fn a_host_that_forbids_cutting_offers_no_cut_for_a_handed_message() {
     let mut snapshot = snapshot();
@@ -285,9 +284,9 @@ fn finalized(session: &mut Session, id: &str) {
     });
 }
 
-/// Review of 41c2560: a model may stream blanks before a tool call, which end
-/// no segment, so the next round's text extends the same draft. The answer
-/// belongs below the turn's tools, and below a message written meanwhile.
+/// A model may stream blanks before a tool call, which end no segment, so the
+/// next round's text extends the same draft. The answer belongs below the
+/// turn's tools, and below a message written meanwhile.
 #[test]
 fn an_answer_after_blanks_stays_below_the_tools_of_its_turn() {
     let mut session = streaming_session();
@@ -309,7 +308,7 @@ fn an_answer_after_blanks_stays_below_the_tools_of_its_turn() {
     assert_eq!(order(&session), ["tool:call", "written", "answer"]);
 }
 
-/// Review of 41c2560: a host may finish a draft under its own id.
+/// A host may finish a draft under its own id: the answer keeps its place.
 #[test]
 fn an_answer_under_its_draft_s_id_keeps_its_place() {
     let mut session = streaming_session();

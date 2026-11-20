@@ -38,9 +38,8 @@ fn unicode_editing_keeps_graphemes_intact_and_paste_does_not_submit() {
     assert!(editor.text().is_empty());
 }
 
-/// Review STA-6: a blank paste of three lines went in as a block, and the
-/// check for an empty message read the block's label: Enter sent the blank
-/// lines, where typing them asks for a message.
+/// A blank paste of three lines is no message: Enter asks for one, as it
+/// does for the same lines typed.
 #[test]
 fn a_blank_paste_is_no_message() {
     let mut session = session();
@@ -60,10 +59,10 @@ fn a_blank_paste_is_no_message() {
     );
 }
 
-/// Review of the pasted blocks: an accent typed after a block merges with its
-/// `]`, yet Left and Backspace still take the block whole. A deleted block is
-/// forgotten: its label typed again stays as typed, and numbering restarts
-/// once no block is left.
+/// An accent typed after a pasted block merges with its `]`, yet Left and
+/// Backspace still take the block whole. A deleted block is forgotten: its
+/// label typed again stays as typed, and numbering restarts once no block is
+/// left.
 #[test]
 fn a_pasted_block_stays_whole_beside_an_accent_and_is_forgotten_once_deleted() {
     let paste = "1\n2\n3";

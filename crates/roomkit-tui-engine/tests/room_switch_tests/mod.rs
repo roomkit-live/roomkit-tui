@@ -586,11 +586,10 @@ async fn an_approval_outside_the_group_only_leaves_a_notice() {
     task.await.unwrap().unwrap();
 }
 
-/// ENG-3: a request of no group, asked in the room a view left for another
-/// room of its group, came to the room shown although that view may not
-/// answer it: its answer was refused, and the request denied at its
-/// timeout. It waits for the view's return instead, as any request asked
-/// for its own room alone.
+/// A request of no group, asked in the room a view left for another room of
+/// its group, does not come to the room shown, where that view may not
+/// answer it: it waits for the view's return, as any request asked for its
+/// own room alone.
 #[tokio::test]
 async fn a_request_of_no_group_in_a_room_left_waits_for_the_view_s_return() {
     let kit = RoomKit::new(Default::default());

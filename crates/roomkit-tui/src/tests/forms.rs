@@ -147,8 +147,8 @@ fn asynchronous_form_completion_is_safe_before_or_after_the_submission_reply() {
     }
 }
 
-/// Review STA-5: the operation a submitted form starts closed the form, so
-/// the completion it waited for found no form and was ignored.
+/// A submitted form that waits for its completion stays open past the
+/// operation it starts, and shows the completion when it comes.
 #[test]
 fn a_form_waiting_for_completion_outlives_the_operation_it_starts() {
     for reply_first in [true, false] {

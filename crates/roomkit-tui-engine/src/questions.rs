@@ -268,8 +268,8 @@ mod tests {
         assert!(questions.pending(("room", "agent")).is_empty());
     }
 
-    /// ENG-9: a call of another run, settled under the identity of the
-    /// call that asked, withdrew the question: providers reuse call ids.
+    /// A call of another run, settled under the identity of the call that
+    /// asked, does not withdraw the question: providers reuse call ids.
     #[test]
     fn a_call_of_another_run_never_withdraws_a_question() {
         let questions = Questions::default();
