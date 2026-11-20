@@ -58,15 +58,8 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
         footer::footer(session, cols, sidebar, view.elapsed)
     };
     let attachments = chrome::attachments(view, cols);
-    let selector_rows = if session.picker.is_some() {
-        5
-    } else if session.menu.visible {
-        4
-    } else {
-        0
-    };
     // The rows placed whatever the draft and the notice take.
-    let placed = header.len() + footer.len() + 2 + selector_rows + attachments.len();
+    let placed = header.len() + footer.len() + 2 + selector_rows(view) + attachments.len();
     let activity = activity_rows(view, (cols, rows), placed, welcome);
     // The rows a notice takes below the activity row.
     let notice = activity.len().saturating_sub(1);
@@ -117,6 +110,17 @@ fn focused_screen(view: &View<'_>, cols: usize, rows: usize) -> Option<Frame> {
         Focus::Panel => Some(panel::screen(session, cols, rows, view.elapsed)),
         Focus::Form => Some(form::screen(view, cols, rows)),
         _ => None,
+    }
+}
+
+/// The rows kept for the choice picker or the command menu.
+fn selector_rows(view: &View<'_>) -> usize {
+    if view.session.picker.is_some() {
+        5
+    } else if view.session.menu.visible {
+        4
+    } else {
+        0
     }
 }
 
