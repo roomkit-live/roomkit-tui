@@ -121,9 +121,9 @@ fn waiting_idle() -> (Session, Client, Host) {
     (session, client, host)
 }
 
-/// Review of the pasted blocks: numbering restarts with each draft, so a
-/// recalled message can show the waiting draft's label for another paste.
-/// The wait holds the draft by what it sends, not by its labels.
+/// Pasted blocks are numbered anew in each draft, so a recalled message can
+/// show the waiting draft's label for another paste. The wait holds the
+/// draft by what it sends, not by its labels.
 #[test]
 fn a_recalled_paste_under_the_same_label_is_not_the_waiting_draft() {
     let (mut session, client, host) = working();
@@ -221,8 +221,8 @@ fn a_refused_interruption_lets_the_draft_wait_for_the_end() {
     left(&mut session, &client, &host, NOW);
 }
 
-/// Review finding: an edited draft, a command among them, left by itself
-/// once the turn stopped.
+/// A draft edited while it waits, into a command or other words, stays in
+/// the composer once the turn stopped: it never leaves unseen.
 #[test]
 fn an_edited_draft_never_leaves_unseen() {
     for edited in ["!rm -rf build", "/action", "Use the second ledger, then"] {
@@ -239,7 +239,8 @@ fn an_edited_draft_never_leaves_unseen() {
     }
 }
 
-/// Light review: the same number of images, another image, left too.
+/// A draft whose image was swapped for another, the same number of images,
+/// stays in the composer too.
 #[test]
 fn a_draft_with_other_images_never_leaves_unseen() {
     let (mut session, client, host) = fixture(true);
@@ -262,8 +263,8 @@ fn a_draft_with_other_images_never_leaves_unseen() {
     assert!(host.try_recv().is_err(), "Another image left unseen");
 }
 
-/// Light review: the refusal of the first run's interruption, arriving
-/// once a second run was asked to stop, cleared that second interruption.
+/// The refusal of the first run's interruption, arriving once a second run
+/// was asked to stop, leaves that second interruption pending.
 #[test]
 fn a_late_refusal_leaves_the_next_interruption_pending() {
     let (mut session, client, host) = working();
@@ -393,8 +394,8 @@ fn ctrl_s_with_nothing_shown_running_still_waits_and_cuts() {
     assert_eq!(host.try_recv().unwrap().command, interrupt());
 }
 
-/// Review of 21765e6: a second press during a hold sent the draft untracked,
-/// which ended the wait. Neither it nor Enter does anything more.
+/// While the draft waits, a second press of the key and Enter do nothing:
+/// the draft never leaves untracked, which would end the wait.
 #[test]
 fn pressing_again_changes_nothing_while_the_draft_waits() {
     let (mut session, client, host) = waiting_idle();
@@ -431,8 +432,8 @@ fn a_host_that_stays_busy_leaves_the_draft_in_the_composer() {
     assert!(host.try_recv().is_err(), "The host was asked again");
 }
 
-/// Review of 21765e6: the clock measures a host that shows no run, not a
-/// long run: a refusal after one starts it anew.
+/// The clock measures a host that shows no run, not a long run: a refusal
+/// after a run started counts the time anew.
 #[test]
 fn a_run_restarts_the_time_a_busy_host_gets() {
     let (mut session, client, host) = waiting_idle();
@@ -464,8 +465,8 @@ fn another_refusal_leaves_the_draft_without_trying_again() {
     assert!(host.try_recv().is_err());
 }
 
-/// Review of 21765e6: Esc during a send was ignored, and the draft left at
-/// the next try. Dropped, it is not sent again, and the refusal says nothing.
+/// Esc while the draft is on its way ends the wait: the dropped draft is not
+/// sent again at the next try, and the refusal says nothing.
 #[test]
 fn escape_while_the_draft_is_on_its_way_ends_the_wait() {
     let (mut session, client, host) = waiting_idle();
@@ -479,9 +480,9 @@ fn escape_while_the_draft_is_on_its_way_ends_the_wait() {
     assert!(host.try_recv().is_err(), "The kept draft left");
 }
 
-/// Light review of 9a3f306: Esc can come too late. The message left, and a
-/// copy left behind would be sent twice: a notice saying so did not outlive
-/// the turn's start, so the composer empties as for any message taken.
+/// Esc can come too late: the message left, and a copy left behind would be
+/// sent twice. A notice would not outlive the turn's start, so the composer
+/// empties as for any message taken.
 #[test]
 fn escape_too_late_leaves_no_copy_behind() {
     let (mut session, client, host) = waiting_idle();
@@ -544,8 +545,8 @@ fn pressing_again_over_a_run_it_cannot_cut_says_nothing() {
     assert!(session.notice().is_empty(), "{}", session.notice());
 }
 
-/// Review of 21765e6: a key typed during a send replaced the draft. The
-/// composer now keeps it, and the person's edit stays, whatever the answer.
+/// A key typed while the draft is on its way edits the composer, and the
+/// edit stays whatever the answer: the draft never replaces it.
 #[test]
 fn an_edit_while_the_draft_is_on_its_way_stays() {
     for answer_is_busy in [true, false] {
@@ -856,9 +857,9 @@ fn a_draft_goes_before_the_handed_message() {
     left(&mut session, &client, &host, NOW);
 }
 
-/// Review of aa33d7c: RoomKit may give the message its own turn instead of
-/// handing it over. That turn is the answer: the wait must not cut it. RMK-1371:
-/// nor ask again, when the host refused the answer while it held the message,
+/// RoomKit may give the message its own turn instead of handing it over.
+/// That turn is the answer: the wait does not cut it. RMK-1371: nor does it
+/// ask again, when the host refused the answer while it held the message,
 /// neither while that turn runs nor after it.
 #[test]
 fn a_turn_of_its_own_for_the_message_ends_the_wait() {
@@ -889,8 +890,8 @@ fn a_turn_of_its_own_for_the_message_ends_the_wait() {
     }
 }
 
-/// Review of aa33d7c: a turn that ends by itself read what it was handed:
-/// answering again would answer twice, and tell the model it was cut.
+/// A turn that ends by itself read what it was handed: it ends the wait, as
+/// answering again would answer twice and tell the model it was cut.
 #[test]
 fn a_turn_that_completes_ends_the_wait() {
     let (mut session, client, host) = handed();
@@ -906,8 +907,8 @@ fn a_turn_that_completes_ends_the_wait() {
     assert!(host.try_recv().is_err(), "Answered a turn that read it");
 }
 
-/// Light review of 6194726: another run's end says nothing of the message: the
-/// wait goes on, and a turn of its own still answers it.
+/// Another run's end says nothing of the message: the wait goes on, and a
+/// turn of its own still answers it.
 #[test]
 fn another_run_that_completes_leaves_the_wait() {
     let (mut session, client, host) = handed();
@@ -926,8 +927,8 @@ fn another_run_that_completes_leaves_the_wait() {
     assert_eq!(host.try_recv().unwrap().command, answer());
 }
 
-/// Review of aa33d7c: every message handed to the cut turn is answered, and
-/// says so, not only the last.
+/// Every message handed to the cut turn is answered, and says so, not only
+/// the last.
 #[test]
 fn every_message_handed_to_the_cut_turn_is_answered() {
     let (mut session, client, host) = handed();
@@ -1028,8 +1029,8 @@ fn a_cut_answers_a_message_the_turn_read() {
     assert_eq!(session.steering(&"handed".into()), Some(Steering::OwnTurn));
 }
 
-/// Review of aa33d7c: typing ends a wait to answer, even if the composer then
-/// empties again: its text was sent, or dropped.
+/// Typing ends a wait to answer for good, even if the composer then empties
+/// again: its text was sent, or dropped.
 #[test]
 fn typing_ends_a_wait_to_answer_for_good() {
     let (mut session, client, host) = handed();
@@ -1044,8 +1045,8 @@ fn typing_ends_a_wait_to_answer_for_good() {
     assert!(host.try_recv().is_err(), "The ended wait came back");
 }
 
-/// Review of aa33d7c: a host that cannot answer offers nothing to cut for: the
-/// turn would be cut, and nothing would answer.
+/// A host that cannot answer offers nothing to cut for: the turn would be
+/// cut, and nothing would answer.
 #[test]
 fn a_host_that_cannot_answer_offers_no_cut() {
     let (mut session, client, host) = handed();

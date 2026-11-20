@@ -76,11 +76,9 @@ pub(super) fn draw(session: &mut Session, at: Duration) {
     session.sync(&frame, at);
 }
 
-/// Review finding 1: the approval card used to accept Enter at once, so a
-/// person sending a message as the card appeared approved it unseen.
-/// Review finding 2: Shift+Tab cycled the host's mode before any overlay saw
-/// it, so it could raise the policy while a decision was on screen, and the
-/// completion menu could not move up with it.
+/// A paste reaches only the editor that has the focus: under an approval
+/// card the hidden composer gets none of it, so "y" and a line break never
+/// wait there to be sent, and once the card is gone a paste fills it.
 #[test]
 fn pasted_text_reaches_only_the_focused_editor() {
     let (mut session, _client, _host) = fixture(true);

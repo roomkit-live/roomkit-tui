@@ -314,9 +314,9 @@ mod tests {
 mod restore_tests {
     use super::*;
 
-    /// Review finding: on a panic on the terminal thread, the hook and then
-    /// the drop both removed the keyboard protocol, the second time on the
-    /// main screen, whose stack it was not pushed on.
+    /// On a panic on the terminal thread, the hook and then the drop both
+    /// restore the terminal: the keyboard protocol is removed once, before
+    /// leaving the alternate screen whose stack it was pushed on.
     #[test]
     fn the_keyboard_protocol_is_removed_once_before_leaving_the_alternate_screen() {
         let pushed = AtomicBool::new(true);
