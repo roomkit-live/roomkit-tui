@@ -585,3 +585,63 @@ async fn an_approval_outside_the_group_only_leaves_a_notice() {
     drop(client);
     task.await.unwrap().unwrap();
 }
+
+/// ENG-3: a request of no group, asked in the room a view left for another
+/// room of its group, came to the room shown although that view may not
+/// answer it: its answer was refused, and the request denied at its
+/// timeout. It waits for the view's return instead, as any request asked
+/// for its own room alone.
+#[tokio::test]
+async fn a_request_of_no_group_in_a_room_left_waits_for_the_view_s_return() {
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    with_other_room(&kit, &channel).await;
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    hold_answers(&kit, gate, held.clone());
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+    let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
+    next(&client).await;
+    client.try_send(request("ask")).unwrap();
+    started_run(&client).await;
+    held.notified().await;
+    client.try_send(go("room", "other")).unwrap();
+    until_snapshot(&client, "other").await;
+
+    let (room, agent) = (config().room, config().agent);
+    let asker = channel.clone();
+    let asked = tokio::spawn(async move {
+        let request = PermissionRequest::new("Allow it?", "d", Duration::from_secs(30));
+        asker.ask_permission(&room, &agent, request).await
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    while let Ok(event) = client.try_recv() {
+        assert!(
+            !matches!(event, Event::PermissionRequested { .. }),
+            "A request this view cannot answer is shown: {event:?}"
+        );
+    }
+
+    client.try_send(go("other", "room")).unwrap();
+    let back = until_snapshot(&client, "room").await;
+    let permission = back
+        .iter()
+        .find_map(|event| match event {
+            Event::PermissionRequested { permission, .. } => Some(permission.id.clone()),
+            _ => None,
+        })
+        .expect("The request is shown on the view's return");
+    let decide = Command::Decide {
+        permission,
+        decision: Decision::Allow,
+    };
+    client
+        .try_send(Request::new(RequestId::new(3), "decide", "room", decide))
+        .unwrap();
+    assert_eq!(asked.await.unwrap(), Decision::Allow);
+    open.send_replace(true);
+    drop(client);
+    task.await.unwrap().unwrap();
+}

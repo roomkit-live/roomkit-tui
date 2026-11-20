@@ -195,7 +195,7 @@ impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
             }
             // Asked anywhere in the view's group, told wherever it is.
             Ok((room, mut event))
-                if room == self.session.config.group_name() && decides(&event) =>
+                if room == self.session.config.group_name() && of_the_group(&event) =>
             {
                 retarget(&mut event, &here);
                 let events = self.progress.apply(event);
@@ -344,6 +344,17 @@ pub(super) fn decides(event: &Event) -> bool {
         event,
         Event::PermissionRequested { .. } | Event::PermissionResolved { .. }
     )
+}
+
+/// Whether `event` is a decision any view of a group answers, asked or
+/// settled. A request of a group names the room it was asked in; one of no
+/// group, published under its room alone, waits for a view of that room,
+/// even when the room's name is the group's.
+fn of_the_group(event: &Event) -> bool {
+    match event {
+        Event::PermissionRequested { permission, .. } => permission.origin.is_some(),
+        event => decides(event),
+    }
 }
 
 /// Sets `event`, a decision asked or settled in the view's group, to the
