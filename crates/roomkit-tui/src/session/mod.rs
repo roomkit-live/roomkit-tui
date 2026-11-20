@@ -134,15 +134,7 @@ pub struct Session {
     pub(crate) questions: Vec<crate::QuestionCard>,
     /// The question card on screen and when a frame first showed it.
     pub(crate) question_drawn: Option<(roomkit_tui_protocol::QuestionId, Duration)>,
-    previous_context: Option<ContextUsage>,
-    /// The latest run's request was refused past the model's context window.
-    context_exceeded: bool,
-    /// The host's estimate this view already knows, shown or measured over:
-    /// sent again, it is not news.
-    known_estimate: Option<ContextUsage>,
-    /// An estimate told while a run went, shown once the room is idle unless
-    /// a run measured meanwhile.
-    held_estimate: Option<ContextUsage>,
+    gauge: measures::ContextGauge,
     limits: Limits,
     next_request: u64,
     pending: BTreeMap<RequestId, Command>,
@@ -211,10 +203,7 @@ impl Session {
             approval_drawn: None,
             questions: Vec::new(),
             question_drawn: None,
-            previous_context: None,
-            context_exceeded: false,
-            known_estimate: None,
-            held_estimate: None,
+            gauge: measures::ContextGauge::default(),
             limits,
             next_request: 0,
             pending: BTreeMap::new(),
@@ -299,33 +288,6 @@ impl Session {
     /// states one.
     pub fn cost(&self) -> Option<&ConversationCost> {
         self.snapshot.as_ref()?.cost.as_ref()
-    }
-
-    /// The conversation's cost with what the work related to it cost, once
-    /// the host states any. What cannot be added, the conversation having no
-    /// price or another currency, leaves the total partial.
-    pub fn total_cost(&self) -> Option<ConversationCost> {
-        let snapshot = self.snapshot.as_ref()?;
-        let related = snapshot.related_cost.as_ref()?;
-        let Some(own) = &snapshot.cost else {
-            return Some(ConversationCost::new(
-                related.micros,
-                related.currency.clone(),
-                false,
-            ));
-        };
-        let same = own.currency == related.currency;
-        let micros = if same {
-            own.micros.saturating_add(related.micros)
-        } else {
-            own.micros
-        };
-        let complete = same && own.complete && related.complete;
-        Some(ConversationCost::new(
-            micros,
-            own.currency.clone(),
-            complete,
-        ))
     }
 
     /// The current bounded, user-visible diagnostic; empty when there is none.
@@ -431,24 +393,6 @@ impl Session {
         };
         self.approval_drawn.as_ref().is_some_and(|(id, drawn)| {
             *id == head.id && now.saturating_sub(*drawn) >= APPROVAL_ARMING_DELAY
-        })
-    }
-
-    /// The questions on screen: the oldest an agent asks.
-    pub fn question(&self) -> Option<&crate::QuestionCard> {
-        self.questions.first()
-    }
-
-    /// Whether the questions on screen take answers at `now`: a frame
-    /// synchronized through [`Self::sync`] has shown them for at least
-    /// [`APPROVAL_ARMING_DELAY`], as for a decision, so that typing under way
-    /// when they appear answers nothing.
-    pub fn question_armed(&self, now: Duration) -> bool {
-        let Some(head) = self.questions.first() else {
-            return true;
-        };
-        self.question_drawn.as_ref().is_some_and(|(id, drawn)| {
-            id == head.id() && now.saturating_sub(*drawn) >= APPROVAL_ARMING_DELAY
         })
     }
 

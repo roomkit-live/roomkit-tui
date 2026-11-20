@@ -86,12 +86,12 @@ impl Session {
     pub(crate) fn displayed_context(&self) -> Option<(&ContextUsage, bool)> {
         self.context()
             .map(|usage| (usage, false))
-            .or_else(|| self.previous_context.as_ref().map(|usage| (usage, true)))
+            .or_else(|| self.gauge.previous.as_ref().map(|usage| (usage, true)))
     }
 
     /// Whether the latest run's request was refused past the model's context
     /// window: no measurement of it will come.
     pub(crate) fn context_exceeded(&self) -> bool {
-        self.context_exceeded
+        self.gauge.exceeded
     }
 }

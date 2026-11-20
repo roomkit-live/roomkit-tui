@@ -4,6 +4,7 @@
 use roomkit_tui_protocol::{ActorId, ConversationId, Item, Message, MessageId, RunId, Snapshot};
 
 use super::bounds::{bound_in_place, bound_item, bound_labels, bounded, trim_items};
+use super::measures::ContextGauge;
 use super::steering::{Handed, remember};
 use super::unread::{is_output_of, place};
 use super::{ObservedRun, Session};
@@ -74,10 +75,7 @@ impl Session {
     fn reset_view_state(&mut self) {
         self.operation = None;
         self.forget_thoughts();
-        self.previous_context = None;
-        self.context_exceeded = false;
-        self.known_estimate = None;
-        self.held_estimate = None;
+        self.gauge = ContextGauge::default();
         self.drafts.clear();
         self.permission_scroll = 0;
         self.permission_choice = 0;

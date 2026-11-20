@@ -8,6 +8,23 @@ use roomkit_tui_protocol::{
 use super::Session;
 use super::bounds::{bound_in_place, bound_model, bounded};
 
+/// What the context gauge keeps beside the snapshot's measurement. A new
+/// snapshot, or another model, starts it over.
+#[derive(Debug, Default)]
+pub(super) struct ContextGauge {
+    /// The measurement before the latest run's, shown stale until that run
+    /// measures.
+    pub(super) previous: Option<ContextUsage>,
+    /// The latest run's request was refused past the model's context window.
+    pub(super) exceeded: bool,
+    /// The host's estimate this view already knows, shown or measured over:
+    /// sent again, it is not news.
+    pub(super) known_estimate: Option<ContextUsage>,
+    /// An estimate told while a run went, shown once the room is idle unless
+    /// a run measured meanwhile.
+    pub(super) held_estimate: Option<ContextUsage>,
+}
+
 impl Session {
     /// Apply a model, measurement or cost event; any other event is ignored.
     pub(super) fn apply_measurement(&mut self, event: Event) {
@@ -58,10 +75,7 @@ impl Session {
             snapshot.context = None;
             snapshot.usage = None;
         }
-        self.previous_context = None;
-        self.context_exceeded = false;
-        self.known_estimate = None;
-        self.held_estimate = None;
+        self.gauge = ContextGauge::default();
     }
 
     fn measures_current_model(
@@ -103,7 +117,7 @@ impl Session {
         }
         if let Some(snapshot) = &mut self.snapshot {
             if let Some(previous) = snapshot.context.take() {
-                self.previous_context = Some(previous);
+                self.gauge.previous = Some(previous);
             }
             snapshot.context = context;
             snapshot.usage = Some(usage);
@@ -131,7 +145,7 @@ impl Session {
     fn on_context_exceeded(&mut self, conversation: &ConversationId, run: &RunId) {
         if self.is_current(conversation) && self.last_run.as_ref() == Some(run) {
             self.measured_over_estimate();
-            self.context_exceeded = true;
+            self.gauge.exceeded = true;
         }
     }
 
@@ -148,12 +162,12 @@ impl Session {
         usage.estimated = true;
         if !self.is_current(conversation)
             || !self.shows_model(estimated)
-            || self.known_estimate.as_ref() == Some(&usage)
+            || self.gauge.known_estimate.as_ref() == Some(&usage)
         {
             return;
         }
         if self.active_run().is_some() {
-            self.held_estimate = Some(usage);
+            self.gauge.held_estimate = Some(usage);
         } else {
             self.show_estimate(usage);
         }
@@ -166,24 +180,51 @@ impl Session {
         }
         // The estimate postdates the refused request: the refusal no longer
         // describes what the gauge shows.
-        self.context_exceeded = false;
-        self.known_estimate = Some(usage);
+        self.gauge.exceeded = false;
+        self.gauge.known_estimate = Some(usage);
     }
 
     /// A run measured, or was refused, after the estimate held: the estimate
     /// is older, and known, so it is not shown when sent again.
     fn measured_over_estimate(&mut self) {
-        if let Some(held) = self.held_estimate.take() {
-            self.known_estimate = Some(held);
+        if let Some(held) = self.gauge.held_estimate.take() {
+            self.gauge.known_estimate = Some(held);
         }
     }
 
     /// Once the room is idle, show the estimate told while a run went that
     /// measured nothing since.
     pub(super) fn show_held_estimate(&mut self) {
-        if let Some(held) = self.held_estimate.take() {
+        if let Some(held) = self.gauge.held_estimate.take() {
             self.show_estimate(held);
         }
+    }
+
+    /// The conversation's cost with what the work related to it cost, once
+    /// the host states any. What cannot be added, the conversation having no
+    /// price or another currency, leaves the total partial.
+    pub fn total_cost(&self) -> Option<ConversationCost> {
+        let snapshot = self.snapshot.as_ref()?;
+        let related = snapshot.related_cost.as_ref()?;
+        let Some(own) = &snapshot.cost else {
+            return Some(ConversationCost::new(
+                related.micros,
+                related.currency.clone(),
+                false,
+            ));
+        };
+        let same = own.currency == related.currency;
+        let micros = if same {
+            own.micros.saturating_add(related.micros)
+        } else {
+            own.micros
+        };
+        let complete = same && own.complete && related.complete;
+        Some(ConversationCost::new(
+            micros,
+            own.currency.clone(),
+            complete,
+        ))
     }
 
     /// The conversation's cost, which a new execution keeps: it sums every

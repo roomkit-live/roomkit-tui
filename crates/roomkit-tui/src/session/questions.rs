@@ -2,13 +2,33 @@
 //! conversation, of a run this view does not follow, or too large to show
 //! in full are not shown.
 
+use std::time::Duration;
+
 use roomkit_tui_protocol::limits::MAX_PENDING_QUESTIONS;
 use roomkit_tui_protocol::{ConversationId, Question, QuestionId, RunId};
 
-use super::Session;
+use super::{APPROVAL_ARMING_DELAY, Session};
 use crate::QuestionCard;
 
 impl Session {
+    /// The questions on screen: the oldest an agent asks.
+    pub fn question(&self) -> Option<&QuestionCard> {
+        self.questions.first()
+    }
+
+    /// Whether the questions on screen take answers at `now`: a frame
+    /// synchronized through [`Self::sync`] has shown them for at least
+    /// [`APPROVAL_ARMING_DELAY`], as for a decision, so that typing under way
+    /// when they appear answers nothing.
+    pub fn question_armed(&self, now: Duration) -> bool {
+        let Some(head) = self.questions.first() else {
+            return true;
+        };
+        self.question_drawn.as_ref().is_some_and(|(id, drawn)| {
+            id == head.id() && now.saturating_sub(*drawn) >= APPROVAL_ARMING_DELAY
+        })
+    }
+
     pub(super) fn on_question_asked(&mut self, conversation: &ConversationId, question: Question) {
         if !self.is_current(conversation) || !self.is_live(&question.run) {
             return;
