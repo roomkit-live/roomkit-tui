@@ -7,7 +7,7 @@ use unicode_width::UnicodeWidthStr;
 use super::card::{card_screen, enlarge, filled_row, surface_rows};
 use super::footer::quit_hint;
 use super::text::{pad, wrap_words};
-use super::{Frame, Line, Tone, View, frame, line};
+use super::{Frame, Line, Tone, View, frame, line, span};
 use crate::QuestionCard;
 
 pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
@@ -110,23 +110,18 @@ fn heading(view: &View<'_>, card: &QuestionCard, cols: usize) -> Vec<Line> {
     lines
 }
 
-/// The options, each with its pointer, its mark, its number and its
-/// description below it.
+/// The options, each with its pointer, its mark and its number, its label
+/// wrapped whole beside them, since the label is what is sent, and its
+/// description below.
 fn options(card: &QuestionCard, cols: usize) -> Vec<Line> {
     let mut lines = Vec::new();
     for (index, option) in card.item().options.iter().enumerate() {
         let mark = choice_mark(card, index);
-        let label = format!(
-            "{} {mark}{}. {}",
-            pointer(card, index),
-            index + 1,
-            option.label
-        );
-        lines.push(selectable(
-            &label,
-            cols,
-            card.cursor() == index && !card.typing(),
-        ));
+        let prefix = format!("{} {mark}{}. ", pointer(card, index), index + 1);
+        let selected = card.cursor() == index && !card.typing();
+        let width = cols.saturating_sub(prefix.width() + 2);
+        let label = surface_rows(&option.label, width, choice_tone(selected));
+        lines.extend(hanging(&prefix, label, cols, selected));
         let description = surface_rows(&option.description, cols.saturating_sub(10), Tone::Muted);
         lines.extend(
             description
@@ -135,6 +130,31 @@ fn options(card: &QuestionCard, cols: usize) -> Vec<Line> {
         );
     }
     lines
+}
+
+/// `rows` beside `prefix`, the rows after the first indented as far, on the
+/// surface of a choice, selected or not.
+fn hanging(prefix: &str, rows: Vec<Line>, cols: usize, selected: bool) -> Vec<Line> {
+    let tone = choice_tone(selected);
+    let indent = " ".repeat(prefix.width());
+    rows.into_iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let lead = if index == 0 { prefix } else { &indent };
+            let mut row = filled_row([vec![span(lead, tone)], row].concat(), 0, cols, tone);
+            row.iter_mut()
+                .for_each(|part| part.emphasis.bold = selected);
+            row
+        })
+        .collect()
+}
+
+fn choice_tone(selected: bool) -> Tone {
+    if selected {
+        Tone::Selected
+    } else {
+        Tone::Input
+    }
 }
 
 fn pointer(card: &QuestionCard, index: usize) -> &'static str {
@@ -163,11 +183,7 @@ fn filled(text: &str, cols: usize, tone: Tone) -> Line {
 }
 
 fn selectable(text: &str, cols: usize, selected: bool) -> Line {
-    let tone = if selected {
-        Tone::Selected
-    } else {
-        Tone::Input
-    };
+    let tone = choice_tone(selected);
     let mut row = line(pad(text, cols), tone);
     row[0].emphasis.bold = selected;
     row

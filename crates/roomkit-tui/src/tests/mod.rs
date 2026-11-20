@@ -3,6 +3,7 @@
 
 mod activity;
 mod bounds;
+mod cards;
 mod commands;
 mod composer;
 mod estimates;
