@@ -233,3 +233,27 @@ fn a_panel_s_output_and_a_model_s_reasoning_link_their_addresses_on_every_row() 
     );
     assert_linked_on_every_row(&frame, url);
 }
+
+#[test]
+fn a_tool_s_arguments_link_an_address_in_compact_json_on_every_row() {
+    let url = "https://example.com/search?query=terminal+links&page=2&per_page=50&sort=recent";
+    let mut session = session();
+    started(&mut session, "run-1");
+    // The address is not the last value: `","limit":3}` follows it.
+    let arguments = serde_json::json!({"address": url, "limit": 3});
+    session.apply(Event::Item {
+        conversation: "room-a".into(),
+        item: Item::Tool {
+            actor: "agent".into(),
+            run: "run-1".into(),
+            call: ToolCall::new("call-1", "fetch", arguments, ToolState::Succeeded),
+        },
+    });
+    session.toggle_tool();
+    let frame = render::screen(&session, 60, 30, &Renderers::default());
+    assert!(
+        frame.lines.iter().any(|l| l.contains("args: {")),
+        "the arguments show"
+    );
+    assert_linked_on_every_row(&frame, url);
+}

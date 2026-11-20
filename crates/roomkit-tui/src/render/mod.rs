@@ -260,7 +260,10 @@ fn tool_detail_lines(details: &[Line], width: usize, limit: usize) -> (Vec<Line>
 }
 
 fn generic_tool(call: &ToolCall, expanded: bool) -> Vec<Line> {
-    let mut lines = vec![line(format!("args: {}", call.arguments), Tone::Muted)];
+    let mut lines = vec![link_text(line(
+        format!("args: {}", call.arguments),
+        Tone::Muted,
+    ))];
     if !call.text.is_empty() {
         lines.extend(crate::content::json_or_plain(&call.text));
     }

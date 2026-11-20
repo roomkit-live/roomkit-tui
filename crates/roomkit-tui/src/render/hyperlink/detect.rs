@@ -77,6 +77,8 @@ fn annotate_span(span: Span, result: &mut Line) {
 /// The web addresses among the whitespace-separated words of `text`, without
 /// the prose punctuation around them, in order and without overlap. An
 /// address starts at its scheme, whatever opens it: `(`, `“`, `「` or none.
+/// It ends before a quotation mark, which no URL holds unencoded: in compact
+/// JSON, `{"url":"https://…","limit":3}`, the value ends there.
 fn find(text: &str) -> Vec<(Range<usize>, Hyperlink)> {
     let mut links = Vec::new();
     let mut search = 0;
@@ -90,7 +92,8 @@ fn find(text: &str) -> Vec<(Range<usize>, Hyperlink)> {
             continue;
         };
         let first = start + scheme;
-        let last = first + url_end(&token[scheme..]);
+        let quoted = token[scheme..].split('"').next().unwrap_or_default();
+        let last = first + url_end(quoted);
         if let Some(link) = Hyperlink::new(&text[first..last]) {
             links.push((first..last, link));
         }
