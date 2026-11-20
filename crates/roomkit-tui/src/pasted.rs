@@ -1,9 +1,9 @@
 //! Long pasted text as one block of the composer.
 //!
-//! A paste of several lines, or a long one, filled the composer with text the
-//! person could not read back there. It goes in as a label, such as
-//! `[Pasted text #1 · 13 lines]`, which the composer moves over and deletes
-//! as a whole; the message sent carries the pasted text in its place.
+//! A paste of several lines, or a long one, goes in as a label, such as
+//! `[Pasted text #1 · 13 lines]`, so the composer stays readable. The
+//! composer moves over the label and deletes it as a whole; the message sent
+//! carries the pasted text in its place.
 
 use std::ops::Range;
 
