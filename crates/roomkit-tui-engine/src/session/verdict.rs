@@ -85,9 +85,9 @@ pub(super) fn explained(
 pub(super) struct Verdict {
     pub outcome: RunOutcome,
     /// Why it failed, as the views are told.
-    pub failure: Option<String>,
+    failure: Option<String>,
     /// The engine refused the message.
-    pub blocked: bool,
+    blocked: bool,
     /// The run's stream already told the views why it failed.
     told: bool,
 }
