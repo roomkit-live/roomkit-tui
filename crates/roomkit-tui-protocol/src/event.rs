@@ -287,12 +287,15 @@ pub enum Event {
     /// view shows it as an estimate until an execution's measurement
     /// replaces it.
     ///
-    /// A view takes it only while no execution is live, for the model on
-    /// screen, and once: the same estimate sent again, as a host's coalesced
-    /// state is whenever another part of it changes, never replaces a later
-    /// measurement. Stop sending it once a request of the agent was
-    /// measured: a view attached afterwards reads that newer measurement
-    /// from its snapshot, and would replace it with the estimate.
+    /// A view takes it for the model on screen, and once: the same estimate
+    /// sent again, as a host's coalesced state is whenever another part of
+    /// it changes, never replaces a later measurement. One sent while an
+    /// execution is live waits for the room to be idle, and shows then
+    /// unless the latest execution measured the context, or had a request
+    /// refused past the context window, in the meantime. Stop sending it
+    /// once a request of the agent was measured: a view attached afterwards
+    /// reads that newer measurement from its snapshot, and would replace it
+    /// with the estimate.
     ContextEstimated {
         /// Target conversation.
         conversation: ConversationId,
