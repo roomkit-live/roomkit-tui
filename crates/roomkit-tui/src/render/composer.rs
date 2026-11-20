@@ -40,24 +40,10 @@ struct Rows {
 
 pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -> Frame {
     let (cols, rows) = (usize::from(width), usize::from(height));
+    if let Some(focused) = focused_screen(view, cols, rows) {
+        return focused;
+    }
     let session = view.session;
-    let overlay = session.focus() != Focus::Composer && session.focus() != Focus::Sidebar
-        || session.menu.visible;
-    if cols < 12 || rows < 8 || (overlay && (cols < 32 || rows < 16)) {
-        let lines = wrap("Enlarge terminal", cols).into_iter().take(rows);
-        return frame(
-            lines.map(|text| line(text, Tone::Muted)).collect(),
-            cols,
-            None,
-        );
-    }
-    match session.focus() {
-        Focus::Permission => return approval::screen(view, cols, rows),
-        Focus::Question => return question::screen(view, cols, rows),
-        Focus::Panel => return panel::screen(session, cols, rows, view.elapsed),
-        Focus::Form => return form::screen(view, cols, rows),
-        _ => {}
-    }
     let welcome = matches!(layout, Layout::Welcome);
     let header = if welcome {
         Vec::new()
@@ -79,17 +65,12 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
     } else {
         0
     };
-    let activity = if welcome {
-        Vec::new()
-    } else {
-        // A notice below the activity row leaves the composer one row.
-        let placed = header.len() + footer.len() + 2 + selector_rows + attachments.len();
-        chrome::activity(view, cols, rows.saturating_sub(placed + 1))
-    };
+    // The rows placed whatever the draft and the notice take.
+    let placed = header.len() + footer.len() + 2 + selector_rows + attachments.len();
+    let activity = activity_rows(view, (cols, rows), placed, welcome);
     // The rows a notice takes below the activity row.
     let notice = activity.len().saturating_sub(1);
-    let fixed = header.len() + footer.len() + 2 + selector_rows + attachments.len() + notice;
-    let allocation = allocate(view, &input, rows.saturating_sub(fixed).max(1));
+    let allocation = allocate(view, &input, rows.saturating_sub(placed + notice).max(1));
     let available = rows.saturating_sub(
         header.len()
             + allocation.input
@@ -117,6 +98,40 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16, layout: Layout) -
         input_row: input_row + allocation.centering,
     };
     assemble(view, parts, &input, &allocation, (cols, rows))
+}
+
+/// The screen of what has the focus instead of the composer, or the one
+/// asking for a larger terminal; `None` for the conversation.
+fn focused_screen(view: &View<'_>, cols: usize, rows: usize) -> Option<Frame> {
+    let session = view.session;
+    let overlay = session.focus() != Focus::Composer && session.focus() != Focus::Sidebar
+        || session.menu.visible;
+    if cols < 12 || rows < 8 || (overlay && (cols < 32 || rows < 16)) {
+        let lines = wrap("Enlarge terminal", cols).into_iter().take(rows);
+        let lines = lines.map(|text| line(text, Tone::Muted)).collect();
+        return Some(frame(lines, cols, None));
+    }
+    match session.focus() {
+        Focus::Permission => Some(approval::screen(view, cols, rows)),
+        Focus::Question => Some(question::screen(view, cols, rows)),
+        Focus::Panel => Some(panel::screen(session, cols, rows, view.elapsed)),
+        Focus::Form => Some(form::screen(view, cols, rows)),
+        _ => None,
+    }
+}
+
+/// The activity row and the notice's rows below it, beside the `placed`
+/// rows; none on the welcome screen. A notice leaves the composer one row.
+fn activity_rows(
+    view: &View<'_>,
+    (cols, rows): (usize, usize),
+    placed: usize,
+    welcome: bool,
+) -> Vec<Line> {
+    if welcome {
+        return Vec::new();
+    }
+    chrome::activity(view, cols, rows.saturating_sub(placed + 1))
 }
 
 /// Laid-out pieces of the conversation screen, before the history fills it.
