@@ -6,7 +6,7 @@ use crate::render::Span;
 
 pub(super) fn print(writer: &mut impl Write, span: &Span) -> io::Result<()> {
     if let Some(link) = &span.hyperlink {
-        // Use the same BEL-terminated OSC 8 form as Codex's terminal output.
+        // BEL ends OSC 8 here: terminals that parse OSC 8 accept it as they do ST.
         write!(writer, "\x1b]8;;{}\x07", link.url())?;
         writer.write_all(span.text.as_bytes())?;
         writer.write_all(b"\x1b]8;;\x07")

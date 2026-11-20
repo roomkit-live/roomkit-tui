@@ -45,7 +45,7 @@ fn identities_cannot_inject_pairs_controls_or_oversized_reports() {
     ] {
         assert!(TerminalStatus::new(invalid).is_err(), "{invalid:?}");
     }
-    for valid in ["roomkit-code", "Example_1.2+3", &"x".repeat(32)] {
+    for valid in ["example-app", "Example_1.2+3", &"x".repeat(32)] {
         assert!(TerminalStatus::new(valid).is_ok());
     }
     assert!(crate::UiOptions::default().terminal_status.is_none());

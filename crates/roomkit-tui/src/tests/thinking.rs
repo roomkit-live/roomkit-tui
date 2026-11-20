@@ -302,7 +302,7 @@ fn focus_moves_from_the_call_f2_reaches() {
     assert!(draw(&session, 14).contains("Before the call"));
 }
 
-/// The activity view, which roomkit-code shows by default, opens blocks with the
+/// The activity view, which a host may show by default, opens blocks with the
 /// technical timeline: by F2, and by a click on a block.
 #[test]
 fn the_activity_view_opens_blocks_with_the_timeline() {
