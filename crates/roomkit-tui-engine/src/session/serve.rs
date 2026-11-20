@@ -74,25 +74,7 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
     let mut broadcast = session.channel.events.subscribe();
     let (snapshot, costs) = session.attachment().await?;
     let (requests, host) = host.split();
-    let approvals = session.channel.approvals.attach_in(
-        session.config.conversation(),
-        session.config.agent.as_str(),
-        session.config.group_name(),
-    );
-    let mut view = View {
-        session,
-        host,
-        handler,
-        work: None,
-        steering: Vec::new(),
-        approvals,
-        parked: BTreeMap::new(),
-        progress: ToolProgress::default(),
-        costs: Costs::default(),
-        switching: false,
-        updates: None,
-        queue: VecDeque::new(),
-    };
+    let mut view = View::new(session, host, handler);
     view.attached(snapshot, costs)?;
     let mut incoming = read_requests(requests);
     let mut pending: Option<Pending<'_>> = None;
@@ -128,7 +110,29 @@ pub(super) async fn serve<S: ConversationStore, H: CommandHandler>(
     }
 }
 
-impl<S: ConversationStore, H: CommandHandler> View<'_, S, H> {
+impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
+    /// A view of the room `session` shows, its decisions open from now on.
+    fn new(session: LocalSession<S>, host: HostEvents, handler: &'h H) -> Self {
+        let config = &session.config;
+        let (room, agent) = (config.conversation(), config.agent.as_str());
+        let approvals = &session.channel.approvals;
+        let approvals = approvals.attach_in(room, agent, config.group_name());
+        Self {
+            session,
+            host,
+            handler,
+            work: None,
+            steering: Vec::new(),
+            approvals,
+            parked: BTreeMap::new(),
+            progress: ToolProgress::default(),
+            costs: Costs::default(),
+            switching: false,
+            updates: None,
+            queue: VecDeque::new(),
+        }
+    }
+
     /// Announce a newly attached or replaced conversation to the client.
     pub fn attached(
         &mut self,
