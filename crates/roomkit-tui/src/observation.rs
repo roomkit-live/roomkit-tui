@@ -8,6 +8,7 @@ use roomkit_tui_protocol::{
 
 /// The latest accepted operation, including admission before a run exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct OperationObservation {
     /// Identity supplied by the host's operation lifecycle.
     pub id: OperationId,
@@ -17,6 +18,7 @@ pub struct OperationObservation {
 
 /// The latest execution observed in the displayed conversation.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RunObservation {
     /// Host-owned execution identity.
     pub id: RunId,
@@ -28,6 +30,7 @@ pub struct RunObservation {
 /// Operation handling and run outcomes remain separate; presentation and any
 /// interpretation of these facts belong to the consuming application.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SessionObservation {
     /// Conversation currently displayed.
     pub conversation: ConversationId,
