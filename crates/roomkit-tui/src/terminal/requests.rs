@@ -5,7 +5,7 @@ use std::sync::mpsc::TrySendError;
 use roomkit_tui_protocol::limits::MAX_QUESTION_ANSWER_BYTES;
 use roomkit_tui_protocol::{Command, RequestId, RunId};
 
-use crate::session::Focus;
+use crate::session::{Focus, INPUT_TOO_LONG, MAX_INPUT_BYTES};
 use crate::{Client, Session};
 /// Pasted text goes to the focused editor; it never answers a decision or
 /// activates a panel or sidebar action.
@@ -40,12 +40,10 @@ pub(super) fn paste(session: &mut Session, text: &str) {
             }
         }
         Focus::Composer => {
-            if session.editor.expanded_len().saturating_add(text.len())
-                <= roomkit_tui_protocol::limits::MAX_TEXT_BYTES
-            {
+            if session.editor.expanded_len().saturating_add(text.len()) <= MAX_INPUT_BYTES {
                 session.paste(text);
             } else {
-                session.notice = "Input exceeds the 64 KiB composer limit".into();
+                session.notice = INPUT_TOO_LONG.into();
             }
         }
         _ => {}

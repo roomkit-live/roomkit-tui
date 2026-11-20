@@ -352,31 +352,19 @@ fn picker_key(session: &mut Session, client: &Client, key: KeyEvent) {
     match key.code {
         KeyCode::Up | KeyCode::BackTab => picker.navigate(true),
         KeyCode::Down | KeyCode::Tab => picker.navigate(false),
-        KeyCode::Left => picker.filter.left(),
-        KeyCode::Right => picker.filter.right(),
-        KeyCode::Home => picker.filter.home(),
-        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            picker.filter.home();
-        }
-        KeyCode::End => picker.filter.end(),
-        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            picker.filter.end();
-        }
-        KeyCode::Backspace => {
-            picker.filter.backspace();
-            picker.selected = 0;
-        }
-        KeyCode::Delete => {
-            picker.filter.delete();
-            picker.selected = 0;
-        }
         KeyCode::Char(c)
             if typing && picker.filter.text().len() + c.len_utf8() <= MAX_FILTER_BYTES =>
         {
             picker.filter.insert(&c.to_string());
             picker.selected = 0;
         }
-        _ => {}
+        _ => {
+            // A deletion changes the filter: the choices shown start over.
+            let deletes = matches!(key.code, KeyCode::Backspace | KeyCode::Delete);
+            if picker.filter.edit_key(key) && deletes {
+                picker.selected = 0;
+            }
+        }
     }
 }
 

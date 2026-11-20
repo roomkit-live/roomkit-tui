@@ -811,6 +811,75 @@ fn an_undersized_screen_answers_no_question() {
     assert!(!acts_unseen(&frame, &session, ctrl_c()));
 }
 
+/// Review STA-10: each text input had its own copy of the editing keys. The
+/// composer, a form's field, a question's own words and a picker's filter
+/// all edit the same way: these keys write "xaz".
+fn edit_a_line(session: &mut Session, client: &Client) {
+    let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+    for event in [
+        key(KeyCode::Char('a')),
+        key(KeyCode::Char('b')),
+        key(KeyCode::Home),
+        key(KeyCode::Char('x')),
+        ctrl('e'),
+        key(KeyCode::Char('y')),
+        key(KeyCode::Left),
+        key(KeyCode::Backspace),
+        key(KeyCode::Delete),
+        ctrl('a'),
+        key(KeyCode::Right),
+        key(KeyCode::End),
+        key(KeyCode::Char('z')),
+    ] {
+        press(session, client, event, APPROVAL_ARMING_DELAY);
+    }
+}
+
+#[test]
+fn the_composer_takes_the_shared_editing_keys() {
+    let (mut session, client, _host) = fixture(false);
+    edit_a_line(&mut session, &client);
+    assert_eq!(session.draft(), "xaz");
+}
+
+#[test]
+fn a_form_field_takes_the_shared_editing_keys() {
+    use roomkit_tui_protocol::{FieldKind, FormField, FormSpec};
+    let (mut session, client, _host) = fixture(false);
+    session.apply(Event::Form {
+        conversation: "room".into(),
+        form: FormSpec::new(
+            "settings",
+            "action",
+            "Settings",
+            vec![FormField::new("label", "Label", FieldKind::Text)],
+        ),
+    });
+    edit_a_line(&mut session, &client);
+    assert_eq!(session.form().unwrap().editors[0].text(), "xaz");
+}
+
+#[test]
+fn a_question_s_own_words_take_the_shared_editing_keys() {
+    let (mut session, client, _host) = fixture(true);
+    ask(&mut session, Duration::ZERO);
+    let frame = rendered(&session, 100, 30, Duration::ZERO);
+    session.sync(&frame, Duration::ZERO);
+    let own_words = key(KeyCode::Char('3'));
+    press(&mut session, &client, own_words, APPROVAL_ARMING_DELAY);
+    edit_a_line(&mut session, &client);
+    assert_eq!(session.question().unwrap().own_words(), "xaz");
+}
+
+#[test]
+fn a_picker_s_filter_takes_the_shared_editing_keys() {
+    let (mut session, client, _host) = fixture(false);
+    let picker = crate::ChoicePicker::new("action".into(), "Choices".into(), vec![]);
+    session.picker = Some(picker);
+    edit_a_line(&mut session, &client);
+    assert_eq!(session.picker().unwrap().filter.text(), "xaz");
+}
+
 /// Ctrl+A and Ctrl+E move to the start and the end of the line, as in a shell.
 #[test]
 fn control_a_and_control_e_move_to_the_line_s_edges() {

@@ -5,8 +5,10 @@ use crate::pasted::Pasted;
 use history::HistoryInput;
 
 mod history;
+mod keys;
 
-/// A Unicode grapheme-aware composer, independent of terminal input events.
+/// A Unicode grapheme-aware composer. Its shared editing keys are in
+/// `keys`; every other terminal input stays with the input that owns it.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Editor {
     text: String,

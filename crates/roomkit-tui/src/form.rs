@@ -142,18 +142,12 @@ impl FormState {
         match key.code {
             KeyCode::Char(c) if !control && !alt => self.insert(&c.to_string()),
             KeyCode::Enter if alt => self.insert("\n"),
-            KeyCode::Backspace => self.editors[self.selected].backspace(),
-            KeyCode::Delete => self.editors[self.selected].delete(),
-            KeyCode::Left => self.editors[self.selected].left(),
-            KeyCode::Right => self.editors[self.selected].right(),
-            KeyCode::Home => self.editors[self.selected].home(),
-            KeyCode::Char('a') if control => self.editors[self.selected].home(),
-            KeyCode::End => self.editors[self.selected].end(),
-            KeyCode::Char('e') if control => self.editors[self.selected].end(),
             KeyCode::Up => self.editors[self.selected].vertical(true),
             KeyCode::Down => self.editors[self.selected].vertical(false),
             KeyCode::Char('u') if control => self.editors[self.selected].set(String::new()),
-            _ => {}
+            _ => {
+                self.editors[self.selected].edit_key(key);
+            }
         }
     }
 

@@ -181,15 +181,9 @@ impl QuestionCard {
             KeyCode::Char(c) if !control && !alt => {
                 self.insert(&c.to_string());
             }
-            KeyCode::Backspace => editor.backspace(),
-            KeyCode::Delete => editor.delete(),
-            KeyCode::Left => editor.left(),
-            KeyCode::Right => editor.right(),
-            KeyCode::Home => editor.home(),
-            KeyCode::Char('a') if control => editor.home(),
-            KeyCode::End => editor.end(),
-            KeyCode::Char('e') if control => editor.end(),
-            _ => {}
+            _ => {
+                editor.edit_key(key);
+            }
         }
         CardStep::Stay
     }

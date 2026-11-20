@@ -7,9 +7,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::keys::{Outcome, is_cancel, is_ctrl};
 use super::requests::try_request;
 use super::{QUIT_TIMEOUT, interrupt, interrupt_run, send};
+use crate::session::MAX_INPUT_BYTES;
 use crate::{Client, Session};
 
-const MAX_INPUT_BYTES: usize = roomkit_tui_protocol::limits::MAX_TEXT_BYTES;
 const PAGE: usize = 8;
 pub(super) fn composer_key(
     session: &mut Session,
@@ -116,16 +116,9 @@ fn composer_editing(session: &mut Session, client: &Client, key: KeyEvent) {
         {
             session.remove_last_image();
         }
-        KeyCode::Backspace => session.editor.backspace(),
-        KeyCode::Delete => session.editor.delete(),
-        KeyCode::Left => session.editor.left(),
-        KeyCode::Right => session.editor.right(),
-        // Ctrl+A and Ctrl+E as in a shell: the start and end of the line.
-        KeyCode::Home => session.editor.home(),
-        KeyCode::Char('a') if control => session.editor.home(),
-        KeyCode::End => session.editor.end(),
-        KeyCode::Char('e') if control => session.editor.end(),
-        _ => {}
+        _ => {
+            session.editor.edit_key(key);
+        }
     }
 }
 

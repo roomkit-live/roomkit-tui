@@ -10,6 +10,15 @@ use super::Session;
 
 const MAX_PENDING_REQUESTS: usize = 64;
 
+/// The most text the composer holds, pastes expanded: one message's text.
+pub(crate) const MAX_INPUT_BYTES: usize = roomkit_tui_protocol::limits::MAX_TEXT_BYTES;
+/// What the person reads when input would pass [`MAX_INPUT_BYTES`].
+pub(crate) const INPUT_TOO_LONG: &str = "Input exceeds the 64 KiB composer limit";
+const _: () = assert!(
+    MAX_INPUT_BYTES == 64 * 1024,
+    "INPUT_TOO_LONG names the limit"
+);
+
 /// Why the view refused to build or send a request. Display text is meant
 /// for the person at the terminal.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]

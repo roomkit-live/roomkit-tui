@@ -29,6 +29,7 @@ use roomkit_tui_protocol::{
 };
 
 pub(crate) use bounds::bounded;
+pub(crate) use input::{INPUT_TOO_LONG, MAX_INPUT_BYTES};
 pub use input::SessionError;
 pub use steering::Steering;
 pub(crate) use thinking::ThoughtState;

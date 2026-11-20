@@ -2,6 +2,7 @@
 //! event loop.
 use crate::Session;
 use crate::selection::clipboard_sequence;
+use crate::session::{INPUT_TOO_LONG, MAX_INPUT_BYTES};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use roomkit_tui_protocol::{ConversationId, ImageUpload, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS};
 use std::time::Duration;
@@ -133,12 +134,13 @@ impl Clipboard {
                     Err(error) => error.to_string(),
                 },
                 Ok(Paste::Text(text))
-                    if session.editor.expanded_len().saturating_add(text.len()) <= 65_536 =>
+                    if session.editor.expanded_len().saturating_add(text.len())
+                        <= MAX_INPUT_BYTES =>
                 {
                     session.paste(&text);
                     String::new()
                 }
-                Ok(Paste::Text(_)) => "Input exceeds the 64 KiB composer limit".into(),
+                Ok(Paste::Text(_)) => INPUT_TOO_LONG.into(),
                 Err(error) => error,
             };
         } else if session.notice == "Reading clipboard…" {
@@ -175,8 +177,8 @@ fn read() -> Result<Paste, String> {
     let text = clipboard
         .get_text()
         .map_err(|_| "The clipboard contains no readable image or text")?;
-    if text.len() > 65_536 {
-        return Err("Input exceeds the 64 KiB composer limit".into());
+    if text.len() > MAX_INPUT_BYTES {
+        return Err(INPUT_TOO_LONG.into());
     }
     Ok(Paste::Text(text))
 }
