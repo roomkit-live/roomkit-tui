@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use roomkit::model::ChannelId;
 use roomkit_tui_protocol::limits::MAX_TEXT_BYTES;
 use roomkit_tui_protocol::{ActorId, Event, MessageId, RunId};
 
@@ -102,6 +103,14 @@ impl Runs<'_> {
                 self.0.remove(room);
             }
         }
+    }
+
+    /// The run of `agent` started last in `room`, while it is under way.
+    pub(crate) fn last_of(&self, room: &str, agent: &ChannelId) -> Option<RunId> {
+        let runs = self.0.get(room)?.iter().rev().map(|live| &live.run);
+        runs.into_iter()
+            .find(|run| crate::projection::is_run_of(run, agent))
+            .cloned()
     }
 
     /// What a view attaching to `room` is told after its snapshot: each run

@@ -123,7 +123,7 @@ impl ConversationChannel {
     /// watched, or they exceed what a terminal shows in full; the request
     /// then waits for an answer from elsewhere, or its timeout.
     pub fn ask_question(&self, room: &RoomId, agent: &ChannelId, request: QuestionRequest) -> bool {
-        let Some(run) = self.last_run(room.as_str()) else {
+        let Some(run) = self.asking_run(room.as_str(), agent) else {
             return false;
         };
         let question =
@@ -143,6 +143,13 @@ impl ConversationChannel {
             },
         );
         true
+    }
+
+    /// The run `agent` asks in: its latest under way in `room`, another
+    /// agent's runs there aside, while a view watches the room.
+    fn asking_run(&self, room: &str, agent: &ChannelId) -> Option<RunId> {
+        self.last_run(room)?;
+        self.live_runs.lock().last_of(room, agent)
     }
 
     /// The stream of `run` in `room` told why it failed.
@@ -330,6 +337,52 @@ impl ConversationChannel {
 mod tests {
     #![allow(clippy::unwrap_used, reason = "Test fixture failures are assertions")]
     use super::*;
+
+    fn started(run: &str) -> Event {
+        let (conversation, run) = ("room".into(), run.into());
+        Event::RunStarted {
+            conversation,
+            run,
+            answers: None,
+        }
+    }
+
+    fn finished(run: &str) -> Event {
+        let (conversation, run) = ("room".into(), run.into());
+        let outcome = roomkit_tui_protocol::RunOutcome::Completed;
+        Event::RunFinished {
+            conversation,
+            run,
+            outcome,
+        }
+    }
+
+    fn asked(id: &str) -> QuestionRequest {
+        let item = roomkit_tui_protocol::QuestionItem::new("Port", "Which port?", Vec::new());
+        QuestionRequest::new(id, vec![item])
+    }
+
+    /// ENG-8: a question was tagged with the last run started in its room,
+    /// another agent's among them, whose end withdrew it.
+    #[test]
+    fn a_question_keeps_to_the_run_of_the_agent_asking() {
+        let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
+        let (room, agent) = (
+            RoomId::new("room").unwrap(),
+            ChannelId::new("agent").unwrap(),
+        );
+        channel.publish("room", started("agent:evt_1"));
+        channel.publish("room", started("helper:evt_2"));
+        assert!(channel.ask_question(&room, &agent, asked("q1")));
+        channel.publish("room", finished("helper:evt_2"));
+        assert_eq!(
+            channel.questions.waiting("room"),
+            1,
+            "Another run withdrew it"
+        );
+        channel.publish("room", finished("agent:evt_1"));
+        assert_eq!(channel.questions.waiting("room"), 0);
+    }
 
     /// ENG-1: two runs failing in one room each keep their mark.
     #[test]
