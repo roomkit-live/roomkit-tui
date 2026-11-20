@@ -2,10 +2,10 @@
 
 use roomkit_tui_protocol::{Decision, Permission, PermissionDecision};
 
-use super::card::{card_screen, enlarge};
+use super::card::{card_screen, enlarge, filled_row, surface_rows};
 use super::footer::quit_hint;
-use super::text::{format_duration, pad, wrap_words};
-use super::{Frame, Line, PermissionTarget, Tone, View, frame, line, span};
+use super::text::{format_duration, pad};
+use super::{Frame, Line, PermissionTarget, Tone, View, frame, line, prose, span};
 use crate::Session;
 
 const CHOICES: [(&str, Decision); 2] = [
@@ -20,7 +20,7 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
     };
     let waiting = session.deciding(&permission.id);
     let armed = session.approval_armed(view.elapsed);
-    let detail = wrap_words(&permission.detail, cols - 6);
+    let detail = surface_rows(&permission.detail, cols - 6, Tone::Input);
     let mut card = heading(view, permission, cols);
     // Rows beyond a one-line title come from the detail window.
     let title_rows = card.len().saturating_sub(4);
@@ -37,7 +37,7 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
             .iter()
             .skip(start)
             .take(count)
-            .map(|text| filled(text)),
+            .map(|row| filled_row(row.clone(), 2, cols, Tone::Input)),
     );
     card.push(filled(""));
     let choice_start = card.len();
@@ -141,11 +141,11 @@ fn heading(view: &View<'_>, permission: &Permission, cols: usize) -> Vec<Line> {
     let session = view.session;
     let filled = |text: &str| line(pad(&format!("  {text}"), cols), Tone::Input);
     // The whole title is shown, wrapped and with its line breaks.
-    let title = wrap_words(&permission.title, cols - 4)
+    let title = surface_rows(&permission.title, cols - 4, Tone::Input)
         .into_iter()
-        .map(|text| {
-            let mut row = filled(&text);
-            row[0].emphasis.bold = true;
+        .map(|row| {
+            let mut row = filled_row(row, 2, cols, Tone::Input);
+            row.iter_mut().for_each(|part| part.emphasis.bold = true);
             row
         });
     let duration = session
@@ -185,16 +185,16 @@ pub(super) fn receipt(session: &Session, record: &PermissionDecision, cols: usiz
         session.actor_name(&record.permission.actor),
         summary
     );
-    wrap_words(&text, cols.saturating_sub(4))
+    prose::rows(&text, cols.saturating_sub(4), tone, true)
         .into_iter()
         .enumerate()
-        .map(|(i, text)| {
+        .map(|(i, row)| {
             let marker = if i == 0 {
                 format!(" {symbol} ")
             } else {
                 "   ".into()
             };
-            vec![span(marker, tone), span(text, tone)]
+            [vec![span(marker, tone)], row].concat()
         })
         .collect()
 }

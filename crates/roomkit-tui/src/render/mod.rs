@@ -16,6 +16,7 @@ mod message;
 mod meter;
 mod panel;
 mod presenters;
+mod prose;
 mod question;
 mod sidebar;
 mod text;

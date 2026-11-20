@@ -4,7 +4,7 @@
 
 use unicode_width::UnicodeWidthStr;
 
-use super::card::{card_screen, enlarge};
+use super::card::{card_screen, enlarge, filled_row, surface_rows};
 use super::footer::quit_hint;
 use super::text::{pad, wrap_words};
 use super::{Frame, Line, Tone, View, frame, line};
@@ -101,9 +101,9 @@ fn heading(view: &View<'_>, card: &QuestionCard, cols: usize) -> Vec<Line> {
     );
     heading[0].emphasis.bold = true;
     lines.push(heading);
-    for text in wrap_words(&item.text, cols.saturating_sub(4)) {
-        let mut row = filled(&text, cols, Tone::Input);
-        row[0].emphasis.bold = true;
+    for row in surface_rows(&item.text, cols.saturating_sub(4), Tone::Input) {
+        let mut row = filled_row(row, 2, cols, Tone::Input);
+        row.iter_mut().for_each(|part| part.emphasis.bold = true);
         lines.push(row);
     }
     lines.push(filled("", cols, Tone::Input));
@@ -127,9 +127,12 @@ fn options(card: &QuestionCard, cols: usize) -> Vec<Line> {
             cols,
             card.cursor() == index && !card.typing(),
         ));
-        for text in wrap_words(&option.description, cols.saturating_sub(10)) {
-            lines.push(filled(&format!("       {text}"), cols, Tone::Muted));
-        }
+        let description = surface_rows(&option.description, cols.saturating_sub(10), Tone::Muted);
+        lines.extend(
+            description
+                .into_iter()
+                .map(|row| filled_row(row, 9, cols, Tone::Muted)),
+        );
     }
     lines
 }

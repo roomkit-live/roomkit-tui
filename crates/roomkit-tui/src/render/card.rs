@@ -2,9 +2,9 @@
 //! latest history above, the card, and the notice below it. A card is shown
 //! whole or not at all: a person never answers part of what is asked.
 
-use super::text::wrap;
+use super::text::{columns, wrap};
 use super::timeline::timeline;
-use super::{Frame, Line, Tone, View, frame, line};
+use super::{Frame, Line, Tone, View, frame, line, prose, span};
 
 /// A card laid out at the bottom of its screen.
 pub(super) struct Placed {
@@ -56,4 +56,27 @@ pub(super) fn enlarge(text: &str, cols: usize) -> Frame {
         cols,
         None,
     )
+}
+
+/// `text` on the card's surface, wrapped at words within `width` columns. An
+/// address keeps the row's `tone`, underlined, so that the surface stays
+/// whole, and links its whole destination on every row it wraps onto.
+pub(super) fn surface_rows(text: &str, width: usize, tone: Tone) -> Vec<Line> {
+    let mut rows = prose::rows(text, width, tone, true);
+    for part in rows.iter_mut().flatten() {
+        if part.hyperlink.is_some() {
+            part.tone = tone;
+        }
+    }
+    rows
+}
+
+/// `row` `indent` columns in on the card's surface, which fills `cols` in
+/// `tone`.
+pub(super) fn filled_row(row: Line, indent: usize, cols: usize, tone: Tone) -> Line {
+    let used = indent + row.iter().map(|part| columns(&part.text)).sum::<usize>();
+    let mut filled = vec![span(" ".repeat(indent), tone)];
+    filled.extend(row);
+    filled.push(span(" ".repeat(cols.saturating_sub(used)), tone));
+    filled
 }
