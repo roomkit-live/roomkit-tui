@@ -6,6 +6,8 @@ use roomkit::model::{
     EventId, EventSource, EventType, ParticipantId, RoomEvent, TextContent, Timestamp, Visibility,
 };
 use roomkit::{CommitEventOptions, ConversationStore, RoomKit};
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Metadata key holding a stored decision receipt.
@@ -15,12 +17,31 @@ pub(crate) const RECEIPT_TOOL_KEY: &str = "roomkit_tui_approval_tool_id";
 /// Prefix of a stored receipt's event identity.
 const RECEIPT_ID_PREFIX: &str = "tui-";
 
+/// The writers of each room's decisions: one at a time in a room, since two
+/// would store the same row, and each room apart, since a store waits for
+/// its room's lock, which a turn may hold long.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Writers(Arc<Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>>);
+
+impl Writers {
+    /// Wait for the turn to store the decisions of `room`.
+    async fn of(&self, room: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let writer = {
+            let mut rooms = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+            // A room no writer holds nor waits for is forgotten.
+            rooms.retain(|_, writer| Arc::strong_count(writer) > 1);
+            rooms.entry(room.to_owned()).or_default().clone()
+        };
+        writer.lock_owned().await
+    }
+}
+
 pub(crate) async fn persist<S: ConversationStore>(
     kit: &RoomKit<S>,
     channel: &ConversationChannel,
     config: &SessionConfig,
 ) -> Result<(), AdapterError> {
-    let _storing = channel.storing_decisions.lock().await;
+    let _storing = channel.storing_decisions.of(config.room.as_str()).await;
     for saved in channel.approvals.receipts(config.room.as_str()) {
         let receipt = saved.decision;
         let mut source =

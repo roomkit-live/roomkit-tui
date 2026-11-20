@@ -40,8 +40,8 @@ pub struct ConversationChannel {
     /// The runs under way in each room, for a view that attaches to one.
     pub(crate) live_runs: LiveRuns,
     pub(crate) approvals: Approvals,
-    /// One writer of decisions at a time: two would store the same row.
-    pub(crate) storing_decisions: Arc<tokio::sync::Mutex<()>>,
+    /// The writers of each room's decisions, one at a time in a room.
+    pub(crate) storing_decisions: crate::approval_history::Writers,
     pub(crate) own_turns: OwnTurns,
     /// Who asked for the answer turn under way in a room: its trigger is never
     /// stored, so its stream cannot read them from the room.
@@ -107,7 +107,7 @@ impl ConversationChannel {
             stopping: Stopping::default(),
             live_streams: Streams::default(),
             live_runs: LiveRuns::default(),
-            storing_decisions: Arc::default(),
+            storing_decisions: Default::default(),
             own_turns: OwnTurns::default(),
             answers: Arc::default(),
             failures_told: Arc::default(),

@@ -380,3 +380,98 @@ async fn a_decision_for_another_channel_s_turn_is_stored_after_a_turn_of_the_vie
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }
+
+/// ENG-11: decisions were stored one room at a time across the channel. A
+/// room whose lock a turn held kept its decisions waiting to be stored, and
+/// every other room's with them: a view could not attach elsewhere until
+/// that turn ended.
+#[tokio::test]
+async fn a_room_whose_decisions_wait_for_its_lock_holds_no_other_room() {
+    use roomkit::ProcessInboundOptions;
+    use roomkit::model::{EventContent, HookResult, InboundMessage, RoomEvent, TextContent};
+    use tokio::sync::{Notify, watch};
+
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    let sms = ConversationChannel::buffered(ChannelId::new("sms").unwrap());
+    kit.register_channel(sms.clone()).unwrap();
+    let room = config().room;
+    kit.attach_channel(&room, sms.id(), Default::default())
+        .await
+        .unwrap();
+    let other = RoomId::new("other").unwrap();
+    kit.create_room(CreateRoomOptions {
+        room_id: Some(other.clone()),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    for id in [channel.id(), &config().agent] {
+        kit.attach_channel(&other, id, Default::default())
+            .await
+            .unwrap();
+    }
+    // The answer, as it is stored with the room locked, waits for a person's
+    // review, then for the gate.
+    let (open, gate) = watch::channel(false);
+    let held = Arc::new(Notify::new());
+    let (holding, asking) = (held.clone(), channel.clone());
+    kit.hook(
+        roomkit::HookTrigger::BeforeBroadcast,
+        move |event: RoomEvent, _| {
+            let (mut gate, held, asking) = (gate.clone(), holding.clone(), asking.clone());
+            let answer = event.source.channel_id == config().agent;
+            async move {
+                if answer {
+                    let request =
+                        PermissionRequest::new("Send?", "Send the answer", Duration::from_secs(30));
+                    asking
+                        .ask_permission(&config().room, &config().agent, request)
+                        .await;
+                    held.notify_one();
+                    let _ = gate.wait_for(|open| *open).await;
+                }
+                Ok(HookResult::allow(Default::default()))
+            }
+        },
+        hook_options("hold-answer"),
+    )
+    .unwrap();
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
+    next(&client).await;
+
+    let text = EventContent::Text(TextContent::new("Status?"));
+    let mut message = InboundMessage::new(sms.id().clone(), "carol", text);
+    message.addressed_to = Some(vec![config().agent]);
+    let options = ProcessInboundOptions {
+        room_id: Some(room.clone()),
+        organization_id: None,
+        defer_delivery: false,
+    };
+    let inbound = {
+        let kit = kit.clone();
+        tokio::spawn(async move { kit.process_inbound(message, options).await.map(|_| ()) })
+    };
+    let permission = requested(&client).await;
+    client
+        .try_send(decide(2, &permission, Decision::Allow))
+        .unwrap();
+    assert_eq!(reply(&client, 2).await, None);
+    held.notified().await;
+
+    let mut elsewhere = config();
+    elsewhere.room = other;
+    let attaching = LocalSession::new(kit.clone(), channel.clone(), elsewhere);
+    let snapshot = tokio::time::timeout(Duration::from_secs(1), attaching.snapshot()).await;
+    open.send_replace(true);
+    assert!(
+        snapshot.is_ok(),
+        "Another room's view waited for this room's turn"
+    );
+    inbound.await.unwrap().unwrap();
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
