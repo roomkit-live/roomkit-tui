@@ -169,13 +169,9 @@ impl QuestionCard {
         let editor = &mut self.other[self.current];
         match key.code {
             // Back to the options, keeping what was written.
-            KeyCode::Esc => self.typing = false,
+            KeyCode::Esc => self.leave_words(),
             KeyCode::Enter => {
-                self.typing = false;
-                // One answer to a single choice: own words replace an option.
-                if !self.item().multi_select && !self.own_words().trim().is_empty() {
-                    self.picked[self.current].clear();
-                }
+                self.leave_words();
                 return self.advance();
             }
             KeyCode::Char('u') if control => editor.set(String::new()),
@@ -191,6 +187,15 @@ impl QuestionCard {
             _ => {}
         }
         CardStep::Stay
+    }
+
+    /// Stop writing the own words. One answer to a single choice: words
+    /// written replace an option, as picking an option clears the words.
+    fn leave_words(&mut self) {
+        self.typing = false;
+        if !self.item().multi_select && !self.own_words().trim().is_empty() {
+            self.picked[self.current].clear();
+        }
     }
 
     /// Space: pick the highlighted option, among others when the question
@@ -421,5 +426,26 @@ mod tests {
         press(&mut card, KeyCode::Char('3'));
         type_in(&mut card, "private words");
         assert!(!format!("{card:?}").contains("private words"));
+    }
+
+    /// Review STA-8: on a single choice, Esc out of the own words kept the
+    /// option picked before, and the answer sent both.
+    #[test]
+    fn a_single_choice_is_an_option_or_own_words_never_both() {
+        let mut card = card(false);
+        press(&mut card, KeyCode::Char(' '));
+        press(&mut card, KeyCode::Char('3'));
+        type_in(&mut card, "DuckDB");
+        press(&mut card, KeyCode::Esc);
+        press(&mut card, KeyCode::Tab);
+        let sent = answers(press(&mut card, KeyCode::Enter));
+        assert_eq!(sent[0], QuestionAnswer::default().with_other("DuckDB"));
+
+        // Leaving blank words keeps the option.
+        let mut blank = self::card(false);
+        press(&mut blank, KeyCode::Char(' '));
+        press(&mut blank, KeyCode::Char('3'));
+        press(&mut blank, KeyCode::Esc);
+        assert!(blank.is_picked(0));
     }
 }
