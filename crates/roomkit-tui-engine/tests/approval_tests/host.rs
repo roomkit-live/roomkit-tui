@@ -296,3 +296,87 @@ async fn host_work_keeps_its_approvals_while_another_channel_turn_runs() {
     bob_task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }
+
+/// ENG-2: once its view had run a turn, a decision for a run the view did not
+/// start, here a turn for another channel's message, waited for the view's
+/// next turn to be stored: none came, and it was never stored.
+#[tokio::test]
+async fn a_decision_for_another_channel_s_turn_is_stored_after_a_turn_of_the_view() {
+    use roomkit::ProcessInboundOptions;
+    use roomkit::model::{EventContent, InboundMessage, TextContent};
+
+    let kit = RoomKit::new(Default::default());
+    let provider = ScriptedProvider::new([
+        ScriptedRound::answering("Hello"),
+        ScriptedRound::calling("Checking", [("call1", "lookup_record", "{}")]),
+        ScriptedRound::answering("Done"),
+    ]);
+    let channel = prepare(&kit, provider, Arc::default(), false).await;
+    let sms = ConversationChannel::buffered(ChannelId::new("sms").unwrap());
+    kit.register_channel(sms.clone()).unwrap();
+    let room = config().room;
+    kit.attach_channel(&room, sms.id(), Default::default())
+        .await
+        .unwrap();
+    let asking = channel.clone();
+    kit.hook(
+        roomkit::HookTrigger::BeforeToolUse,
+        move |event: roomkit::ToolCallEvent, _| {
+            let asking = asking.clone();
+            async move {
+                let request =
+                    PermissionRequest::new("Read?", "Read a record", Duration::from_secs(30));
+                let decision = asking.ask_tool_permission(&event, request).await;
+                Ok(match decision {
+                    Decision::Allow => roomkit::model::HookResult::allow(Default::default()),
+                    _ => roomkit::model::HookResult::block("Denied", Default::default()),
+                })
+            }
+        },
+        hook_options("permission"),
+    )
+    .unwrap();
+    let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+    let task = tokio::spawn(LocalSession::new(kit.clone(), channel.clone(), config()).run(host));
+    next(&client).await;
+    client.try_send(request("greeting")).unwrap();
+    collect_operation(&client).await;
+
+    let text = EventContent::Text(TextContent::new("Status?"));
+    let mut message = InboundMessage::new(sms.id().clone(), "carol", text);
+    message.addressed_to = Some(vec![config().agent]);
+    let options = ProcessInboundOptions {
+        room_id: Some(room.clone()),
+        organization_id: None,
+        defer_delivery: false,
+    };
+    let inbound = {
+        let kit = kit.clone();
+        tokio::spawn(async move { kit.process_inbound(message, options).await.map(|_| ()) })
+    };
+    let permission = requested(&client).await;
+    client
+        .try_send(decide(2, &permission, Decision::Allow))
+        .unwrap();
+    assert_eq!(reply(&client, 2).await, None);
+    inbound.await.unwrap().unwrap();
+    let stored = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let rows = kit
+                .get_timeline(&room, GetTimelineOptions::default())
+                .await
+                .unwrap();
+            if rows
+                .iter()
+                .any(|row| row.metadata.contains_key("roomkit_tui_approval"))
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    });
+    assert!(stored.await.is_ok(), "The decision is stored");
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}

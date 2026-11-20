@@ -154,14 +154,15 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
         }
     }
 
-    /// Stores what was decided for `room`, unless it is a turn of this view,
-    /// which stores its decisions as it ends: another run has no such end, and
-    /// no view may ever open that room.
+    /// Stores what was decided for `room`, unless this view's work runs
+    /// there, which stores its decisions as it ends: another run has no such
+    /// end, and no view may ever open that room.
     fn store_decisions_of(&self, room: &str) {
         let Ok(room) = roomkit::model::RoomId::new(room) else {
             return;
         };
-        if room.as_str() == self.session.config.conversation() && self.work.is_some() {
+        let working = self.work.as_ref().is_some_and(Interrupter::is_live);
+        if room.as_str() == self.session.config.conversation() && working {
             return;
         }
         let (kit, channel) = (self.session.kit.clone(), self.session.channel.clone());

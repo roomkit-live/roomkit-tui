@@ -161,6 +161,9 @@ impl<S: ConversationStore> Turn<S> {
             }
         }
         let verdict = self.deliver(content).await;
+        // Nothing interrupts the turn from here: a decision taken from now on
+        // is stored at once, as for work no view runs (`store_decisions_of`).
+        self.controls.close();
         verdict.tell(&self.channel, self.config.conversation());
         let stored = crate::approval_history::persist(&self.kit, &self.channel, &self.config).await;
         if stored.is_err() {
