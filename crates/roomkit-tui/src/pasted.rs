@@ -30,10 +30,12 @@ struct Block {
 
 impl Pasted {
     /// The label `text` goes in as, when it is long enough to be a block.
+    /// Blank text is never a block: a label always stands for words to send,
+    /// so a draft holding one is never empty.
     pub fn block(&mut self, text: &str) -> Option<String> {
         let lines = text.lines().count();
         let chars = text.chars().count();
-        if lines < BLOCK_LINES && chars <= BLOCK_CHARS {
+        if (lines < BLOCK_LINES && chars <= BLOCK_CHARS) || text.trim().is_empty() {
             return None;
         }
         let size = if lines > 1 {

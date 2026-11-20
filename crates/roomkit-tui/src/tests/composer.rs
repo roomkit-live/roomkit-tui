@@ -38,6 +38,28 @@ fn unicode_editing_keeps_graphemes_intact_and_paste_does_not_submit() {
     assert!(editor.text().is_empty());
 }
 
+/// Review STA-6: a blank paste of three lines went in as a block, and the
+/// check for an empty message read the block's label: Enter sent the blank
+/// lines, where typing them asks for a message.
+#[test]
+fn a_blank_paste_is_no_message() {
+    let mut session = session();
+    session.paste("\n\n\n");
+    assert_eq!(
+        session.input_command(),
+        Err(crate::SessionError::EmptyMessage)
+    );
+    assert_eq!(
+        session.send_after_interruption(),
+        Err(crate::SessionError::EmptyMessage)
+    );
+    session.paste(&" ".repeat(600));
+    assert_eq!(
+        session.input_command(),
+        Err(crate::SessionError::EmptyMessage)
+    );
+}
+
 /// Review of the pasted blocks: an accent typed after a block merges with its
 /// `]`, yet Left and Backspace still take the block whole. A deleted block is
 /// forgotten: its label typed again stays as typed, and numbering restarts
