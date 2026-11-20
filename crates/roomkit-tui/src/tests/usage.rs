@@ -385,10 +385,8 @@ fn a_refusal_after_an_earlier_step_reads_as_a_last_report_in_the_footer() {
     );
 }
 
-/// A footer too narrow for all its parts drops the last whole ones and ends
-/// in `…`: a figure is never cut, as `total ≈ $1` for $133.32 would read.
-#[test]
-fn a_narrow_footer_drops_whole_parts_and_never_cuts_a_figure() {
+/// A turn with context, tokens, the conversation's cost and a total.
+fn measured_turn() -> Session {
     let mut session = session();
     started(&mut session, "run-1");
     session.apply(Event::UsageUpdated {
@@ -407,6 +405,14 @@ fn a_narrow_footer_drops_whole_parts_and_never_cuts_a_figure() {
         "room-a",
         Some(ConversationCost::new(120_820_000, "USD", true)),
     ));
+    session
+}
+
+/// A footer too narrow for all its parts drops the last whole ones and ends
+/// in `…`: a figure is never cut, as `total ≈ $1` for $133.32 would read.
+#[test]
+fn a_narrow_footer_drops_whole_parts_and_never_cuts_a_figure() {
+    let session = measured_turn();
     // The figures' row from the context on: the agent's settings share it
     // when there is room for them all.
     let row = |width| {
