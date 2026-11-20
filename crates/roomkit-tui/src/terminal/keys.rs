@@ -148,14 +148,12 @@ fn permission_key(session: &mut Session, client: &Client, key: KeyEvent, now: Du
 }
 
 /// Keys to the questions on screen, once they can have been read: a key
-/// pressed as they appear answers nothing. Ctrl+C interrupts the run that
-/// asks, as on a decision card.
+/// pressed as they appear answers nothing. Ctrl+C acts as on a decision
+/// card ([`cancel_questions`]).
 fn question_key(session: &mut Session, client: &Client, key: KeyEvent, now: Duration) {
     session.quit_until = None;
     if is_ctrl(key, 'c') {
-        if let Some(run) = session.question().map(|card| card.question().run.clone()) {
-            interrupt_run(session, client, run);
-        }
+        cancel_questions(session, client, now);
         return;
     }
     if key.kind == KeyEventKind::Repeat || !session.question_armed(now) {
@@ -169,6 +167,31 @@ fn question_key(session: &mut Session, client: &Client, key: KeyEvent, now: Dura
         crate::question::CardStep::Answer(command)
         | crate::question::CardStep::Decline(command) => command,
     };
+    send_answers(session, client, command);
+}
+
+/// Ctrl+C on the questions, as on a decision card: where stopping their run
+/// would stop more than the turn, it declines them, once they can have been
+/// read; else it interrupts the run that asks.
+fn cancel_questions(session: &mut Session, client: &Client, now: Duration) {
+    if session.card_refuses_on_cancel() {
+        let decline = session
+            .question()
+            .filter(|card| !card.sent)
+            .map(crate::QuestionCard::decline);
+        if let Some(command) = decline.filter(|_| session.question_armed(now)) {
+            send_answers(session, client, command);
+        }
+        return;
+    }
+    if let Some(run) = session.question().map(|card| card.question().run.clone()) {
+        interrupt_run(session, client, run);
+    }
+}
+
+/// Send the card's answers, or its refusal: the card then takes no key
+/// until the host replies.
+fn send_answers(session: &mut Session, client: &Client, command: Command) {
     if super::requests::try_request(session, client, command).is_some() {
         if let Some(card) = session.question_mut() {
             card.sent = true;

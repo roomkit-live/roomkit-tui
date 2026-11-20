@@ -61,9 +61,10 @@ impl Session {
         (*origin != snapshot.conversation).then_some(origin)
     }
 
-    /// Whether Esc on the card on screen refuses its action rather than
-    /// stopping its run: it was asked elsewhere, or stopping the run here
-    /// would stop more than the turn.
+    /// Whether cancelling the card on screen refuses what it asks rather
+    /// than stopping its run, Esc or Ctrl+C on a decision and Ctrl+C on
+    /// questions: it was asked elsewhere, or stopping the run here would
+    /// stop more than the turn.
     pub fn card_refuses_on_cancel(&self) -> bool {
         self.permission_elsewhere().is_some()
             || self.snapshot.as_ref().is_some_and(|s| !s.can_cut_to_send)

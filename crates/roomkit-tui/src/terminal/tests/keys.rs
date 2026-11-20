@@ -744,6 +744,40 @@ fn a_question_card_on_screen_takes_the_arrows_and_enter() {
     }
 }
 
+/// Review STA-7: on a decision card, Ctrl+C refuses the request where
+/// stopping the run would stop more than the turn; on a question card it
+/// interrupted the run all the same.
+#[test]
+fn ctrl_c_on_a_question_card_declines_where_a_decision_would_be_refused() {
+    let (mut session, client, host) = fixture(true);
+    ask(&mut session, Duration::ZERO);
+    let frame = rendered(&session, 100, 30, Duration::ZERO);
+    session.sync(&frame, Duration::ZERO);
+    press(&mut session, &client, ctrl_c(), Duration::ZERO);
+    assert_eq!(
+        host.try_recv().unwrap().command,
+        Command::Interrupt { run: "run".into() }
+    );
+
+    let (mut session, client, host) = fixture(true);
+    session.snapshot.as_mut().unwrap().can_cut_to_send = false;
+    ask(&mut session, Duration::ZERO);
+    let frame = rendered(&session, 100, 30, Duration::ZERO);
+    session.sync(&frame, Duration::ZERO);
+    press(&mut session, &client, ctrl_c(), Duration::ZERO);
+    let early = host.try_recv().map(|sent| sent.command);
+    assert!(early.is_err(), "sent before it could be read: {early:?}");
+    press(&mut session, &client, ctrl_c(), APPROVAL_ARMING_DELAY);
+    assert_eq!(
+        host.try_recv().unwrap().command,
+        Command::AnswerQuestion {
+            question: "q".into(),
+            answers: None,
+        }
+    );
+    assert!(session.question().unwrap().sent);
+}
+
 /// A card the screen cannot show whole takes no answer, digits and Esc
 /// included; quitting still works.
 #[test]

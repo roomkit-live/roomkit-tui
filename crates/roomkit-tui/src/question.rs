@@ -122,6 +122,11 @@ impl QuestionCard {
         }
     }
 
+    /// The command that closes the questions without answering them.
+    pub(crate) fn decline(&self) -> Command {
+        self.command(None)
+    }
+
     /// Apply `key` to the card.
     pub(crate) fn key(&mut self, key: KeyEvent) -> CardStep {
         if self.sent {
@@ -133,7 +138,7 @@ impl QuestionCard {
         let rows = self.own_row() + 1;
         let cursor = self.cursor[self.current];
         match key.code {
-            KeyCode::Esc => return CardStep::Decline(self.command(None)),
+            KeyCode::Esc => return CardStep::Decline(self.decline()),
             KeyCode::Up | KeyCode::Char('k') => {
                 self.cursor[self.current] = (cursor + rows - 1) % rows;
             }
