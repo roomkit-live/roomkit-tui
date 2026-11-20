@@ -155,6 +155,9 @@ pub struct Session {
     /// Messages a run was started for, oldest first: one handed to a turn
     /// whose own run started before the host said so went to that run.
     answered: Vec<MessageId>,
+    /// Drafts streamed and not finalized yet, oldest first, with the run
+    /// that streams each.
+    drafts: Vec<(MessageId, RunId)>,
     interrupting: Option<RunId>,
     /// What was handed to the turn under way, which Ctrl+S may cut.
     handed: Option<steering::Handed>,
@@ -218,6 +221,7 @@ impl Session {
             held_outcome: None,
             steered: Vec::new(),
             answered: Vec::new(),
+            drafts: Vec::new(),
             interrupting: None,
             handed: None,
             thoughts: thinking::Thoughts::default(),

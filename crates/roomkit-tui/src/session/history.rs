@@ -4,7 +4,7 @@
 use roomkit_tui_protocol::{ActorId, ConversationId, Item, Message, MessageId, RunId, Snapshot};
 
 use super::bounds::{bound_in_place, bound_item, bound_labels, bounded, trim_items};
-use super::steering::Handed;
+use super::steering::{Handed, remember};
 use super::unread::{is_output_of, place};
 use super::{ObservedRun, Session};
 
@@ -78,6 +78,7 @@ impl Session {
         self.context_exceeded = false;
         self.known_estimate = None;
         self.held_estimate = None;
+        self.drafts.clear();
         self.permission_scroll = 0;
         self.permission_choice = 0;
         self.deciding.clear();
@@ -116,6 +117,7 @@ impl Session {
             return;
         }
         self.text_comes(run);
+        self.streams(run, &message);
         let limit = self.limits.text_bytes.get();
         let Some(snapshot) = &mut self.snapshot else {
             return;
@@ -141,6 +143,19 @@ impl Session {
         }
     }
 
+    /// `run` streams `draft`, until the draft is finalized.
+    fn streams(&mut self, run: &RunId, draft: &MessageId) {
+        if !self.drafts.iter().any(|(id, _)| id == draft) {
+            remember(&mut self.drafts, (draft.clone(), run.clone()));
+        }
+    }
+
+    /// The run that streamed `draft`, now finalized.
+    fn finalizes(&mut self, draft: &MessageId) -> Option<RunId> {
+        let at = self.drafts.iter().position(|(id, _)| id == draft)?;
+        Some(self.drafts.remove(at).1)
+    }
+
     pub(super) fn on_message_finalized(
         &mut self,
         conversation: &ConversationId,
@@ -150,7 +165,8 @@ impl Session {
         if !self.is_current(conversation) {
             return;
         }
-        self.answer_ended();
+        let run = self.finalizes(draft);
+        self.answer_ended(run.as_ref());
         let limit = self.limits.text_bytes.get();
         let mut item = Item::Message(message);
         if let Some(snapshot) = &mut self.snapshot {

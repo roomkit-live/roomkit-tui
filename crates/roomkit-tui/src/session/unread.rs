@@ -131,9 +131,12 @@ impl Session {
         }
     }
 
-    /// An answer ended, or text ended as its calls start.
-    pub(super) fn answer_ended(&mut self) {
+    /// An answer ended: the one `run` streamed, or, when nothing of it was
+    /// streamed, an answer all the same. Another run's answer says nothing
+    /// of the turn's stops, even told after that run ended.
+    pub(super) fn answer_ended(&mut self, run: Option<&RunId>) {
         if let Some(handed) = &mut self.handed
+            && run.is_none_or(|run| *run == handed.run)
             && !handed.unread.messages.is_empty()
         {
             handed.unread.answered = true;

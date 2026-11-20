@@ -411,6 +411,38 @@ fn a_call_another_run_has_running_hides_no_stop() {
     assert_eq!(steering(&session, "sent"), Some(Steering::Read));
 }
 
+/// Review STA-3: the end of another run's answer marked the message handed
+/// to this turn read, and put this turn's next text below it.
+#[test]
+fn an_answer_another_run_ends_reads_nothing() {
+    let mut session = turn();
+    started(&mut session, "agent:other");
+    hand(&mut session, "sent");
+    delta_of(&mut session, "agent:other", "d9", "Elsewhere");
+    finalized(&mut session, "d9", "a9");
+    delta(&mut session, "d1", "Words");
+    assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
+    assert_eq!(order(&session), ["d1", "sent", "a9"]);
+}
+
+/// Review STA-3: told once that run ended, another run's answer still says
+/// nothing of this turn's stops.
+#[test]
+fn an_answer_another_run_ends_after_its_end_reads_nothing() {
+    let mut session = turn();
+    started(&mut session, "agent:other");
+    hand(&mut session, "sent");
+    delta_of(&mut session, "agent:other", "d9", "Elsewhere");
+    session.apply(Event::RunFinished {
+        conversation: "room-a".into(),
+        run: "agent:other".into(),
+        outcome: RunOutcome::Completed,
+    });
+    finalized(&mut session, "d9", "a9");
+    delta(&mut session, "d1", "Words");
+    assert_eq!(steering(&session, "sent"), Some(Steering::Handed));
+}
+
 #[test]
 fn the_text_of_another_run_goes_below() {
     let mut session = turn();
