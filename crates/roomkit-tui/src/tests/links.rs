@@ -206,3 +206,30 @@ fn a_notice_on_the_welcome_screen_links_its_address_on_every_row() {
     );
     assert_linked_on_every_row(&frame, NOTICE_URL);
 }
+
+#[test]
+fn a_panel_s_output_and_a_model_s_reasoning_link_their_addresses_on_every_row() {
+    let url = "https://example.com/jobs/42/logs?since=2026-11-01&level=debug&format=text";
+    let mut session = session();
+    session.apply(Event::Panel {
+        conversation: "room-a".into(),
+        panel: PanelSpec::new("p1", "summarize", "Jobs", format!("Logs at {url}\nsecond")),
+    });
+    let frame = render::screen(&session, 60, 30, &Renderers::default());
+    assert_linked_on_every_row(&frame, url);
+
+    let mut session = super::session();
+    started(&mut session, "run-1");
+    session.apply(Event::ThinkingDelta {
+        conversation: "room-a".into(),
+        actor: "agent".into(),
+        run: "run-1".into(),
+        text: format!("I should read {url} first."),
+    });
+    let frame = render::screen(&session, 60, 30, &Renderers::default());
+    assert!(
+        frame.lines.iter().any(|l| l.contains("Thinking")),
+        "the reasoning shows"
+    );
+    assert_linked_on_every_row(&frame, url);
+}

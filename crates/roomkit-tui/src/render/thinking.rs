@@ -5,9 +5,9 @@
 use roomkit_tui_protocol::{Snapshot, Thinking};
 use unicode_width::UnicodeWidthStr;
 
-use super::text::{format_duration, sanitize, wrap_words};
+use super::text::format_duration;
 use super::timeline::Block;
-use super::{Line, Tone, ToolTarget, View, line, span};
+use super::{Line, Tone, ToolTarget, View, prose, span};
 use crate::session::ThoughtState;
 
 /// The lines of a block the model is still writing.
@@ -48,14 +48,14 @@ pub(super) fn block(view: &View<'_>, snapshot: &Snapshot, block: &Thinking, cols
         shown
             .lines
             .into_iter()
-            .map(|text| line(format!("{INDENT}{text}"), Tone::Muted)),
+            .map(|row| [vec![span(INDENT, Tone::Muted)], row].concat()),
     );
     laid.focused_end = focused.then_some(laid.lines.len());
     laid
 }
 
 struct Shown {
-    lines: Vec<String>,
+    lines: Vec<Line>,
     truncated: bool,
 }
 
@@ -70,19 +70,12 @@ fn shown_lines(block: &Thinking, state: ThoughtState, expanded: bool, width: usi
     }
     let rows = if expanded { OPEN_LINES } else { LIVE_LINES };
     let end = tail(&block.text, rows, width);
-    let lines = wrapped(end, width);
+    let lines = prose::rows(end.trim(), width, Tone::Muted, true);
     let skip = lines.len().saturating_sub(rows);
     Shown {
         truncated: expanded && (skip > 0 || end.len() < block.text.len()),
         lines: lines.into_iter().skip(skip).collect(),
     }
-}
-
-fn wrapped(text: &str, width: usize) -> Vec<String> {
-    sanitize(text.trim())
-        .lines()
-        .flat_map(|paragraph| wrap_words(paragraph, width))
-        .collect()
 }
 
 /// As much of the end of `text` as `rows` rows of `width` columns can show: a

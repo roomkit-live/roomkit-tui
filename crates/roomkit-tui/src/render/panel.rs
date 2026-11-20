@@ -2,8 +2,7 @@ use std::time::Duration;
 
 use super::chrome::screen_notice;
 use super::footer::quit_hint;
-use super::text::{sanitize, wrap};
-use super::{ActionTarget, Frame, Line, Tone, frame, line};
+use super::{ActionTarget, Frame, Line, Tone, frame, line, prose, span};
 use crate::Session;
 
 pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Duration) -> Frame {
@@ -14,7 +13,7 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Durat
     // The notice's rows beyond one come out of the body, which keeps a row.
     let notice = screen_notice(&session.notice, cols, rows.saturating_sub(slots + 6));
     let body_height = rows.saturating_sub(slots + 5 + notice.len());
-    let body = wrap(&sanitize(&panel.spec.body), cols.saturating_sub(2));
+    let body = prose::rows(&panel.spec.body, cols.saturating_sub(2), Tone::Text, false);
     let scroll = panel.scroll.min(body.len().saturating_sub(body_height));
     let mut lines = vec![
         line(format!(" {}", panel.spec.title), Tone::Primary),
@@ -24,7 +23,7 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Durat
         body.iter()
             .skip(scroll)
             .take(body_height)
-            .map(|text| line(format!(" {text}"), Tone::Text)),
+            .map(|row| [vec![span(" ", Tone::Text)], row.clone()].concat()),
     );
     while lines.len() < body_height + 2 {
         lines.push(Vec::new());
