@@ -119,9 +119,11 @@ impl ConversationChannel {
     /// asks in its latest run there: a view's answer resolves the kit's
     /// human-input request with the text the agent reads, and a person who
     /// closes them rejects it. Call it from an `ON_USER_INPUT_REQUIRED`
-    /// hook. `false` when no view can show them: no run of the room is
-    /// watched, or they exceed what a terminal shows in full; the request
-    /// then waits for an answer from elsewhere, or its timeout.
+    /// hook. `false` when no view can show them: `agent` has no run under
+    /// way in the room, no run of the room is watched, they exceed what a
+    /// terminal shows in full, or `MAX_PENDING_QUESTIONS` requests already
+    /// wait in the room; the request then waits for an answer from elsewhere,
+    /// or its timeout.
     pub fn ask_question(&self, room: &RoomId, agent: &ChannelId, request: QuestionRequest) -> bool {
         let Some(run) = self.asking_run(room.as_str(), agent) else {
             return false;
@@ -360,8 +362,8 @@ mod tests {
         QuestionRequest::new(id, vec![item])
     }
 
-    /// ENG-8: a question was tagged with the last run started in its room,
-    /// another agent's among them, whose end withdrew it.
+    /// A question belongs to the run of the agent asking it: another agent's
+    /// run ending in the room does not withdraw it.
     #[test]
     fn a_question_keeps_to_the_run_of_the_agent_asking() {
         let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
@@ -382,8 +384,8 @@ mod tests {
         assert_eq!(channel.questions.waiting("room"), 0);
     }
 
-    /// ENG-10: the limit of questions waiting in a room was read, then a
-    /// question added, under two locks: questions asked at once passed it.
+    /// The limit of questions waiting in a room is read and a question added
+    /// under one lock: questions asked at once never pass it.
     #[test]
     fn questions_asked_at_once_never_pass_the_limit() {
         use roomkit_tui_protocol::limits::MAX_PENDING_QUESTIONS;
@@ -419,7 +421,7 @@ mod tests {
         assert_eq!(passed, 0, "Questions asked at once passed the limit");
     }
 
-    /// ENG-1: two runs failing in one room each keep their mark.
+    /// Two runs failing in one room each keep their mark.
     #[test]
     fn each_failed_run_of_a_room_is_told_once() {
         let channel = ConversationChannel::new(ChannelId::new("console").unwrap());

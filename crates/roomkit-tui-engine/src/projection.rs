@@ -21,6 +21,8 @@ pub(crate) fn run_id(agent: impl std::fmt::Display, trigger: impl std::fmt::Disp
 
 /// Whether `run` answers an event by `agent`, as [`run_id`] names it: the
 /// agent's identity leads it, as much of it as a bounded identity keeps.
+/// A run identity does not say where the agent's identity ends: agents of
+/// one room whose identities are `a` and `a:b` cannot be told apart by it.
 pub(crate) fn is_run_of(run: &RunId, agent: &ChannelId) -> bool {
     let leading = format!("{agent}:");
     let kept = &leading[..leading.floor_char_boundary(MAX_RUN_ID_BYTES - DIGEST_BYTES)];

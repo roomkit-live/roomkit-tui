@@ -304,8 +304,10 @@ kit.hook(
 
 A request has at most four questions of at most four options each; the
 person may also answer in their own words. `ask_question` returns `false`
-when no view watches a run of the room, or the questions exceed those
-bounds: the request then waits for an answer from elsewhere, or its timeout.
+when the asking agent has no run under way in the room, no view watches a run
+of the room, the questions exceed those bounds, or 16 requests already wait in
+the room (`MAX_PENDING_QUESTIONS`): the request then waits for an answer from
+elsewhere, or its timeout.
 
 ### With your own host
 
