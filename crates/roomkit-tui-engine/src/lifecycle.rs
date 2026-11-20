@@ -1,11 +1,11 @@
 //! Application lifecycle callbacks, independent of the presentation event stream.
 
-use std::{fmt::Debug, future::Future, pin::Pin};
+use std::{fmt::Debug, future::Future, pin::Pin, time::Duration};
 
 use roomkit::model::EventContent;
-use roomkit_tui_protocol::OperationId;
+use roomkit_tui_protocol::{Event, OperationId, Rejection, RunId, RunOutcome};
 
-use crate::SessionConfig;
+use crate::{ConversationChannel, SessionConfig};
 
 /// A host callback whose resources remain owned by the application.
 pub type LifecycleFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -42,7 +42,7 @@ pub trait SessionLifecycle: Debug + Send + Sync {
         _session: &'a SessionConfig,
         _operation: &'a OperationId,
         _content: &'a EventContent,
-    ) -> LifecycleFuture<'a, Result<(), roomkit_tui_protocol::Rejection>> {
+    ) -> LifecycleFuture<'a, Result<(), Rejection>> {
         Box::pin(async { Ok(()) })
     }
 
@@ -57,7 +57,7 @@ pub trait SessionLifecycle: Debug + Send + Sync {
         session: &'a SessionConfig,
         operation: &'a OperationId,
         content: &'a EventContent,
-    ) -> LifecycleFuture<'a, Result<(), roomkit_tui_protocol::Rejection>> {
+    ) -> LifecycleFuture<'a, Result<(), Rejection>> {
         self.admit(session, operation, content)
     }
 
@@ -93,6 +93,9 @@ pub trait SessionLifecycle: Debug + Send + Sync {
     }
 }
 
+/// How long a preparation runs before the views are shown it as a run.
+const SHOWN_AFTER: Duration = Duration::from_millis(80);
+
 /// Announce preparation only when it lasts long enough to be useful. Fast or
 /// disabled callbacks do not manufacture an extra visible model run.
 pub(crate) async fn prepare(
@@ -100,63 +103,114 @@ pub(crate) async fn prepare(
     session: &SessionConfig,
     operation: &OperationId,
     (content, answer): (&EventContent, bool),
-    channel: &crate::ConversationChannel,
+    channel: &ConversationChannel,
     controls: &mut crate::cancellation::Receiver,
-) -> Option<roomkit_tui_protocol::RunOutcome> {
-    use roomkit_tui_protocol::{Event, RunOutcome};
+) -> Option<RunOutcome> {
     let run = crate::projection::bounded_run_id(format!("prepare:{operation}"));
-    let mut announced = false;
+    let mut shown = Shown {
+        channel,
+        room: session.room.as_str(),
+        run: None,
+    };
     let result = {
-        let future = async {
-            if answer {
-                lifecycle.admit_answer(session, operation, content).await?;
-            } else {
-                lifecycle.admit(session, operation, content).await?;
-            }
-            lifecycle.started(session, operation).await;
-            Ok::<_, roomkit_tui_protocol::Rejection>(())
-        };
-        tokio::pin!(future);
+        let admitted = admission(lifecycle, session, operation, (content, answer));
+        tokio::pin!(admitted);
         tokio::select! {
-            result = &mut future => Some(result),
-            () = tokio::time::sleep(std::time::Duration::from_millis(80)) => {
-                announced = true;
-                channel.publish(session.room.as_str(), Event::RunStarted { conversation: session.room.as_str().into(), run: run.clone(), answers: None });
-                crate::cancellation::prepare(&mut future, &run, controls).await
+            result = &mut admitted => Some(result),
+            () = tokio::time::sleep(SHOWN_AFTER) => {
+                shown.announce(run.clone());
+                crate::cancellation::prepare(&mut admitted, &run, controls).await
             }
         }
     };
-    // Drop preparation before finalization so its resources are already cleaned.
-    let outcome = match result {
-        Some(Ok(())) => RunOutcome::Completed,
-        Some(Err(rejection)) => {
-            let conversation = session.room.as_str().into();
-            let notice = Event::Notice {
-                conversation,
-                text: rejection.message,
-            };
-            channel.publish(session.room.as_str(), notice);
-            lifecycle
-                .finished(session, operation, TurnOutcome::Blocked)
-                .await;
-            RunOutcome::Failed
-        }
-        None => {
-            lifecycle
-                .finished(session, operation, TurnOutcome::Interrupted)
-                .await;
-            RunOutcome::Interrupted
-        }
-    };
-    if announced {
-        channel.publish(
-            session.room.as_str(),
-            Event::RunFinished {
-                conversation: session.room.as_str().into(),
-                run,
-                outcome,
-            },
-        );
-    }
+    // Preparation is dropped before finalization, its resources cleaned.
+    let outcome = concluded(lifecycle, session, operation, channel, result).await;
+    shown.finish(outcome);
     (outcome != RunOutcome::Completed).then_some(outcome)
+}
+
+/// How a preparation ended, `None` when interrupted: the host hears of a
+/// refusal or an interruption, and the views of a refusal's reason.
+async fn concluded(
+    lifecycle: &dyn SessionLifecycle,
+    session: &SessionConfig,
+    operation: &OperationId,
+    channel: &ConversationChannel,
+    result: Option<Result<(), Rejection>>,
+) -> RunOutcome {
+    let (ended, outcome) = match result {
+        Some(Ok(())) => return RunOutcome::Completed,
+        Some(Err(rejection)) => {
+            let (room, text) = (session.room.as_str(), rejection.message);
+            let conversation = room.into();
+            channel.publish(room, Event::Notice { conversation, text });
+            (TurnOutcome::Blocked, RunOutcome::Failed)
+        }
+        None => (TurnOutcome::Interrupted, RunOutcome::Interrupted),
+    };
+    lifecycle.finished(session, operation, ended).await;
+    outcome
+}
+
+/// The host's admission of the turn, then its start; a turn with no new
+/// message passes the host's gate for those.
+async fn admission(
+    lifecycle: &dyn SessionLifecycle,
+    session: &SessionConfig,
+    operation: &OperationId,
+    (content, answer): (&EventContent, bool),
+) -> Result<(), Rejection> {
+    if answer {
+        lifecycle.admit_answer(session, operation, content).await?;
+    } else {
+        lifecycle.admit(session, operation, content).await?;
+    }
+    lifecycle.started(session, operation).await;
+    Ok(())
+}
+
+/// A preparation shown as a run. Dropped unfinished, as when the host's
+/// callback panics, it reports a failure, so no view keeps the run going.
+struct Shown<'a> {
+    channel: &'a ConversationChannel,
+    room: &'a str,
+    run: Option<RunId>,
+}
+
+impl Shown<'_> {
+    fn announce(&mut self, run: RunId) {
+        let conversation = self.room.into();
+        let started = Event::RunStarted {
+            conversation,
+            run: run.clone(),
+            answers: None,
+        };
+        self.channel.publish(self.room, started);
+        self.run = Some(run);
+    }
+
+    /// End the run shown, if the preparation was.
+    fn finish(mut self, outcome: RunOutcome) {
+        if let Some(run) = self.run.take() {
+            self.end(run, outcome);
+        }
+    }
+
+    fn end(&self, run: RunId, outcome: RunOutcome) {
+        let conversation = self.room.into();
+        let event = Event::RunFinished {
+            conversation,
+            run,
+            outcome,
+        };
+        self.channel.publish(self.room, event);
+    }
+}
+
+impl Drop for Shown<'_> {
+    fn drop(&mut self) {
+        if let Some(run) = self.run.take() {
+            self.end(run, RunOutcome::Failed);
+        }
+    }
 }

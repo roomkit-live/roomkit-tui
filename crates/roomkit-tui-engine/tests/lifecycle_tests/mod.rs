@@ -285,3 +285,49 @@ async fn a_long_operation_id_still_gives_its_preparation_a_run_to_interrupt() {
     task.await.unwrap().unwrap();
     kit.close().await.unwrap();
 }
+
+/// A host whose admission fails unexpectedly once it was announced.
+#[derive(Debug)]
+struct PanicsWhilePreparing;
+
+impl SessionLifecycle for PanicsWhilePreparing {
+    fn admit<'a>(
+        &'a self,
+        _: &'a SessionConfig,
+        _: &'a OperationId,
+        _: &'a roomkit::model::EventContent,
+    ) -> LifecycleFuture<'a, Result<(), Rejection>> {
+        Box::pin(async {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            panic!("fixture host failure");
+        })
+    }
+}
+
+/// ENG-4: a host failing past the moment its preparation is announced left
+/// the preparation's run started for good: never finished, it was told
+/// again to every view arriving in the room.
+#[tokio::test]
+async fn a_preparation_the_host_fails_still_finishes_its_run() {
+    let kit = RoomKit::new(Default::default());
+    let channel = prepare(&kit, ScriptedProvider::new([]), Arc::default(), false).await;
+    let (client, host) = connection(NonZeroUsize::new(128).unwrap());
+    let session = LocalSession::new(kit.clone(), channel.clone(), config())
+        .with_lifecycle(Arc::new(PanicsWhilePreparing));
+    let task = tokio::spawn(session.run(host));
+    next(&client).await;
+    client.try_send(request("failing")).unwrap();
+    let events = collect_operation(&client).await;
+    assert_operation(&events, "failing", RunOutcome::Failed);
+    let preparation = RunId::new("prepare:failing");
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::RunFinished { run, outcome: RunOutcome::Failed, .. } if *run == preparation
+        )),
+        "The preparation's run ends: {events:#?}"
+    );
+    drop(client);
+    task.await.unwrap().unwrap();
+    kit.close().await.unwrap();
+}
