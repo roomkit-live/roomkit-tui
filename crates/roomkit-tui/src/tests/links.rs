@@ -281,3 +281,60 @@ fn a_sidebar_entry_links_the_address_of_its_detail_on_every_row() {
     );
     assert_linked_on_every_row(&frame, url);
 }
+
+/// CR, VT, FF and NEL part words where an address is looked for, and are
+/// not shown: an address they cut is linked as it shows, whole, never as the
+/// part before them, wherever a notice or a tool's arguments show.
+#[test]
+fn a_hidden_control_inside_an_address_never_parts_its_link_from_its_text() {
+    let shown = "https://evil.example.bank.example/login";
+    for control in ['\r', '\u{0B}', '\u{0C}', '\u{85}'] {
+        let address = format!("https://evil.example{control}.bank.example/login");
+        let notice = format!("Sign in at {address} now");
+        let mut beside = session();
+        started(&mut beside, "run-1");
+        beside.notice = notice.clone();
+        let mut under = session();
+        started(&mut under, "run-1");
+        requests(&mut under, "Run tests".into(), "cargo test".into());
+        under.notice = notice;
+        let mut tool = session();
+        started(&mut tool, "run-1");
+        tool.apply(Event::Item {
+            conversation: "room-a".into(),
+            item: Item::Tool {
+                actor: "agent".into(),
+                run: "run-1".into(),
+                call: ToolCall::new(
+                    "call-1",
+                    "fetch",
+                    serde_json::json!({ "address": address }),
+                    ToolState::Succeeded,
+                ),
+            },
+        });
+        tool.toggle_tool();
+        // JSON escapes a C0 control in the arguments, which then show it.
+        let tool_shows_it = control == '\u{85}';
+        for (surface, session, whole) in [
+            ("beside", beside, true),
+            ("under", under, true),
+            ("tool", tool, tool_shows_it),
+        ] {
+            let frame = render::screen(&session, 120, 30, &Renderers::default());
+            let screen = frame.lines.join("\n");
+            if whole {
+                assert_eq!(
+                    linked(&frame.spans, shown),
+                    shown,
+                    "{surface} {control:?}: {screen}"
+                );
+            }
+            assert_eq!(
+                linked(&frame.spans, "https://evil.example"),
+                "",
+                "{surface}"
+            );
+        }
+    }
+}

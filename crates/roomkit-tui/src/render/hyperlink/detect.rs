@@ -26,6 +26,7 @@ pub(crate) fn annotate(line: Line) -> Line {
 /// or style. An address is found in the row's whole text, so syntax colors that
 /// split it into several spans still give every fragment the entire URL.
 pub(crate) fn literal(line: Line) -> Line {
+    let line: Line = line.into_iter().map(shown).collect();
     let text: String = line.iter().map(|span| span.text.as_str()).collect();
     let links = find(&text);
     if links.is_empty() {
@@ -55,6 +56,7 @@ pub(crate) fn literal(line: Line) -> Line {
 }
 
 fn annotate_span(span: Span, result: &mut Line) {
+    let span = shown(span);
     let mut consumed = 0;
     for (range, link) in find(&span.text) {
         crate::content::push(result, fragment(&span, &span.text[consumed..range.start]));
@@ -107,6 +109,16 @@ fn scheme(token: &str) -> Option<usize> {
         .into_iter()
         .filter_map(|scheme| token.find(scheme))
         .min()
+}
+
+/// `span` as the screen shows it. A control that `sanitize` drops, such as CR
+/// or NEL, still parts words, so an address is looked for in the text as
+/// shown: its link is then the address as the person reads it.
+fn shown(span: Span) -> Span {
+    Span {
+        text: crate::render::sanitize(&span.text),
+        ..span
+    }
 }
 
 fn fragment(span: &Span, text: &str) -> Span {
