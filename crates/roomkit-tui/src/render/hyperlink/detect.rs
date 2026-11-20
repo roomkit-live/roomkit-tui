@@ -75,7 +75,8 @@ fn annotate_span(span: Span, result: &mut Line) {
 }
 
 /// The web addresses among the whitespace-separated words of `text`, without
-/// the prose punctuation around them, in order and without overlap.
+/// the prose punctuation around them, in order and without overlap. An
+/// address starts at its scheme, whatever opens it: `(`, `“`, `「` or none.
 fn find(text: &str) -> Vec<(Range<usize>, Hyperlink)> {
     let mut links = Vec::new();
     let mut search = 0;
@@ -85,14 +86,24 @@ fn find(text: &str) -> Vec<(Range<usize>, Hyperlink)> {
         };
         let start = search + offset;
         search = start + token.len();
-        let trimmed = token.trim_start_matches(['(', '[', '{', '<', '\'', '"']);
-        let first = start + token.len() - trimmed.len();
-        let last = first + url_end(trimmed);
+        let Some(scheme) = scheme(token) else {
+            continue;
+        };
+        let first = start + scheme;
+        let last = first + url_end(&token[scheme..]);
         if let Some(link) = Hyperlink::new(&text[first..last]) {
             links.push((first..last, link));
         }
     }
     links
+}
+
+/// Where the first web address of `token` starts.
+fn scheme(token: &str) -> Option<usize> {
+    ["https://", "http://"]
+        .into_iter()
+        .filter_map(|scheme| token.find(scheme))
+        .min()
 }
 
 fn fragment(span: &Span, text: &str) -> Span {
@@ -135,6 +146,7 @@ fn url_end(text: &str) -> usize {
             unmatched
         } else {
             matches!(ch, ',' | '.' | ';' | '!' | '\'' | '"')
+                || closes_prose(ch)
                 || (ch == '?' && unmatched_closer_before_question(&text[..end], &balance))
         };
         if !trim {
@@ -143,6 +155,35 @@ fn url_end(text: &str) -> usize {
         end -= ch.len_utf8();
     }
     end
+}
+
+/// Punctuation that closes a quotation, a bracket or a sentence in prose
+/// beyond ASCII. An address holds ASCII only, so it never ends with one.
+fn closes_prose(ch: char) -> bool {
+    matches!(
+        ch,
+        '”' | '’'
+            | '»'
+            | '›'
+            | '」'
+            | '』'
+            | '）'
+            | '］'
+            | '｝'
+            | '〉'
+            | '》'
+            | '】'
+            | '〕'
+            | '。'
+            | '、'
+            | '，'
+            | '．'
+            | '！'
+            | '？'
+            | '：'
+            | '；'
+            | '…'
+    )
 }
 
 fn unmatched_closer_before_question(text: &str, balance: &[isize; 4]) -> bool {

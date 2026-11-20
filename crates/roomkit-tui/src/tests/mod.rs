@@ -8,6 +8,7 @@ mod composer;
 mod estimates;
 mod forms;
 mod layout;
+mod links;
 mod messages;
 mod meters;
 mod permissions;
