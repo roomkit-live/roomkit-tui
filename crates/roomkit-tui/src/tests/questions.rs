@@ -208,3 +208,45 @@ fn own_words_put_the_cursor_on_their_row() {
     assert!(line.contains("3. DuckDB"), "{line}");
     assert_eq!(usize::from(column), line.trim_end().len());
 }
+
+fn finished(session: &mut Session, run: &str) {
+    session.apply(Event::RunFinished {
+        conversation: "room-a".into(),
+        run: run.into(),
+        outcome: RunOutcome::Interrupted,
+    });
+}
+
+/// Review STA-2: a run that ended kept its questions. A card already sent
+/// takes no key, Esc included, so a host that never resolved it kept the
+/// composer out of reach.
+#[test]
+fn a_run_that_ends_takes_its_questions_with_it() {
+    let mut session = session();
+    started(&mut session, "run-1");
+    started(&mut session, "run-2");
+    session.apply(asked("room-a", "q1", "run-1"));
+    session.apply(asked("room-a", "q2", "run-2"));
+    session.question_mut().unwrap().sent = true;
+    finished(&mut session, "run-1");
+    assert_eq!(session.question().unwrap().id().as_str(), "q2");
+    finished(&mut session, "run-2");
+    assert!(session.question().is_none());
+    assert_eq!(session.focus(), Focus::Composer);
+    assert!(session.observation().unwrap().questions.is_empty());
+}
+
+/// Review STA-2: a run the view stops following, past its bound on live
+/// runs, takes its questions with it too.
+#[test]
+fn a_run_the_view_stops_following_takes_its_questions_with_it() {
+    let mut session = session();
+    started(&mut session, "run-0");
+    started(&mut session, "run-1");
+    session.apply(asked("room-a", "q1", "run-1"));
+    for index in 2..=16 {
+        started(&mut session, &format!("run-{index}"));
+    }
+    assert!(session.question().is_none());
+    assert_eq!(session.focus(), Focus::Composer);
+}

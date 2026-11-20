@@ -3,7 +3,7 @@
 //! in full are not shown.
 
 use roomkit_tui_protocol::limits::MAX_PENDING_QUESTIONS;
-use roomkit_tui_protocol::{ConversationId, Question, QuestionId};
+use roomkit_tui_protocol::{ConversationId, Question, QuestionId, RunId};
 
 use super::Session;
 use crate::QuestionCard;
@@ -36,6 +36,12 @@ impl Session {
         if self.is_current(conversation) {
             self.questions.retain(|card| card.id() != id);
         }
+    }
+
+    /// `run` ended, or the view stopped following it: nothing it asked can
+    /// be answered any more, a card already sent included.
+    pub(super) fn forget_questions(&mut self, run: &RunId) {
+        self.questions.retain(|card| card.question().run != *run);
     }
 
     /// The questions on screen, to apply a key or a paste to.

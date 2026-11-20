@@ -2,7 +2,7 @@
 //! host work a person started, and an agent turn that another channel's
 //! message started meanwhile. The earliest drives the timer and Esc: a view
 //! starts work only in an idle room, so its own work is the earliest. Every
-//! live run may ask for a decision.
+//! live run may ask for a decision or ask questions.
 
 use std::time::Duration;
 
@@ -167,6 +167,7 @@ impl Session {
             self.interrupting = None;
         }
         self.retain_permissions(|permission| permission.run != *run);
+        self.forget_questions(run);
         self.forget_unread(run);
         self.sync_active_run();
     }
