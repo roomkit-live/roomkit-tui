@@ -3,7 +3,7 @@
 
 use roomkit_tui_protocol::limits::{MAX_IMAGE_BASE64_BYTES, MAX_IMAGES};
 use roomkit_tui_protocol::{
-    Command, ImageMessage, ImageUpload, InputAction, OperationId, Request, RequestId,
+    Command, ImageMessage, ImageUpload, InputAction, OperationId, Request, RequestId, Snapshot,
 };
 
 use super::Session;
@@ -152,34 +152,17 @@ impl Session {
     /// Interpret input using only host-advertised commands.
     pub fn input_command(&self) -> Result<Command, SessionError> {
         let snapshot = self.snapshot.as_ref().ok_or(SessionError::WaitingForHost)?;
-        let text = self.editor.text().trim();
-        if text.is_empty() && self.images.is_empty() {
+        if self.editor.text().trim().is_empty() && self.images.is_empty() {
             return Err(SessionError::EmptyMessage);
         }
         if self.images_pending() {
             return Err(SessionError::ImagesPending);
         }
-        if !self.images.is_empty()
-            && (self.input_action().is_some()
-                || (!self.editor.is_restored_input() && text.starts_with(self.command_prefix)))
-        {
+        if !self.images.is_empty() && (self.input_action().is_some() || self.types_command()) {
             return Err(SessionError::ImagesWithCommand);
         }
-        if let Some(action) = self.input_action() {
-            let expanded = self.editor.expanded();
-            let arguments = expanded.strip_prefix(action.prefix).unwrap_or(&expanded);
-            if arguments.trim().is_empty() {
-                return Err(SessionError::EmptyActionText(action.prefix));
-            }
-            return Ok(Command::Invoke {
-                name: action.command.clone(),
-                arguments: arguments.into(),
-            });
-        }
-        if !self.editor.is_restored_input() && text.starts_with(self.command_prefix) {
-            let expanded = self.editor.expanded();
-            let command = expanded.trim().strip_prefix(self.command_prefix);
-            return self.invocation(command.unwrap_or_default());
+        if let Some(command) = self.typed_command()? {
+            return Ok(command);
         }
         // During a turn, only a message the host hands to that turn.
         let steering = self.can_steer() && self.images.is_empty() && self.interrupting.is_none();
@@ -187,20 +170,58 @@ impl Session {
             return Err(SessionError::Busy);
         }
         if !self.images.is_empty() {
-            if !snapshot.can_attach_images {
-                return Err(SessionError::ImagesUnsupported);
-            }
-            return Ok(Command::SubmitImages {
-                agent: snapshot.selected_agent.clone(),
-                message: Box::new(ImageMessage::new(
-                    self.editor.expanded(),
-                    self.images.clone(),
-                )),
-            });
+            return self.image_command(snapshot);
         }
         Ok(Command::Submit {
             agent: snapshot.selected_agent.clone(),
             text: self.unescaped_draft(),
+        })
+    }
+
+    /// Whether the draft is typed as a host command: it starts with the
+    /// command prefix, and was not restored from a conversation's messages.
+    fn types_command(&self) -> bool {
+        !self.editor.is_restored_input()
+            && self
+                .editor
+                .text()
+                .trim_start()
+                .starts_with(self.command_prefix)
+    }
+
+    /// The input action or host command the draft invokes, or None for a
+    /// message.
+    fn typed_command(&self) -> Result<Option<Command>, SessionError> {
+        if let Some(action) = self.input_action() {
+            let expanded = self.editor.expanded();
+            let arguments = expanded.strip_prefix(action.prefix).unwrap_or(&expanded);
+            if arguments.trim().is_empty() {
+                return Err(SessionError::EmptyActionText(action.prefix));
+            }
+            return Ok(Some(Command::Invoke {
+                name: action.command.clone(),
+                arguments: arguments.into(),
+            }));
+        }
+        if !self.types_command() {
+            return Ok(None);
+        }
+        let expanded = self.editor.expanded();
+        let command = expanded.trim().strip_prefix(self.command_prefix);
+        self.invocation(command.unwrap_or_default()).map(Some)
+    }
+
+    /// The draft with its images, for a host that takes them.
+    fn image_command(&self, snapshot: &Snapshot) -> Result<Command, SessionError> {
+        if !snapshot.can_attach_images {
+            return Err(SessionError::ImagesUnsupported);
+        }
+        Ok(Command::SubmitImages {
+            agent: snapshot.selected_agent.clone(),
+            message: Box::new(ImageMessage::new(
+                self.editor.expanded(),
+                self.images.clone(),
+            )),
         })
     }
 
