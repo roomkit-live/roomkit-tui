@@ -207,9 +207,12 @@ impl Session {
         self.observed_run = None;
         // A host action can launch an engine request from a detail panel.
         // Reveal the conversation once that operation has actually started.
+        // A form submitted to wait for its completion stays for it.
         self.panel = None;
         self.picker = None;
-        self.form = None;
+        if !self.form_awaits_completion() {
+            self.form = None;
+        }
         self.notice.clear();
     }
 

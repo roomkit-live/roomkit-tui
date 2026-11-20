@@ -113,6 +113,15 @@ impl Session {
                 .any(|c| matches!(c, Command::SubmitForm { .. }))
     }
 
+    /// Whether the current form was submitted, or is being, to wait for
+    /// the host to complete it.
+    pub(super) fn form_awaits_completion(&self) -> bool {
+        self.form
+            .as_ref()
+            .is_some_and(|form| form.spec.wait_for_completion)
+            && self.form_pending()
+    }
+
     pub(crate) fn clear_composer(&mut self) {
         self.keep_draft();
         self.editor.clear();

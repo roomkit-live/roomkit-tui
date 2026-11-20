@@ -147,6 +147,65 @@ fn asynchronous_form_completion_is_safe_before_or_after_the_submission_reply() {
     }
 }
 
+/// Review STA-5: the operation a submitted form starts closed the form, so
+/// the completion it waited for found no form and was ignored.
+#[test]
+fn a_form_waiting_for_completion_outlives_the_operation_it_starts() {
+    for reply_first in [true, false] {
+        let mut s = session();
+        s.apply(Event::Form {
+            conversation: "room-a".into(),
+            form: form().with_async_completion(),
+        });
+        let request = s
+            .request(Command::SubmitForm {
+                name: "summarize".into(),
+                form: "attempt".into(),
+                values: Box::default(),
+            })
+            .unwrap();
+        s.sent(&request);
+        let reply = Event::Reply {
+            request: request.id,
+            error: None,
+        };
+        let started = Event::OperationStarted {
+            conversation: "room-a".into(),
+            operation: "op".into(),
+        };
+        if reply_first {
+            s.apply(reply);
+            s.apply(started);
+        } else {
+            s.apply(started);
+            s.apply(reply);
+        }
+        assert!(s.form.is_some(), "reply first: {reply_first}");
+        s.apply(Event::FormCompleted {
+            conversation: "room-a".into(),
+            form: "attempt".into(),
+            panel: PanelSpec::new("result", "summarize", "Complete", "Connected"),
+        });
+        assert!(s.form.is_none());
+        assert_eq!(s.panel.as_ref().unwrap().spec.title, "Complete");
+    }
+}
+
+/// A form not submitted yet still gives way to an operation that starts.
+#[test]
+fn an_operation_that_starts_closes_a_form_not_submitted() {
+    let mut s = session();
+    s.apply(Event::Form {
+        conversation: "room-a".into(),
+        form: form().with_async_completion(),
+    });
+    s.apply(Event::OperationStarted {
+        conversation: "room-a".into(),
+        operation: "op".into(),
+    });
+    assert!(s.form.is_none());
+}
+
 #[test]
 fn form_links_remain_clickable_across_wrapping_and_resizing() {
     let mut s = session();
