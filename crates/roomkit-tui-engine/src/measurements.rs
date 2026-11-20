@@ -1,4 +1,4 @@
-use roomkit::model::{Metadata, RoomEvent, UsageMarker};
+use roomkit::model::{EventType, Metadata, RoomEvent, UsageMarker};
 use roomkit_tui_protocol::{ContextUsage, Event, RunId, TokenUsage};
 use serde_json::Value;
 
@@ -115,6 +115,14 @@ fn is_configured(config: &SessionConfig, provider: &str, model: &str) -> bool {
         .model
         .as_ref()
         .is_some_and(|selected| selected.provider == provider && selected.model == model)
+}
+
+/// Whether `row` holds one of the view's agent's turns: its message, or the
+/// last row of a turn that wrote none, which carries its record.
+pub(crate) fn holds_a_turn(row: &RoomEvent, config: &SessionConfig) -> bool {
+    row.source.channel_id == config.agent
+        && (matches!(row.r#type, EventType::Message)
+            || row.metadata.contains_key("loop_end_reason"))
 }
 
 pub(crate) fn restore(

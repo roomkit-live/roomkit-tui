@@ -2,13 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use roomkit::model::{EventType, RoomEvent};
 use roomkit::{ConversationStore, GetTimelineOptions, RoomKit};
 use roomkit_ai::ModelPricing;
 use roomkit_tui_protocol::{ContextUsage, ConversationCost, Event, RunId, TokenUsage};
 use serde_json::json;
 
-use crate::{AdapterError, SessionConfig};
+use crate::{AdapterError, SessionConfig, measurements};
 
 /// Rows read at a time while pricing a conversation's history.
 const PAGE: u64 = 500;
@@ -80,6 +79,11 @@ impl Costs {
             return None;
         };
         let pricing = config.pricing.as_ref()?;
+        // Another agent's turn in the room is not the conversation's cost,
+        // as its restore reads it.
+        if !crate::projection::is_run_of(run, &config.agent) {
+            return None;
+        }
         let shown = config
             .model
             .as_ref()
@@ -139,20 +143,15 @@ pub(crate) async fn restore<S: ConversationStore>(
             return Ok(costs);
         };
         after = Some(last.index);
-        for row in page.iter().filter(|row| holds_a_turn(row, config)) {
+        for row in page
+            .iter()
+            .filter(|row| measurements::holds_a_turn(row, config))
+        {
             if let Some(event) = crate::measurements::event(row) {
                 costs.record(&event, config);
             }
         }
     }
-}
-
-/// Whether `row` holds one of the agent's turns: its message, or the last
-/// row of a turn that wrote none, which carries its record.
-fn holds_a_turn(row: &RoomEvent, config: &SessionConfig) -> bool {
-    row.source.channel_id == config.agent
-        && (matches!(row.r#type, EventType::Message)
-            || row.metadata.contains_key("loop_end_reason"))
 }
 
 #[cfg(test)]
@@ -242,19 +241,30 @@ mod tests {
     #[test]
     fn a_later_report_of_a_run_replaces_its_cost() {
         let (config, mut costs) = (config(), Costs::default());
-        costs.record(&report("r1", "model", usage()), &config);
-        let twice = cost(costs.record(&report("r1", "model", usage()), &config));
+        costs.record(&report("agent:r1", "model", usage()), &config);
+        let twice = cost(costs.record(&report("agent:r1", "model", usage()), &config));
         assert_eq!(twice, ConversationCost::new(18_700, "USD", true));
-        let second = cost(costs.record(&report("r2", "model", usage()), &config));
+        let second = cost(costs.record(&report("agent:r2", "model", usage()), &config));
         assert_eq!(second.micros, 37_400);
     }
 
     #[test]
     fn a_turn_of_another_model_leaves_the_cost_partial() {
         let (config, mut costs) = (config(), Costs::default());
-        costs.record(&report("r1", "model", usage()), &config);
-        let other = cost(costs.record(&report("r2", "another", usage()), &config));
+        costs.record(&report("agent:r1", "model", usage()), &config);
+        let other = cost(costs.record(&report("agent:r2", "another", usage()), &config));
         assert_eq!(other, ConversationCost::new(18_700, "USD", false));
+    }
+
+    /// ENG-5: a restore prices the turns of the view's agent alone, while a
+    /// live report of another agent's turn in the room was priced too.
+    #[test]
+    fn another_agent_s_turn_is_not_priced() {
+        let (config, mut costs) = (config(), Costs::default());
+        let other = report("helper:evt_1", "model", usage());
+        assert_eq!(costs.record(&other, &config), None);
+        let own = cost(costs.record(&report("agent:evt_2", "model", usage()), &config));
+        assert_eq!(own, ConversationCost::new(18_700, "USD", true));
     }
 
     #[test]
@@ -262,7 +272,10 @@ mod tests {
         let mut config = config();
         config.pricing = None;
         let mut costs = Costs::default();
-        assert_eq!(costs.record(&report("r1", "model", usage()), &config), None);
+        assert_eq!(
+            costs.record(&report("agent:r1", "model", usage()), &config),
+            None
+        );
         assert_eq!(costs.total(&config), None);
     }
 }

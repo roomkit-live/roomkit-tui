@@ -2,9 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use roomkit::model::{
-    Access, ChannelBinding, ChannelCategory, EventId, EventType, RoomContext, RoomEvent,
-};
+use roomkit::model::{Access, ChannelBinding, ChannelCategory, EventId, RoomContext, RoomEvent};
 use roomkit::{
     ConversationStore, GetRoomOptions, GetTimelineOptions, ListBindingsOptions, RoomKit,
 };
@@ -143,9 +141,7 @@ impl History {
         // A person's message says nothing of the measure; an agent's replaces
         // it, even with none, and so does any row of its that holds a turn's
         // record, one that wrote no message: no stale measure reads as current.
-        let measures = matches!(row.r#type, EventType::Message)
-            || row.metadata.contains_key("loop_end_reason");
-        if measures && row.source.channel_id == config.agent {
+        if measurements::holds_a_turn(row, config) {
             (self.context, self.usage) = measurements::restore(row, config);
         }
         if let Some(item) = projection::item(row) {

@@ -1,4 +1,6 @@
-use roomkit::model::{EventContent, EventType, RoomEvent, ToolCallOutcome, ToolCallStatus};
+use roomkit::model::{
+    ChannelId, EventContent, EventType, RoomEvent, ToolCallOutcome, ToolCallStatus,
+};
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
 use roomkit_tui_protocol::{
     ActorId, Item, Message, MessageId, PermissionId, RunId, ToolCall, ToolState,
@@ -17,6 +19,17 @@ pub(crate) fn run_id(agent: impl std::fmt::Display, trigger: impl std::fmt::Disp
     bounded_run_id(format!("{agent}:{trigger}"))
 }
 
+/// Whether `run` answers an event by `agent`, as [`run_id`] names it: the
+/// agent's identity leads it, as much of it as a bounded identity keeps.
+pub(crate) fn is_run_of(run: &RunId, agent: &ChannelId) -> bool {
+    let leading = format!("{agent}:");
+    let kept = &leading[..leading.floor_char_boundary(MAX_RUN_ID_BYTES - DIGEST_BYTES)];
+    run.as_str().starts_with(kept)
+}
+
+/// What a bounded run identity ends with: `~` and 16 hexadecimal digits.
+const DIGEST_BYTES: usize = 17;
+
 /// `id` as a run identity a terminal accepts with its permissions. RoomKit
 /// bounds no identity, so a longer one keeps a readable prefix and a digest
 /// of the whole.
@@ -25,7 +38,7 @@ pub(crate) fn bounded_run_id(id: String) -> RunId {
         return RunId::new(id);
     }
     let digest = format!("~{:016x}", fnv1a(&id));
-    let prefix = &id[..id.floor_char_boundary(MAX_RUN_ID_BYTES - digest.len())];
+    let prefix = &id[..id.floor_char_boundary(MAX_RUN_ID_BYTES - DIGEST_BYTES)];
     RunId::new(format!("{prefix}{digest}"))
 }
 
@@ -138,6 +151,16 @@ mod tests {
         assert!(run.as_str().starts_with("éé"), "A readable prefix is kept");
         assert_eq!(run, run_id(&agent, trigger), "The same after a restart");
         assert_ne!(run, run_id(&agent, "fedcba9876543210fedcba9876543210"));
+    }
+
+    #[test]
+    fn a_run_names_its_agent_even_bounded() {
+        let agent = |id: &str| ChannelId::new(id).unwrap_or_else(|_| unreachable!("valid id"));
+        assert!(is_run_of(&run_id("agent", "evt_1"), &agent("agent")));
+        assert!(!is_run_of(&run_id("agent", "evt_1"), &agent("age")));
+        assert!(!is_run_of(&run_id("helper", "evt_1"), &agent("agent")));
+        let long = "a".repeat(300);
+        assert!(is_run_of(&run_id(&long, "evt_1"), &agent(&long)));
     }
 
     #[test]
