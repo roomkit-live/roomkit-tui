@@ -68,8 +68,8 @@ pub(super) fn header(view: &View<'_>, cols: usize, rows: usize) -> Vec<Line> {
     lines
 }
 
-/// The most rows a notice takes below the activity row.
-const NOTICE_ROWS: usize = 5;
+/// The most rows a notice takes below the activity row or a card.
+pub(super) const NOTICE_ROWS: usize = 5;
 
 /// The activity row, with the notice beside the status when it fits there on
 /// one line, left of the row's controls; otherwise the notice follows on rows
@@ -92,17 +92,22 @@ pub(super) fn activity(view: &View<'_>, cols: usize, room: usize) -> Vec<Line> {
         return vec![row];
     }
     let mut rows = vec![row];
-    rows.extend(notice_rows(notice, cols, room.min(NOTICE_ROWS)));
+    rows.extend(notice_rows(
+        notice,
+        cols,
+        room.min(NOTICE_ROWS),
+        Tone::Muted,
+    ));
     rows
 }
 
-/// `notice` wrapped at words below the activity row, at most `most` rows,
+/// `notice` in `tone`, wrapped at words, at most `most` rows,
 /// the last one ending in `…` when more is left out. A web address carries
 /// its whole destination on every row it wraps onto, so that a terminal
 /// opens all of it from any of them.
-fn notice_rows(notice: &str, cols: usize, most: usize) -> Vec<Line> {
+pub(super) fn notice_rows(notice: &str, cols: usize, most: usize, tone: Tone) -> Vec<Line> {
     let width = cols.saturating_sub(1);
-    let linked = link_text(vec![span(notice, Tone::Muted)]);
+    let linked = link_text(vec![span(notice, tone)]);
     let mut wrapped = crate::content::wrap(&[linked], width, true);
     if wrapped.len() > most {
         wrapped.truncate(most);
@@ -116,6 +121,15 @@ fn notice_rows(notice: &str, cols: usize, most: usize) -> Vec<Line> {
         .into_iter()
         .map(|row| [vec![span(" ", Tone::Muted)], row].concat())
         .collect()
+}
+
+/// The notice row of a screen of its own, such as a form or a panel: the
+/// notice wrapped on at most `room` rows, one at least, else a blank row.
+pub(super) fn screen_notice(notice: &str, cols: usize, room: usize) -> Vec<Line> {
+    if notice.is_empty() {
+        return vec![line(" ", Tone::Warning)];
+    }
+    notice_rows(notice, cols, room.clamp(1, NOTICE_ROWS), Tone::Warning)
 }
 
 /// The status of the run: working, stopping or how it ended, and for how long.

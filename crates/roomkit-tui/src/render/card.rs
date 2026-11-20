@@ -2,6 +2,7 @@
 //! latest history above, the card, and the notice below it. A card is shown
 //! whole or not at all: a person never answers part of what is asked.
 
+use super::chrome::{NOTICE_ROWS, notice_rows};
 use super::text::{columns, wrap};
 use super::timeline::timeline;
 use super::{Frame, Line, Tone, View, frame, line, prose, span};
@@ -15,7 +16,8 @@ pub(super) struct Placed {
 
 /// The screen with `card` above the notice, under as much history as fits;
 /// `caret` is the cursor's `(column, row)` within the card. `None` when the
-/// card and the notice do not fit `rows`.
+/// card and a row of the notice do not fit `rows`. The notice wraps on the
+/// rows the card leaves, at most [`NOTICE_ROWS`].
 pub(super) fn card_screen(
     view: &View<'_>,
     cols: usize,
@@ -24,11 +26,17 @@ pub(super) fn card_screen(
     caret: Option<(usize, usize)>,
 ) -> Option<Placed> {
     let session = view.session;
-    let notice = usize::from(!session.notice.is_empty());
-    if card.len() + notice > rows {
+    let needed = card.len() + usize::from(!session.notice.is_empty());
+    if needed > rows {
         return None;
     }
-    let top = rows - card.len() - notice;
+    let notice = if session.notice.is_empty() {
+        Vec::new()
+    } else {
+        let room = (rows - card.len()).min(NOTICE_ROWS);
+        notice_rows(&session.notice, cols, room, Tone::Warning)
+    };
+    let top = rows - card.len() - notice.len();
     let history = timeline(view, cols, top.saturating_sub(1), 0).lines;
     let mut lines: Vec<Line> = history
         .into_iter()
@@ -38,9 +46,7 @@ pub(super) fn card_screen(
     lines.reverse();
     lines.resize_with(top, Vec::new);
     lines.extend(card);
-    if notice > 0 {
-        lines.push(line(format!(" {}", session.notice), Tone::Warning));
-    }
+    lines.extend(notice);
     let cursor = caret.map(|(column, row)| (column as u16, (top + row) as u16));
     Some(Placed {
         frame: frame(lines, cols, cursor),

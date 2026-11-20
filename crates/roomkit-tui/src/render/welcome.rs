@@ -4,9 +4,10 @@ use std::time::Duration;
 use roomkit_tui_protocol::RunOutcome;
 use unicode_width::UnicodeWidthStr;
 
+use super::chrome::notice_rows;
 use super::composer::{self, Layout};
 use super::footer::{hints, settings};
-use super::text::{fit, wrap};
+use super::text::fit;
 use super::{Frame, Line, Tone, View, frame, line, span};
 use crate::Session;
 use crate::session::Focus;
@@ -50,15 +51,8 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16) -> Option<Frame> 
     // A notice, such as a setup step the host asks for, stays on the welcome
     // screen above the composer rather than replacing the whole layout.
     if !session.notice.is_empty() {
-        let mut notice = wrap(&session.notice, inner);
-        if notice.len() > NOTICE_LINES {
-            notice.truncate(NOTICE_LINES);
-            if let Some(last) = notice.last_mut() {
-                let kept = fit(last, inner.saturating_sub(1));
-                *last = format!("{kept}…");
-            }
-        }
-        lines.extend(notice.iter().map(|text| center(text, inner, Tone::Warning)));
+        let notice = notice_rows(&session.notice, inner, NOTICE_LINES, Tone::Warning);
+        lines.extend(notice.into_iter().map(|row| centered(row, inner)));
         lines.push(Vec::new());
     }
     let body_offset = lines.len();
@@ -81,6 +75,14 @@ pub(super) fn screen(view: &View<'_>, width: u16, height: u16) -> Option<Frame> 
     }
     canvas.resize_with(rows, Vec::new);
     Some(frame(canvas, cols, cursor))
+}
+
+/// `row` in the middle of `width` columns.
+fn centered(row: Line, width: usize) -> Line {
+    let used: usize = row.iter().map(|part| part.text.width()).sum();
+    let mut centered = vec![span(" ".repeat(width.saturating_sub(used) / 2), Tone::Text)];
+    centered.extend(row);
+    centered
 }
 
 fn center(text: &str, width: usize, tone: Tone) -> Line {

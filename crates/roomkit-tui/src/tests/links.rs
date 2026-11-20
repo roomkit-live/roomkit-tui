@@ -139,3 +139,70 @@ fn a_long_approval_detail_stays_whole_through_the_linked_layout() {
         "https://example.com/end"
     );
 }
+
+const NOTICE_URL: &str = "https://example.com/settings/privacy/regions?organization=example#global";
+
+fn notice() -> String {
+    format!("The host refused it: select Global at {NOTICE_URL} first, then try again.")
+}
+
+#[test]
+fn a_notice_under_a_card_a_form_or_a_panel_links_its_address_on_every_row() {
+    type Opens = fn(&mut Session);
+    let opens: [(&str, Opens); 4] = [
+        ("question", |s| asks(s, "Which one?".into(), String::new())),
+        ("approval", |s| {
+            requests(s, "Run tests".into(), "cargo test".into())
+        }),
+        ("form", |s| {
+            let field = FormField::new("code", "Code", FieldKind::Text);
+            s.apply(Event::Form {
+                conversation: "room-a".into(),
+                form: FormSpec::new("f1", "summarize", "Connect", vec![field]),
+            });
+        }),
+        ("panel", |s| {
+            s.apply(Event::Panel {
+                conversation: "room-a".into(),
+                panel: PanelSpec::new("p1", "summarize", "Jobs", "first\nsecond"),
+            });
+        }),
+    ];
+    for (screen, open) in opens {
+        let mut session = session();
+        started(&mut session, "run-1");
+        open(&mut session);
+        session.notice = notice();
+        let frame = render::screen(&session, 60, 30, &Renderers::default());
+        assert!(
+            frame.lines.iter().any(|l| l.contains("first, then")),
+            "{screen}"
+        );
+        assert_linked_on_every_row(&frame, NOTICE_URL);
+    }
+}
+
+#[test]
+fn a_notice_on_the_welcome_screen_links_its_address_on_every_row() {
+    let mut session = session();
+    session.notice = notice();
+    let options = crate::UiOptions {
+        welcome: Some(crate::WelcomeScreen {
+            logo: Vec::new(),
+            logo_tiles: Vec::new(),
+            wordmark: vec!["MARK".into()],
+            width: 60,
+        }),
+        ..crate::UiOptions::default()
+    };
+    let draw = |session: &Session| {
+        let zero = std::time::Duration::ZERO;
+        render::screen_with_options(session, 80, 30, &Renderers::default(), &options, zero)
+    };
+    let frame = draw(&session);
+    assert!(
+        frame.lines.iter().any(|l| l.contains("MARK")),
+        "the welcome screen"
+    );
+    assert_linked_on_every_row(&frame, NOTICE_URL);
+}

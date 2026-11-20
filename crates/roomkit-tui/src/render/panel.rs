@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use super::chrome::screen_notice;
 use super::footer::quit_hint;
 use super::text::{sanitize, wrap};
 use super::{ActionTarget, Frame, Line, Tone, frame, line};
@@ -10,7 +11,9 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Durat
         return frame(Vec::new(), cols, None);
     };
     let slots = panel.spec.actions.len().min(6).min(rows.saturating_sub(9));
-    let body_height = rows.saturating_sub(slots + 6);
+    // The notice's rows beyond one come out of the body, which keeps a row.
+    let notice = screen_notice(&session.notice, cols, rows.saturating_sub(slots + 6));
+    let body_height = rows.saturating_sub(slots + 5 + notice.len());
     let body = wrap(&sanitize(&panel.spec.body), cols.saturating_sub(2));
     let scroll = panel.scroll.min(body.len().saturating_sub(body_height));
     let mut lines = vec![
@@ -37,7 +40,7 @@ pub(super) fn screen(session: &Session, cols: usize, rows: usize, elapsed: Durat
     ));
     let (rows, targets, cursor) = actions(session, cols, slots, lines.len());
     lines.extend(rows);
-    lines.push(line(format!(" {}", session.notice), Tone::Warning));
+    lines.extend(notice);
     let help = quit_hint(session, elapsed)
         .unwrap_or_else(|| "↑↓/Tab actions · Enter select · PgUp/PgDn output · Esc close".into());
     lines.push(line(format!(" {help}"), Tone::Muted));
