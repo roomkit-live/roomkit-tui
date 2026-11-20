@@ -57,30 +57,39 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
         .is_some_and(|snapshot| snapshot.active_run.is_some() && snapshot.can_interrupt)
         && !session.interrupting()
     {
-        let can_cut = session.snapshot.as_ref().is_some_and(|s| s.can_cut_to_send);
-        if session.draft().is_empty() || !can_cut {
-            " Esc interrupt · Enter send · Alt+Enter newline · F2 details"
-        } else if cols >= 80 {
-            " Esc interrupt · Enter send · Ctrl+S send now · Alt+Enter newline · F2 details"
-        } else {
-            " Esc interrupt · Enter send · Ctrl+S send now"
-        }
-    } else if session
-        .snapshot
-        .as_ref()
-        .is_none_or(|snapshot| snapshot.commands.is_empty())
-    {
+        running_hints(session, cols)
+    } else {
+        idle_hints(session, cols)
+    };
+    if session.sidebar.is_some() && !sidebar {
+        format!(" F7 sidebar ·{hints}")
+    } else {
+        hints.to_string()
+    }
+}
+
+/// The keys of the composer while a run the person can interrupt works.
+fn running_hints(session: &Session, cols: usize) -> &'static str {
+    let can_cut = session.snapshot.as_ref().is_some_and(|s| s.can_cut_to_send);
+    if session.draft().is_empty() || !can_cut {
+        " Esc interrupt · Enter send · Alt+Enter newline · F2 details"
+    } else if cols >= 80 {
+        " Esc interrupt · Enter send · Ctrl+S send now · Alt+Enter newline · F2 details"
+    } else {
+        " Esc interrupt · Enter send · Ctrl+S send now"
+    }
+}
+
+/// The keys of the composer while nothing runs, as many as `cols` holds.
+fn idle_hints(session: &Session, cols: usize) -> &'static str {
+    let snapshot = session.snapshot.as_ref();
+    if snapshot.is_none_or(|snapshot| snapshot.commands.is_empty()) {
         if cols >= 80 {
             " Enter send · Alt+Enter newline · F2 details · Alt+↑↓ tools · Ctrl+D detach"
         } else {
             " Enter send · Alt+Enter newline · F2 details"
         }
-    } else if session
-        .snapshot
-        .as_ref()
-        .is_some_and(|s| s.can_attach_images)
-        && cols >= 80
-    {
+    } else if snapshot.is_some_and(|s| s.can_attach_images) && cols >= 80 {
         " Enter send · Ctrl+V paste image · Alt+Enter newline · Tab commands · F2 details"
     } else if cols >= 100 {
         " Enter send · Alt+Enter newline · Tab commands · F2 details · Alt+↑↓ tools · PgUp/PgDn scroll"
@@ -88,11 +97,6 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
         " Enter send · Alt+Enter newline · Tab commands · F2 details"
     } else {
         " Enter send · Tab menu · F2 details"
-    };
-    if session.sidebar.is_some() && !sidebar {
-        format!(" F7 sidebar ·{hints}")
-    } else {
-        hints.to_string()
     }
 }
 
@@ -186,53 +190,8 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
         };
     }
     let mut settings = std::mem::take(&mut parts);
-    let refused = session.context_exceeded();
-    let context = session.displayed_context().map_or_else(
-        || {
-            if refused {
-                "context refused"
-            } else {
-                "context ?"
-            }
-            .into()
-        },
-        |(usage, previous)| {
-            let estimate = if usage.estimated { "~" } else { "" };
-            // Put freshness before the numbers so clipping a narrow footer
-            // cannot make an earlier report look like a current measurement,
-            // nor hide that the latest request was refused. A refused request
-            // was never measured: whatever is shown predates it.
-            let label = match (refused, previous) {
-                (true, _) => "context refused (last report)",
-                (false, true) => "context (last report)",
-                (false, false) => "context",
-            };
-            match usage.percent() {
-                Some(percent) => format!(
-                    "{label} {estimate}{}/{} · {:.1}% left · {percent:.1}% used",
-                    usage.tokens,
-                    usage.capacity.unwrap_or(0),
-                    (100.0 - percent).max(0.0)
-                ),
-                None => format!("{label} {estimate}{} tokens / ?", usage.tokens),
-            }
-        },
-    );
-    parts.push(span(format!(" {context}"), Tone::Accent));
-    if let Some(usage) = session.usage() {
-        let input = usage
-            .input_tokens
-            .map_or_else(|| "?".into(), |n| n.to_string());
-        let output = usage
-            .output_tokens
-            .map_or_else(|| "?".into(), |n| n.to_string());
-        let partial = if usage.complete { "" } else { " (partial)" };
-        let cache = super::context::cache_note(usage);
-        parts.push(span(
-            format!(" · turn {input} in{cache} / {output} out{partial}"),
-            Tone::Muted,
-        ));
-    }
+    parts.push(span(format!(" {}", context_text(session)), Tone::Accent));
+    parts.extend(turn_part(session));
     parts.extend(costs(session));
     let combined_width: usize = settings
         .iter()
@@ -248,6 +207,56 @@ fn status(session: &Session, width: usize, sidebar: bool) -> Vec<Line> {
     } else {
         vec![settings, parts]
     }
+}
+
+/// The context's occupancy, saying first when it is an earlier report or
+/// the latest request was refused.
+fn context_text(session: &Session) -> String {
+    let refused = session.context_exceeded();
+    let Some((usage, previous)) = session.displayed_context() else {
+        return if refused {
+            "context refused"
+        } else {
+            "context ?"
+        }
+        .into();
+    };
+    let estimate = if usage.estimated { "~" } else { "" };
+    // Put freshness before the numbers so clipping a narrow footer
+    // cannot make an earlier report look like a current measurement,
+    // nor hide that the latest request was refused. A refused request
+    // was never measured: whatever is shown predates it.
+    let label = match (refused, previous) {
+        (true, _) => "context refused (last report)",
+        (false, true) => "context (last report)",
+        (false, false) => "context",
+    };
+    match usage.percent() {
+        Some(percent) => format!(
+            "{label} {estimate}{}/{} · {:.1}% left · {percent:.1}% used",
+            usage.tokens,
+            usage.capacity.unwrap_or(0),
+            (100.0 - percent).max(0.0)
+        ),
+        None => format!("{label} {estimate}{} tokens / ?", usage.tokens),
+    }
+}
+
+/// The tokens the turn read, cached and wrote, when it reported them.
+fn turn_part(session: &Session) -> Option<Span> {
+    let usage = session.usage()?;
+    let input = usage
+        .input_tokens
+        .map_or_else(|| "?".into(), |n| n.to_string());
+    let output = usage
+        .output_tokens
+        .map_or_else(|| "?".into(), |n| n.to_string());
+    let partial = if usage.complete { "" } else { " (partial)" };
+    let cache = super::context::cache_note(usage);
+    Some(span(
+        format!(" · turn {input} in{cache} / {output} out{partial}"),
+        Tone::Muted,
+    ))
 }
 
 /// The conversation's own cost and its total with the work related to it,
