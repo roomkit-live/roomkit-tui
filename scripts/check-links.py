@@ -14,7 +14,7 @@ NOTICE = b"https://example.com/console/" + b"n" * 60 + b"/settings/privacy#regio
 
 
 def links(output):
-    # Codex uses BEL-terminated OSC 8, with the complete URL on every fragment.
+    # OSC 8 here ends with BEL, with the complete URL on every fragment.
     return re.findall(rb"\x1b\]8;;([^\x07]+)\x07([^\x1b]*)\x1b\]8;;\x07", output)
 
 

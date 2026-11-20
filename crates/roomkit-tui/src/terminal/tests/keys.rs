@@ -637,9 +637,9 @@ fn escape_and_ctrl_c_close_a_host_picker_without_cancelling_or_arming_exit() {
     }
 }
 
-/// Review: the arming delay counted from the event's arrival, so a card
-/// hidden behind a mouse selection or an undersized screen could be answered
-/// as soon as it appeared.
+/// The arming delay counts from the first frame that shows the card, not
+/// from the event's arrival: a card hidden behind a mouse selection or an
+/// undersized screen is not answered as soon as it appears.
 #[test]
 fn a_card_is_armed_only_once_a_frame_has_shown_it() {
     let (mut session, client, host) = fixture(true);
@@ -673,8 +673,8 @@ fn a_card_is_armed_only_once_a_frame_has_shown_it() {
     ));
 }
 
-/// RMK-1135 review: requests of every live run are shown, but Esc on a card
-/// interrupted the earliest run, the view's own work, not the run that asked.
+/// Requests of every live run are shown, and Esc on a card interrupts the
+/// run that asked, not the earliest run (RMK-1135).
 #[test]
 fn escape_on_an_approval_card_interrupts_the_run_that_asked() {
     let (mut session, client, host) = fixture(true);
@@ -744,9 +744,8 @@ fn a_question_card_on_screen_takes_the_arrows_and_enter() {
     }
 }
 
-/// Review STA-7: on a decision card, Ctrl+C refuses the request where
-/// stopping the run would stop more than the turn; on a question card it
-/// interrupted the run all the same.
+/// Where stopping the run would stop more than the turn, Ctrl+C refuses a
+/// decision card's request and declines a question card's questions alike.
 #[test]
 fn ctrl_c_on_a_question_card_declines_where_a_decision_would_be_refused() {
     let (mut session, client, host) = fixture(true);
@@ -778,8 +777,8 @@ fn ctrl_c_on_a_question_card_declines_where_a_decision_would_be_refused() {
     assert!(session.question().unwrap().sent);
 }
 
-/// Review REN-8: a paste into a question's own words past their size limit
-/// was dropped without a word, where the composer tells the person.
+/// A paste into a question's own words past their size limit tells the
+/// person, as the composer does.
 #[test]
 fn a_paste_past_the_answer_limit_tells_the_person() {
     use roomkit_tui_protocol::limits::MAX_QUESTION_ANSWER_BYTES;
@@ -811,9 +810,8 @@ fn an_undersized_screen_answers_no_question() {
     assert!(!acts_unseen(&frame, &session, ctrl_c()));
 }
 
-/// Review STA-10: each text input had its own copy of the editing keys. The
-/// composer, a form's field, a question's own words and a picker's filter
-/// all edit the same way: these keys write "xaz".
+/// The composer, a form's field, a question's own words and a picker's
+/// filter all edit through one set of keys: these keys write "xaz".
 fn edit_a_line(session: &mut Session, client: &Client) {
     let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
     for event in [

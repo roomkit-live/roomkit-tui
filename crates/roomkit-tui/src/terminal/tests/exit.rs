@@ -145,9 +145,9 @@ fn assert_armed_exit_is_shown(name: &str, open: fn(&mut Session), help: &str) {
     assert!(expired.contains(help), "The {name} loses its help");
 }
 
-/// Review finding: Ctrl+D arms the exit whichever screen has focus, but only
-/// the conversation footer showed the hint, so a second press from a panel, a
-/// form or an approval card stopped the host's work unannounced.
+/// Ctrl+D arms the exit whichever screen has focus, and every screen shows
+/// the hint: a second press from a panel, a form or an approval card never
+/// stops the host's work unannounced.
 #[test]
 fn an_armed_exit_is_shown_over_a_panel_a_form_and_an_approval_card() {
     assert_armed_exit_is_shown("panel", open_panel, "Esc close");

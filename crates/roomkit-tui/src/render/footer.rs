@@ -70,7 +70,7 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
 
 /// The keys of the composer while a run the person can interrupt works.
 fn running_hints(session: &Session, cols: usize) -> &'static str {
-    let can_cut = session.snapshot.as_ref().is_some_and(|s| s.can_cut_to_send);
+    let can_cut = session.can_cut_to_send();
     if session.draft().is_empty() || !can_cut {
         " Esc interrupt · Enter send · Alt+Enter newline · F2 details"
     } else if cols >= 80 {
