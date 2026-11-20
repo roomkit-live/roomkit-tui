@@ -2,6 +2,7 @@
 
 use std::sync::mpsc::TrySendError;
 
+use roomkit_tui_protocol::limits::MAX_QUESTION_ANSWER_BYTES;
 use roomkit_tui_protocol::{Command, RequestId, RunId};
 
 use crate::session::Focus;
@@ -14,8 +15,13 @@ pub(super) fn paste(session: &mut Session, text: &str) {
     }
     match session.focus() {
         Focus::Question => {
-            if let Some(card) = session.question_mut() {
-                card.insert(text);
+            if let Some(card) = session.question_mut()
+                && !card.insert(text)
+            {
+                session.notice = format!(
+                    "Input exceeds the {} KiB answer limit",
+                    MAX_QUESTION_ANSWER_BYTES / 1024
+                );
             }
         }
         Focus::Form => {

@@ -778,6 +778,19 @@ fn ctrl_c_on_a_question_card_declines_where_a_decision_would_be_refused() {
     assert!(session.question().unwrap().sent);
 }
 
+/// Review REN-8: a paste into a question's own words past their size limit
+/// was dropped without a word, where the composer tells the person.
+#[test]
+fn a_paste_past_the_answer_limit_tells_the_person() {
+    use roomkit_tui_protocol::limits::MAX_QUESTION_ANSWER_BYTES;
+    let (mut session, _client, _host) = fixture(true);
+    ask(&mut session, Duration::ZERO);
+    session.question_mut().unwrap().typing = true;
+    paste(&mut session, &"x".repeat(MAX_QUESTION_ANSWER_BYTES + 1));
+    assert_eq!(session.question().unwrap().own_words(), "");
+    assert_eq!(session.notice(), "Input exceeds the 4 KiB answer limit");
+}
+
 /// A card the screen cannot show whole takes no answer, digits and Esc
 /// included; quitting still works.
 #[test]

@@ -110,16 +110,19 @@ impl QuestionCard {
         self.item().options.len()
     }
 
-    /// Text pasted into the own words, when they are being written.
-    pub(crate) fn insert(&mut self, text: &str) {
+    /// Text pasted into the own words, when they are being written. False
+    /// when it was refused for passing [`MAX_QUESTION_ANSWER_BYTES`].
+    pub(crate) fn insert(&mut self, text: &str) -> bool {
         if !self.typing || self.sent {
-            return;
+            return true;
         }
         let text = text.replace(['\n', '\r', '\t'], " ");
         let editor = &mut self.other[self.current];
-        if editor.text().len().saturating_add(text.len()) <= MAX_QUESTION_ANSWER_BYTES {
-            editor.insert(&text);
+        if editor.text().len().saturating_add(text.len()) > MAX_QUESTION_ANSWER_BYTES {
+            return false;
         }
+        editor.insert(&text);
+        true
     }
 
     /// The command that closes the questions without answering them.
@@ -175,7 +178,9 @@ impl QuestionCard {
                 return self.advance();
             }
             KeyCode::Char('u') if control => editor.set(String::new()),
-            KeyCode::Char(c) if !control && !alt => self.insert(&c.to_string()),
+            KeyCode::Char(c) if !control && !alt => {
+                self.insert(&c.to_string());
+            }
             KeyCode::Backspace => editor.backspace(),
             KeyCode::Delete => editor.delete(),
             KeyCode::Left => editor.left(),
