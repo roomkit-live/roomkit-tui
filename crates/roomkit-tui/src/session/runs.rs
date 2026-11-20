@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use roomkit_tui_protocol::limits::MAX_LABEL_BYTES;
-use roomkit_tui_protocol::{ConversationId, RunId, RunOutcome};
+use roomkit_tui_protocol::{ConversationId, MessageId, RunId, RunOutcome};
 
 use super::{ObservedRun, Session};
 
@@ -64,12 +64,18 @@ impl Session {
             .collect();
     }
 
+    /// `run` starts; when it `answers` a message, it is that message's own
+    /// turn.
     pub(super) fn on_run_started(
         &mut self,
         conversation: &ConversationId,
         run: RunId,
+        answers: Option<&MessageId>,
         at: Option<Duration>,
     ) {
+        if let Some(message) = answers {
+            self.on_answered(conversation, message);
+        }
         // A replayed start never reopens the last run or doubles a live one.
         if !self.is_current(conversation)
             || self.last_run.as_ref() == Some(&run)

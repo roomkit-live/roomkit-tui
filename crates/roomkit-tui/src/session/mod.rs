@@ -11,6 +11,7 @@ mod labels;
 mod measures;
 mod questions;
 mod recall;
+mod replies;
 mod runs;
 mod send_now;
 mod steering;
@@ -29,8 +30,8 @@ use roomkit_tui_protocol::{
 };
 
 pub(crate) use bounds::bounded;
-pub(crate) use input::{INPUT_TOO_LONG, MAX_INPUT_BYTES};
 pub use input::SessionError;
+pub(crate) use input::{INPUT_TOO_LONG, MAX_INPUT_BYTES};
 pub use steering::Steering;
 pub(crate) use thinking::ThoughtState;
 

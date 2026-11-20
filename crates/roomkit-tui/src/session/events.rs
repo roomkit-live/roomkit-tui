@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use roomkit_tui_protocol::limits::MAX_OPERATION_ID_BYTES;
 use roomkit_tui_protocol::{
-    BackgroundStatus, Choice, Command, ConversationId, Event, FormSpec, Item, ModeState,
-    OperationId, PanelSpec, Rejection, RequestId, RunOutcome, SidebarSpec,
+    BackgroundStatus, Choice, ConversationId, Event, FormSpec, Item, ModeState, OperationId,
+    PanelSpec, RunOutcome, SidebarSpec,
 };
 
 use super::Session;
@@ -87,6 +87,67 @@ impl Session {
                 operation,
                 outcome,
             } => self.on_operation_finished(&conversation, &operation, outcome),
+            Event::Reply { request, error } => self.on_reply(request, error, at),
+            Event::Notice { conversation, text } => self.on_notice(&conversation, &text),
+            Event::TextDelta {
+                conversation,
+                message,
+                actor,
+                run,
+                text,
+            } => self.on_text_delta(&conversation, message, actor, &run, &text),
+            Event::ThinkingDelta {
+                conversation,
+                actor,
+                run,
+                text,
+            } => self.on_thinking_delta(&conversation, (actor, &run), &text, at),
+            Event::MessageFinalized {
+                conversation,
+                draft,
+                message,
+            } => self.on_message_finalized(&conversation, &draft, message),
+            Event::Item { conversation, item } => self.on_item(&conversation, item),
+            Event::RunStarted {
+                conversation,
+                run,
+                answers,
+            } => self.on_run_started(&conversation, run, answers.as_ref(), at),
+            Event::MessageSteered {
+                conversation,
+                message,
+                run,
+            } => self.on_message_steered(&conversation, message, &run),
+            Event::RunFinished {
+                conversation,
+                run,
+                outcome,
+            } => self.on_run_finished(&conversation, &run, outcome, at),
+            Event::PermissionRequested {
+                conversation,
+                permission,
+            } => self.on_permission_requested(&conversation, permission),
+            Event::PermissionResolved {
+                conversation,
+                permission,
+            } => self.on_permission_resolved(&conversation, &permission),
+            Event::QuestionAsked {
+                conversation,
+                question,
+            } => self.on_question_asked(&conversation, question),
+            Event::QuestionResolved {
+                conversation,
+                question,
+            } => self.on_question_resolved(&conversation, &question),
+            event => self.apply_view_event(event),
+        }
+    }
+
+    /// Apply an event about what the host shows around the conversation:
+    /// its sidebar, title, panels, choices and forms. A model, measurement
+    /// or cost event goes on to [`Self::apply_measurement`].
+    fn apply_view_event(&mut self, event: Event) {
+        match event {
             Event::SidebarChanged {
                 conversation,
                 sidebar,
@@ -123,71 +184,15 @@ impl Session {
                 conversation,
                 form,
                 panel,
-            } => {
-                self.on_form_completed(&conversation, &form, panel);
-            }
-            Event::Reply { request, error } => self.on_reply(request, error, at),
-            Event::Notice { conversation, text } => {
-                if self.is_current(&conversation) {
-                    self.notice = bounded(&text, self.limits.text_bytes.get());
-                }
-            }
-            Event::TextDelta {
-                conversation,
-                message,
-                actor,
-                run,
-                text,
-            } => self.on_text_delta(&conversation, message, actor, &run, &text),
-            Event::ThinkingDelta {
-                conversation,
-                actor,
-                run,
-                text,
-            } => self.on_thinking_delta(&conversation, (actor, &run), &text, at),
-            Event::MessageFinalized {
-                conversation,
-                draft,
-                message,
-            } => self.on_message_finalized(&conversation, &draft, message),
-            Event::Item { conversation, item } => self.on_item(&conversation, item),
-            Event::RunStarted {
-                conversation,
-                run,
-                answers,
-            } => {
-                if let Some(message) = &answers {
-                    self.on_answered(&conversation, message);
-                }
-                self.on_run_started(&conversation, run, at);
-            }
-            Event::MessageSteered {
-                conversation,
-                message,
-                run,
-            } => self.on_message_steered(&conversation, message, &run),
-            Event::RunFinished {
-                conversation,
-                run,
-                outcome,
-            } => self.on_run_finished(&conversation, &run, outcome, at),
-            Event::PermissionRequested {
-                conversation,
-                permission,
-            } => self.on_permission_requested(&conversation, permission),
-            Event::PermissionResolved {
-                conversation,
-                permission,
-            } => self.on_permission_resolved(&conversation, &permission),
-            Event::QuestionAsked {
-                conversation,
-                question,
-            } => self.on_question_asked(&conversation, question),
-            Event::QuestionResolved {
-                conversation,
-                question,
-            } => self.on_question_resolved(&conversation, &question),
+            } => self.on_form_completed(&conversation, &form, panel),
             event => self.apply_measurement(event),
+        }
+    }
+
+    /// The host's diagnostic for the person, bounded like any text.
+    fn on_notice(&mut self, conversation: &ConversationId, text: &str) {
+        if self.is_current(conversation) {
+            self.notice = bounded(text, self.limits.text_bytes.get());
         }
     }
 
@@ -330,73 +335,6 @@ impl Session {
             .is_some_and(|form| form.spec.id == id && form.spec.command == panel.command)
         {
             self.on_panel(conversation, panel);
-        }
-    }
-
-    fn on_reply(&mut self, request: RequestId, error: Option<Rejection>, at: Option<Duration>) {
-        let Some(command) = self.pending.remove(&request) else {
-            return;
-        };
-        let silent = self.answered_waited(request, error.as_ref(), at);
-        let Some(error) = error else {
-            self.on_accepted(&command);
-            return;
-        };
-        match command {
-            Command::Decide { permission, .. } => {
-                self.deciding.remove(&permission);
-            }
-            // Refused: the card takes answers again.
-            Command::AnswerQuestion { question, .. } => {
-                if let Some(card) = self
-                    .questions
-                    .iter_mut()
-                    .find(|card| *card.id() == question)
-                {
-                    card.sent = false;
-                }
-            }
-            // A late refusal for a run already over leaves the interruption
-            // of the run under way pending.
-            Command::Interrupt { run } if self.interrupting.as_ref() == Some(&run) => {
-                self.interrupting = None;
-            }
-            _ => {}
-        }
-        if !silent {
-            self.notice = bounded(&error.message, self.limits.text_bytes.get());
-        }
-    }
-
-    fn on_accepted(&mut self, command: &Command) {
-        match command {
-            Command::SubmitImages { message, .. }
-                if self.editor.expanded() == message.text && self.images == message.images =>
-            {
-                self.editor.submitted();
-                self.images.clear();
-                self.draft_epoch = self.draft_epoch.wrapping_add(1);
-                self.refresh_menu();
-            }
-            Command::Invoke { name, .. }
-                if self.picker.as_ref().is_some_and(|p| p.command == *name) =>
-            {
-                self.picker = None;
-            }
-            Command::SubmitForm { form, .. } => {
-                if let Some(current) = self
-                    .form
-                    .as_mut()
-                    .filter(|current| current.spec.id == *form)
-                {
-                    if current.spec.wait_for_completion {
-                        current.submitted = true;
-                    } else {
-                        self.form = None;
-                    }
-                }
-            }
-            _ => {}
         }
     }
 }
