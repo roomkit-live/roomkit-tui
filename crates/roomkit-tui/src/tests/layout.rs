@@ -261,7 +261,7 @@ fn a_long_notice_follows_the_activity_row_wrapped() {
 #[test]
 fn a_notice_links_its_web_address_on_every_wrapped_row() {
     let renderers = Renderers::default();
-    let url = "https://opencode.ai/console/org_01M73ERKEHA617MYCY0SPPH0RK/settings/privacy#regions";
+    let url = "https://opencode.ai/console/org_01ARZ3NDEKTSV4RRFFQ69G5FAV/settings/privacy#regions";
     // The texts of the linked fragments at `width`, each linking all of `url`.
     let linked = |session: &Session, width| {
         let frame = render::screen(session, width, 24, &renderers);

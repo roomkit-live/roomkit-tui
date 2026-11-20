@@ -287,8 +287,8 @@ fn the_provider_s_words_mask_keys_and_keep_names() {
             "Qwen/Qwen3-235B-A22B-Instruct-2507 is not served",
         ),
         (
-            "Select Global at https://opencode.ai/console/org_01M73ERKEHA617MYCY0SPPH0RK/settings",
-            "Select Global at https://opencode.ai/console/org_01M73ERKEHA617MYCY0SPPH0RK/settings",
+            "Select Global at https://opencode.ai/console/org_01ARZ3NDEKTSV4RRFFQ69G5FAV/settings",
+            "Select Global at https://opencode.ai/console/org_01ARZ3NDEKTSV4RRFFQ69G5FAV/settings",
         ),
         (
             "api_key=sk-proj-Ab3dEf0123456789aBcDeF0123456789 is invalid",
