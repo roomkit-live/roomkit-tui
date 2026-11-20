@@ -588,8 +588,8 @@ async fn an_approval_outside_the_group_only_leaves_a_notice() {
 
 /// A request of no group, asked in the room a view left for another room of
 /// its group, does not come to the room shown, where that view may not
-/// answer it: it waits for the view's return, as any request asked for its
-/// own room alone.
+/// answer it: a notice there says it waits, and it is shown on the view's
+/// return, as any request asked for its own room alone.
 #[tokio::test]
 async fn a_request_of_no_group_in_a_room_left_waits_for_the_view_s_return() {
     let kit = RoomKit::new(Default::default());
@@ -616,12 +616,22 @@ async fn a_request_of_no_group_in_a_room_left_waits_for_the_view_s_return() {
         asker.ask_permission(&room, &agent, request).await
     });
     tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut notices = Vec::new();
     while let Ok(event) = client.try_recv() {
         assert!(
             !matches!(event, Event::PermissionRequested { .. }),
             "A request this view cannot answer is shown: {event:?}"
         );
+        if let Event::Notice { text, .. } = event {
+            notices.push(text);
+        }
     }
+    assert!(
+        notices
+            .iter()
+            .any(|text| text.contains("approval") && text.contains("/resume")),
+        "The room shown hears that the room left waits: {notices:?}"
+    );
 
     client.try_send(go("other", "room")).unwrap();
     let back = until_snapshot(&client, "room").await;
@@ -643,4 +653,69 @@ async fn a_request_of_no_group_in_a_room_left_waits_for_the_view_s_return() {
     open.send_replace(true);
     drop(client);
     task.await.unwrap().unwrap();
+}
+
+/// The question `q1`, asked of the person in the view's first room for the
+/// run of its agent there.
+fn ask_in_first_room(channel: &ConversationChannel) {
+    let items = vec![QuestionItem::new(
+        "Database",
+        "Which database?",
+        vec![
+            QuestionOption::new("SQLite", ""),
+            QuestionOption::new("Postgres", ""),
+        ],
+    )];
+    let request = roomkit_tui_engine::QuestionRequest::new("q1", items);
+    assert!(channel.ask_question(&config().room, &config().agent, request));
+}
+
+/// A question asked in a conversation the view left, for a room of its
+/// group or of another, reaches the room shown as a notice that it waits,
+/// never as a card that view could not answer; the card shows on the view's
+/// return.
+#[tokio::test]
+async fn a_question_in_a_room_left_leaves_a_notice_where_the_view_is() {
+    for elsewhere in ["other", "alone"] {
+        let kit = RoomKit::new(Default::default());
+        let provider = ScriptedProvider::new([ScriptedRound::answering("Done")]);
+        let channel = prepare(&kit, provider, Arc::default(), false).await;
+        with_room(&kit, &channel, elsewhere).await;
+        let (open, gate) = watch::channel(false);
+        let held = Arc::new(Notify::new());
+        hold_answers(&kit, gate, held.clone());
+        let (client, host) = connection(NonZeroUsize::new(256).unwrap());
+        let view = LocalSession::new(kit.clone(), channel.clone(), commanded());
+        let task = tokio::spawn(view.run_with_commands(host, Go { stopped: None }));
+        next(&client).await;
+        client.try_send(request("ask")).unwrap();
+        started_run(&client).await;
+        held.notified().await;
+        client.try_send(go("room", elsewhere)).unwrap();
+        until_snapshot(&client, elsewhere).await;
+
+        ask_in_first_room(&channel);
+        let (shown, notice) = loop {
+            match next(&client).await {
+                Event::Notice { conversation, text } => break (conversation, text),
+                Event::QuestionAsked { .. } => panic!("A card crossed rooms ({elsewhere})"),
+                _ => {}
+            }
+        };
+        assert_eq!(shown.as_str(), elsewhere);
+        assert!(
+            notice.contains("question") && notice.contains("/resume"),
+            "{elsewhere}: {notice}"
+        );
+
+        client.try_send(go(elsewhere, "room")).unwrap();
+        let back = until_snapshot(&client, "room").await;
+        assert!(
+            back.iter().any(|event| matches!(event, Event::QuestionAsked { question, .. } if question.id.as_str() == "q1")),
+            "{elsewhere}: the question is shown on the view's return: {back:?}"
+        );
+        open.send_replace(true);
+        drop(client);
+        task.await.unwrap().unwrap();
+    }
 }

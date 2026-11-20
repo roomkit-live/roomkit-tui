@@ -207,12 +207,8 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 Ok(true)
             }
             // A conversation the view left still waits on the person.
-            Ok((room, Event::PermissionRequested { .. })) if self.left_group(&room) => {
-                self.send(Event::Notice {
-                    conversation: here.as_str().into(),
-                    text: "An agent of a conversation you left is waiting for your approval: /resume it to answer".into(),
-                })?;
-                Ok(true)
+            Ok((room, event)) if waiting_notice(&event).is_some() && self.left(&room) => {
+                self.tell_waiting(&event)
             }
             Ok((room, Event::Notice { text, .. })) if self.tells_notices_of(&room) => {
                 self.send(Event::Notice {
@@ -225,6 +221,26 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
             Err(broadcast::error::RecvError::Lagged(_)) => Err(AdapterError::Lagged),
             Err(broadcast::error::RecvError::Closed) => Ok(false),
         }
+    }
+
+    /// Tell the room shown that `event`, asked in a conversation the view
+    /// left, waits on the person there.
+    fn tell_waiting(&self, event: &Event) -> Result<bool, AdapterError> {
+        if let Some(text) = waiting_notice(event) {
+            self.send(Event::Notice {
+                conversation: self.session.config.conversation().into(),
+                text: text.into(),
+            })?;
+        }
+        Ok(true)
+    }
+
+    /// Whether `room`, a room or a group events are published under, is one
+    /// this view left and still answers for: a room it keeps, or a group
+    /// whose work runs on.
+    fn left(&self, room: &str) -> bool {
+        room != self.session.config.conversation()
+            && (self.parked.contains_key(room) || self.left_group(room))
     }
 
     /// Whether `group` is another group this view left, whose work runs on.
@@ -358,6 +374,20 @@ fn of_the_group(event: &Event) -> bool {
     match event {
         Event::PermissionRequested { permission, .. } => permission.origin.is_some(),
         event => decides(event),
+    }
+}
+
+/// What tells a view that `event`, asked in a conversation it left and not
+/// shown where it is, waits on the person there: an approval or a question.
+fn waiting_notice(event: &Event) -> Option<&'static str> {
+    match event {
+        Event::PermissionRequested { .. } => Some(
+            "An agent of a conversation you left is waiting for your approval: /resume it to answer",
+        ),
+        Event::QuestionAsked { .. } => {
+            Some("An agent of a conversation you left asks you a question: /resume it to answer")
+        }
+        _ => None,
     }
 }
 
