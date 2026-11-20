@@ -24,13 +24,7 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
     let mut card = heading(view, permission, cols);
     // Rows beyond a one-line title come from the detail window.
     let title_rows = card.len().saturating_sub(4);
-    let count = rows
-        .saturating_sub(13 + title_rows)
-        .clamp(1, 8)
-        .min(detail.len().max(1));
-    let start = session
-        .permission_scroll
-        .min(detail.len().saturating_sub(count));
+    let (start, count) = detail_window(session, detail.len(), rows, title_rows);
     let filled = |text: &str| line(pad(&format!("  {text}"), cols), Tone::Input);
     card.extend(
         detail
@@ -43,14 +37,7 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
     let choice_start = card.len();
     card.extend(choices(session, cols, waiting, armed));
     let shown = (start + count).min(detail.len());
-    let help = quit_hint(session, view.elapsed).unwrap_or_else(|| {
-        format!(
-            "PgUp/PgDn details {shown}/{} · {}",
-            detail.len(),
-            cancel_hint(session)
-        )
-    });
-    card.push(filled(&help));
+    card.push(filled(&keys(view, shown, detail.len())));
     card.push(filled(""));
     // Never show part of what a person is asked to approve.
     let Some(placed) = card_screen(view, cols, rows, card, None) else {
@@ -63,6 +50,34 @@ pub(super) fn screen(view: &View<'_>, cols: usize, rows: usize) -> Frame {
         result.permission_targets = targets(session, permission, placed.top + choice_start, cols);
     }
     result
+}
+
+/// The detail rows the card shows of `total`: the first one and how many,
+/// fewer as the title takes `title_rows` rows beyond its first.
+fn detail_window(
+    session: &Session,
+    total: usize,
+    rows: usize,
+    title_rows: usize,
+) -> (usize, usize) {
+    let count = rows
+        .saturating_sub(13 + title_rows)
+        .clamp(1, 8)
+        .min(total.max(1));
+    let start = session.permission_scroll.min(total.saturating_sub(count));
+    (start, count)
+}
+
+/// The card's keys: the detail's scrolling, `shown` rows of `total` read,
+/// then what Esc does; or the armed exit's confirmation.
+fn keys(view: &View<'_>, shown: usize, total: usize) -> String {
+    let session = view.session;
+    quit_hint(session, view.elapsed).unwrap_or_else(|| {
+        format!(
+            "PgUp/PgDn details {shown}/{total} · {}",
+            cancel_hint(session)
+        )
+    })
 }
 
 /// What Esc does on the card, and whether more requests wait behind it.
