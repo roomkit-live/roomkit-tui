@@ -153,7 +153,8 @@ fn form_key(session: &mut Session, client: &Client, key: KeyEvent) {
     let Some(form) = &mut session.form else {
         return;
     };
-    if !is_ctrl(key, 's') {
+    let enter = key.code == KeyCode::Enter && !key.modifiers.contains(KeyModifiers::ALT);
+    if !is_ctrl(key, 's') && !(enter && form.enter_saves()) {
         form.key(key);
         return;
     }

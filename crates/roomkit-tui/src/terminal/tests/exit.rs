@@ -151,7 +151,7 @@ fn assert_armed_exit_is_shown(name: &str, open: fn(&mut Session), help: &str) {
 #[test]
 fn an_armed_exit_is_shown_over_a_panel_a_form_and_an_approval_card() {
     assert_armed_exit_is_shown("panel", open_panel, "Esc close");
-    assert_armed_exit_is_shown("form", open_form, "Ctrl+S save");
+    assert_armed_exit_is_shown("form", open_form, "Enter save");
     assert_armed_exit_is_shown("approval", open_approval, "Esc interrupt");
 }
 

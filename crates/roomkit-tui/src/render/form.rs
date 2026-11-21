@@ -160,6 +160,8 @@ fn controls(
             "Waiting for completion… · Esc cancel".into()
         } else if session.form_pending() {
             "Saving…".into()
+        } else if session.form.as_ref().is_some_and(FormState::enter_saves) {
+            "Enter save · Esc cancel".into()
         } else {
             "Ctrl+S save · Esc cancel · Enter next field".into()
         }

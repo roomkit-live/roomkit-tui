@@ -126,6 +126,12 @@ impl FormState {
         }
     }
 
+    /// Whether Enter saves the form: it holds one field, so the key has no
+    /// next field to move to.
+    pub(crate) fn enter_saves(&self) -> bool {
+        self.editors.len() == 1
+    }
+
     /// Tab or Enter moves to the next field, Shift+Tab to the previous one;
     /// Alt+Enter is left to the field. Whether `key` moved.
     fn move_between_fields(&mut self, key: KeyEvent) -> bool {
