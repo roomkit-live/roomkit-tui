@@ -12,7 +12,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   such a form does not have: a pasted value stayed in its field and nothing
   said why, as its line named `Ctrl+S save · Enter next field`. That line now
   reads `Enter save · Esc cancel`; Ctrl+S saves as before, and a form of
-  several fields keeps both keys as they were.
+  several fields keeps both keys as they were. A form of one field of several
+  lines keeps Ctrl+S as its only save, and its line no longer names a next
+  field.
+- A paste replaces what a secret field held. The field is masked and a
+  refused form keeps its draft: a value pasted again after a refusal joined
+  the first one unseen, and was refused again.
 - A conversation the view left tells the room shown when it waits on the
   person (RMK-1838): a question an agent asks there gives the notice `An agent
   of a conversation you left asks you a question`, and an approval asked

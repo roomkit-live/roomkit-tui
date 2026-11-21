@@ -5,6 +5,9 @@ use roomkit_tui_protocol::{Command, FieldKind, FormSpec, FormValues};
 
 use crate::{SessionError, editor::Editor};
 
+/// The most bytes a field holds.
+const FIELD_BYTES: usize = 8192;
+
 /// A bounded host form with a draft independent of conversation history.
 /// Debug never exposes field values. Secret defaults are discarded.
 pub struct FormState {
@@ -86,9 +89,20 @@ impl FormState {
             text.replace(['\n', '\r', '\t'], " ")
         };
         let editor = &mut self.editors[self.selected];
-        if editor.text().len().saturating_add(text.len()) <= 8192 {
+        if editor.text().len().saturating_add(text.len()) <= FIELD_BYTES {
             editor.insert(&text);
         }
+    }
+
+    /// Takes a paste. A secret's replaces what its field held: the field is
+    /// masked, so a paste made again after a refusal joined the first one
+    /// unseen. One too long for the field leaves it as it was.
+    pub(crate) fn paste(&mut self, text: &str) {
+        let secret = self.spec.fields[self.selected].kind == FieldKind::Secret;
+        if secret && text.len() <= FIELD_BYTES {
+            self.editors[self.selected].set(String::new());
+        }
+        self.insert(text);
     }
 
     fn scroll_description(&mut self, key: KeyCode) -> bool {
@@ -127,9 +141,10 @@ impl FormState {
     }
 
     /// Whether Enter saves the form: it holds one field, so the key has no
-    /// next field to move to.
+    /// next field to move to. Not a field of several lines, where Enter is
+    /// the key pressed for the next line.
     pub(crate) fn enter_saves(&self) -> bool {
-        self.editors.len() == 1
+        self.editors.len() == 1 && self.spec.fields[0].kind != FieldKind::Multiline
     }
 
     /// Tab or Enter moves to the next field, Shift+Tab to the previous one;

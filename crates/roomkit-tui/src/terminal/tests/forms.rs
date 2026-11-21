@@ -199,3 +199,74 @@ fn enter_still_moves_between_the_fields_of_a_longer_form() {
     assert!(host.try_recv().is_err());
     assert_eq!(session.form.as_ref().unwrap().editors[0].text(), "first\n");
 }
+
+fn one_field(kind: FieldKind) -> Event {
+    Event::Form {
+        conversation: "room".into(),
+        form: FormSpec::new(
+            "attempt",
+            "action",
+            "Connect",
+            vec![FormField::new("value", "Value", kind)],
+        ),
+    }
+}
+
+/// Review finding: a refused form keeps its draft, and a paste goes in at
+/// the cursor. A secret is masked: the address pasted again after a refusal
+/// joined the first one unseen, and was refused again. A paste now replaces
+/// what a secret field held; a field that shows its text takes it as before.
+#[test]
+fn a_paste_replaces_a_secret_and_joins_a_text_that_shows() {
+    let (mut session, _client, _host) = fixture(false);
+    let value = |session: &Session| session.form.as_ref().unwrap().editors[0].text().to_owned();
+    session.apply(one_field(FieldKind::Secret));
+    super::super::requests::paste(&mut session, "code=first&state=one");
+    super::super::requests::paste(
+        &mut session,
+        "http://127.0.0.1:1455/auth/callback?code=first",
+    );
+    assert_eq!(
+        value(&session),
+        "http://127.0.0.1:1455/auth/callback?code=first"
+    );
+    // One too long for the field leaves what it held.
+    super::super::requests::paste(&mut session, &"x".repeat(8193));
+    assert_eq!(
+        value(&session),
+        "http://127.0.0.1:1455/auth/callback?code=first"
+    );
+
+    session.apply(one_field(FieldKind::Text));
+    super::super::requests::paste(&mut session, "first ");
+    super::super::requests::paste(&mut session, "second");
+    assert_eq!(value(&session), "first second");
+}
+
+/// Review finding: in a field of several lines, Enter is the key a person
+/// presses for the next line, and Shift+Enter the composer's line break. A
+/// form of one such field keeps Ctrl+S as its only save, and names no next
+/// field.
+#[test]
+fn enter_does_not_save_a_form_of_one_multiline_field() {
+    let (mut session, client, host) = fixture(false);
+    session.apply(one_field(FieldKind::Multiline));
+    session.form.as_mut().unwrap().insert("first line");
+    assert!(drawn(&session).contains("Ctrl+S save · Esc cancel"));
+    assert!(!drawn(&session).contains("next field"));
+    for modifiers in [
+        KeyModifiers::NONE,
+        KeyModifiers::SHIFT,
+        KeyModifiers::CONTROL,
+    ] {
+        let enter = KeyEvent::new(KeyCode::Enter, modifiers);
+        press(&mut session, &client, enter, Duration::ZERO);
+        assert!(host.try_recv().is_err(), "{modifiers:?}");
+    }
+    let save = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL);
+    press(&mut session, &client, save, Duration::ZERO);
+    assert!(matches!(
+        host.try_recv().unwrap().command,
+        Command::SubmitForm { .. }
+    ));
+}

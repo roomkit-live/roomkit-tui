@@ -28,7 +28,7 @@ pub(super) fn paste(session: &mut Session, text: &str) {
             if !session.form_pending()
                 && let Some(form) = &mut session.form
             {
-                form.insert(text);
+                form.paste(text);
             }
         }
         Focus::Picker => {

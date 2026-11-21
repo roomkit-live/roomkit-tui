@@ -239,7 +239,8 @@ Host forms use a separate bounded editor: **Tab / Shift+Tab** change fields,
 **Left / Right** cycle choices, **Alt+Enter** adds a line break, **Ctrl+U** clears
 the current field, **Ctrl+S** submits, and **Esc** cancels (notifying the host when a `dismiss`
 argument is configured). **Enter** moves to the next field, and submits a form
-of one field. A rejected
+of one field unless that field takes several lines. A paste replaces what a
+secret field held, as its text is masked. A rejected
 submission keeps the draft. Pending submissions cannot be edited or submitted
 again. Secrets are masked in frames and clipboard selections, omitted from
 Debug output and never entered in conversation input history. The host owns

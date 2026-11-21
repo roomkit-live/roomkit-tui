@@ -143,6 +143,16 @@ fn input(form: &FormState, width: usize) -> (Vec<Line>, (usize, usize)) {
     (lines, caret)
 }
 
+/// The keys that save `form` or leave it: Enter where it saves, and no next
+/// field named for a form of one.
+fn save_keys(form: Option<&FormState>) -> &'static str {
+    match form {
+        Some(form) if form.enter_saves() => "Enter save · Esc cancel",
+        Some(form) if form.editors.len() == 1 => "Ctrl+S save · Esc cancel",
+        _ => "Ctrl+S save · Esc cancel · Enter next field",
+    }
+}
+
 /// The editing keys, the notice and the save keys.
 fn controls(
     session: &Session,
@@ -160,10 +170,8 @@ fn controls(
             "Waiting for completion… · Esc cancel".into()
         } else if session.form_pending() {
             "Saving…".into()
-        } else if session.form.as_ref().is_some_and(FormState::enter_saves) {
-            "Enter save · Esc cancel".into()
         } else {
-            "Ctrl+S save · Esc cancel · Enter next field".into()
+            save_keys(session.form.as_ref()).into()
         }
     });
     let mut rows = vec![line(editing, Tone::Muted)];
