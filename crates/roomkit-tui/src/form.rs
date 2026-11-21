@@ -96,10 +96,12 @@ impl FormState {
 
     /// Takes a paste. A secret's replaces what its field held: the field is
     /// masked, so a paste made again after a refusal joined the first one
-    /// unseen. One too long for the field leaves it as it was.
+    /// unseen. One too long for the field, or with nothing to show, leaves
+    /// it as it was: a terminal sends an empty paste for an empty clipboard.
     pub(crate) fn paste(&mut self, text: &str) {
         let secret = self.spec.fields[self.selected].kind == FieldKind::Secret;
-        if secret && text.len() <= FIELD_BYTES {
+        let shows = text.chars().any(|c| !c.is_control() && !c.is_whitespace());
+        if secret && shows && text.len() <= FIELD_BYTES {
             self.editors[self.selected].set(String::new());
         }
         self.insert(text);

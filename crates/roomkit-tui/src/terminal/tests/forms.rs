@@ -230,8 +230,11 @@ fn a_paste_replaces_a_secret_and_joins_a_text_that_shows() {
         value(&session),
         "http://127.0.0.1:1455/auth/callback?code=first"
     );
-    // One too long for the field leaves what it held.
+    // One too long for the field leaves what it held, as does an empty one,
+    // which a terminal sends for an empty clipboard.
     super::super::requests::paste(&mut session, &"x".repeat(8193));
+    super::super::requests::paste(&mut session, "");
+    super::super::requests::paste(&mut session, "\u{7}");
     assert_eq!(
         value(&session),
         "http://127.0.0.1:1455/auth/callback?code=first"
