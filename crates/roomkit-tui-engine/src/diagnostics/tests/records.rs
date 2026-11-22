@@ -141,11 +141,15 @@ fn words_come_only_from_the_envelope_that_identified_the_refusal() {
 
 #[test]
 fn a_provider_class_keeps_its_attributes_without_an_adapter_name() {
-    for (status, expected) in [
-        (403, "provider_access_denied"),
-        (503, "provider_server_error"),
+    for (class, status, expected) in [
+        ("ProviderError", 403, "provider_access_denied"),
+        (
+            "roomkit.providers.ai.base:ProviderError",
+            503,
+            "provider_server_error",
+        ),
     ] {
-        let mut refused = ErrorRecord::new("ProviderError", "request failed");
+        let mut refused = ErrorRecord::new(class, "request failed");
         refused
             .attributes
             .insert("status_code".into(), status.into());
@@ -158,6 +162,10 @@ fn a_provider_class_keeps_its_attributes_without_an_adapter_name() {
         assert_eq!(diagnostic.http_status, Some(status));
         assert_eq!(diagnostic.code, expected);
     }
+
+    let mut foreign = ErrorRecord::new("other:ProviderError", "request failed");
+    foreign.attributes.insert("status_code".into(), 503.into());
+    assert_eq!(Diagnostic::from_record(&foreign).code, "engine_failed");
 
     let mut opaque = ErrorRecord::new("ProviderError", "openai (403): private detail");
     opaque

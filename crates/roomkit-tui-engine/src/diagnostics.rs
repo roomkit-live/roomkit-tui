@@ -234,8 +234,10 @@ fn reads_as_context_overflow(lower: &str) -> bool {
 
 /// A provider can be identified by its recorded class or provider attribute.
 fn is_provider_record(record: &ErrorRecord) -> bool {
-    record.error_type == "ProviderError"
-        || roomkit_core::ops::failure_log::is_provider_error(record)
+    matches!(
+        record.error_type.as_str(),
+        "ProviderError" | "roomkit.providers.ai.base:ProviderError"
+    ) || roomkit_core::ops::failure_log::is_provider_error(record)
 }
 
 /// Keep the attributes of a native stream error or a failure returned by a
