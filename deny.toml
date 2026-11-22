@@ -18,7 +18,7 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/roomkit-live/roomkit-rs"]
+allow-git = ["https://github.com/roomkit-live/roomkit-rs", "https://github.com/roomkit-live/roomkit-providers"]
 
 # arboard's optional Windows clipboard backend; scoped to these two dependencies.
 [[licenses.exceptions]]

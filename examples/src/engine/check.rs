@@ -7,7 +7,7 @@ use std::sync::{
 };
 use std::{num::NonZeroUsize, path::PathBuf, time::Duration};
 
-use roomkit_openai::OpenAiConfig;
+use roomkit_providers_openai::OpenAiConfig;
 use roomkit_tui::{Session, connection};
 use roomkit_tui_engine::LocalSession;
 use roomkit_tui_protocol::{Command, Event, Item, Request, RequestId, RunOutcome, ToolState};

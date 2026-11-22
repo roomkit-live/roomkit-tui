@@ -40,8 +40,10 @@ deps:
 package-check:
 	python3 scripts/check-packages.py
 
+# The examples take a model provider that asks for Rust 1.94: the libraries'
+# minimum is checked without them.
 msrv:
-	cargo +1.92.0 test --locked --workspace
+	cargo +1.92.0 test --locked --workspace --exclude roomkit-tui-examples
 
 audit:
 	cargo deny $(DENY_FLAGS) check

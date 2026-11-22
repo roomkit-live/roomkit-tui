@@ -1401,8 +1401,6 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "rustls-platform-verifier",
- "serde",
- "serde_json",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -1431,8 +1429,8 @@ dependencies = [
 
 [[package]]
 name = "roomkit"
-version = "0.2.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=4c51283a28aa961a2fc104788b50c5192c6b3924#4c51283a28aa961a2fc104788b50c5192c6b3924"
+version = "0.3.0"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b7db678e9627f4e7ca5512d81b2ce9da1a816527#b7db678e9627f4e7ca5512d81b2ce9da1a816527"
 dependencies = [
  "futures-core",
  "getrandom 0.4.3",
@@ -1450,8 +1448,8 @@ dependencies = [
 
 [[package]]
 name = "roomkit-ai"
-version = "0.2.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=4c51283a28aa961a2fc104788b50c5192c6b3924#4c51283a28aa961a2fc104788b50c5192c6b3924"
+version = "0.3.0"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b7db678e9627f4e7ca5512d81b2ce9da1a816527#b7db678e9627f4e7ca5512d81b2ce9da1a816527"
 dependencies = [
  "base64",
  "fancy-regex 0.20.2",
@@ -1471,8 +1469,8 @@ dependencies = [
 
 [[package]]
 name = "roomkit-core"
-version = "0.2.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=4c51283a28aa961a2fc104788b50c5192c6b3924#4c51283a28aa961a2fc104788b50c5192c6b3924"
+version = "0.3.0"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b7db678e9627f4e7ca5512d81b2ce9da1a816527#b7db678e9627f4e7ca5512d81b2ce9da1a816527"
 dependencies = [
  "jiff",
  "serde",
@@ -1484,41 +1482,57 @@ dependencies = [
 ]
 
 [[package]]
-name = "roomkit-openai"
-version = "0.2.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=4c51283a28aa961a2fc104788b50c5192c6b3924#4c51283a28aa961a2fc104788b50c5192c6b3924"
+name = "roomkit-providers-client"
+version = "0.1.0-alpha.1"
+source = "git+https://github.com/roomkit-live/roomkit-providers?rev=edc7d5ef02409c0e3aef58370f54d941c3a7e343#edc7d5ef02409c0e3aef58370f54d941c3a7e343"
 dependencies = [
  "futures-core",
  "jiff",
  "reqwest",
- "roomkit",
  "roomkit-ai",
  "roomkit-core",
- "roomkit-provider-http",
+ "roomkit-providers-http",
  "rustls",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tracing",
+ "url",
+]
+
+[[package]]
+name = "roomkit-providers-http"
+version = "0.1.0-alpha.1"
+source = "git+https://github.com/roomkit-live/roomkit-providers?rev=edc7d5ef02409c0e3aef58370f54d941c3a7e343#edc7d5ef02409c0e3aef58370f54d941c3a7e343"
+dependencies = [
+ "openssl-probe",
+ "rustls",
+ "rustls-platform-verifier",
+ "thiserror",
+ "url",
  "webpki-roots",
 ]
 
 [[package]]
-name = "roomkit-provider-http"
-version = "0.2.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=4c51283a28aa961a2fc104788b50c5192c6b3924#4c51283a28aa961a2fc104788b50c5192c6b3924"
+name = "roomkit-providers-openai"
+version = "0.1.0-alpha.1"
+source = "git+https://github.com/roomkit-live/roomkit-providers?rev=edc7d5ef02409c0e3aef58370f54d941c3a7e343#edc7d5ef02409c0e3aef58370f54d941c3a7e343"
 dependencies = [
  "reqwest",
- "rustls",
- "thiserror",
- "webpki-roots",
+ "roomkit",
+ "roomkit-ai",
+ "roomkit-core",
+ "roomkit-providers-client",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]
 name = "roomkit-sqlite"
-version = "0.2.0"
-source = "git+https://github.com/roomkit-live/roomkit-rs?rev=4c51283a28aa961a2fc104788b50c5192c6b3924#4c51283a28aa961a2fc104788b50c5192c6b3924"
+version = "0.3.0"
+source = "git+https://github.com/roomkit-live/roomkit-rs?rev=b7db678e9627f4e7ca5512d81b2ce9da1a816527#b7db678e9627f4e7ca5512d81b2ce9da1a816527"
 dependencies = [
  "roomkit",
  "roomkit-core",
@@ -1572,7 +1586,7 @@ dependencies = [
  "axum",
  "roomkit",
  "roomkit-ai",
- "roomkit-openai",
+ "roomkit-providers-openai",
  "roomkit-sqlite",
  "roomkit-tui",
  "roomkit-tui-engine",

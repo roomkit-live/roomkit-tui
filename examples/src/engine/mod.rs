@@ -11,7 +11,7 @@ use std::{error::Error, num::NonZeroUsize, path::Path, path::PathBuf, time::Dura
 use roomkit::model::{ChannelId, RoomId};
 use roomkit::{CreateRoomOptions, GetRoomOptions, ListBindingsOptions, RoomKit, RoomKitOptions};
 use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
-use roomkit_openai::{OpenAiAiProvider, OpenAiConfig};
+use roomkit_providers_openai::{OpenAi, OpenAiConfig};
 use roomkit_sqlite::{SqliteStore, SqliteStoreOptions};
 use roomkit_tui::{connection, render::Renderers};
 use roomkit_tui_engine::{ConversationChannel, LocalSession, SessionConfig};
@@ -183,7 +183,7 @@ async fn assemble(
         steer_room_turns: true,
         ..Default::default()
     };
-    let provider = OpenAiAiProvider::new(provider)?;
+    let provider = OpenAi::new(provider)?;
     kit.register_channel(AiChannel::new(agent.clone(), provider, options)?)?;
     let id = ChannelId::new("terminal")?;
     let channel = if buffered {

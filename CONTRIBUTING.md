@@ -30,7 +30,9 @@ model text.
 
 All engine crates must use the same pinned Git URL and a commit on
 `roomkit-rs/main`. Do not make these crates depend on a long-lived compatibility
-branch.
+branch. The examples' provider crate comes from roomkit-providers, pinned at a
+revision that names the same engine revision: a build holds one copy of the
+engine.
 
 ## Checks
 

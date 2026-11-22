@@ -202,7 +202,7 @@ start two operations in one room, and it keeps forwarding events while it awaits
 the application's command handler. Before closing the engine, an application
 can await `ConversationChannel::idle` so the current turn settles and stores its
 decisions. `SessionConfig.model` must name the provider the engine reports in
-its usage metadata (`OpenAIAIProvider` for `roomkit-openai`); otherwise context
+its usage metadata (`OpenAIAIProvider` for `roomkit-providers-openai`); otherwise context
 and token usage are not shown. Use `ConversationChannel::buffered` for rooms
 whose output hooks must review an answer before it is displayed.
 

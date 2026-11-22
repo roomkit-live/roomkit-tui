@@ -208,7 +208,7 @@ terminal??;
 ```
 
 To show context and token usage, describe the agent's model with the provider
-name your engine reports, for example `OpenAIAIProvider` for `roomkit-openai`:
+name your engine reports, for example `OpenAIAIProvider` for `roomkit-providers-openai`:
 `config.model = Some(ModelInfo::new("OpenAIAIProvider", "gpt-4.1"))`.
 
 [`examples/src/engine/mod.rs`](examples/src/engine/mod.rs) is the complete,
@@ -469,7 +469,7 @@ The development checks need Python 3.11 or later, and
 
 ```sh
 make check   # formatting, Clippy, tests, docs, examples, terminal smoke tests
-make msrv    # tests with the minimum supported Rust version (1.92)
+make msrv    # the crates' tests with the minimum supported Rust version (1.92)
 make audit   # licenses, sources and security advisories
 ```
 
@@ -483,7 +483,8 @@ new fields and variants are not breaking: build structs with their
 constructors and match enums with a wildcard arm. On the wire, an older
 terminal ignores the events, items and states a newer host adds; an unknown
 answer to a permission is never read as an approval. The minimum supported
-Rust version is 1.92 and is tested in CI.
+Rust version is 1.92 and is tested in CI; the examples need 1.94, which their
+model provider asks for.
 
 ## Roadmap
 

@@ -16,6 +16,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the message to the running turn itself and stores it as the room's record,
   past the room's inbound hooks and its delivery to other channels.
 
+### Changed
+
+- Built on RoomKit Rust 0.3.0 (b7db678), which no longer holds the model
+  providers. The examples take `OpenAi` from `roomkit-providers-openai`, at a
+  revision of roomkit-providers built on the same engine revision; the
+  provider's name in usage metadata, `OpenAIAIProvider`, is unchanged. The
+  library crates name no provider, as before, and keep Rust 1.92 as their
+  minimum; the examples need Rust 1.94, which that provider asks for, and
+  `make msrv` checks the crates without them.
+
 ## [0.3.1] - 2026-11-22
 
 ### Fixed

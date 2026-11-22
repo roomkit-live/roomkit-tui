@@ -3,7 +3,8 @@ name = "roomkit-tui-examples"
 description = "Standalone verified examples for RoomKit terminal hosts"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# The model provider the examples run on asks for more than the libraries do.
+rust-version = "1.94"
 license.workspace = true
 publish = false
 
@@ -11,7 +12,7 @@ publish = false
 roomkit-tui-engine.workspace = true
 roomkit.workspace = true
 roomkit-ai.workspace = true
-roomkit-openai.workspace = true
+roomkit-providers-openai.workspace = true
 roomkit-sqlite.workspace = true
 tokio = { workspace = true, features = ["net"] }
 uuid.workspace = true
