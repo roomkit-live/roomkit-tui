@@ -206,7 +206,7 @@ impl<S: ConversationStore> Turn<S> {
         };
         match self.kit.process_inbound(message, options).await {
             Ok(admitted) => self.settle(admitted).await,
-            Err(error) => Verdict::failed(crate::diagnostics::explain(&error.to_string())),
+            Err(error) => Verdict::refused(&error),
         }
     }
 
@@ -233,7 +233,9 @@ impl<S: ConversationStore> Turn<S> {
             }
             None => Settled::now(admitted),
         };
-        let explain = |error: &str| verdict::explained(&self.channel, &room, run.as_ref(), error);
+        let explain = |error: &roomkit::model::ErrorRecord| {
+            verdict::explained(&self.channel, &room, run.as_ref(), error)
+        };
         let verdict = Verdict::judge(&settled, explain);
         if let Some(trigger) = &settled.result.event {
             publish_usage(&self.kit, &self.channel, &self.config, trigger).await;

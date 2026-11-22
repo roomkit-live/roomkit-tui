@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Provider failures use their recorded HTTP status and context limit in both
+  streamed and buffered turns. An unreadable response gets its own diagnostic,
+  and an unclassified provider failure gives retry guidance when available.
 - Enter saves a form of one field. The key moved to the next field, which
   such a form does not have: a pasted value stayed in its field and nothing
   said why, as its line named `Ctrl+S save · Enter next field`. That line now

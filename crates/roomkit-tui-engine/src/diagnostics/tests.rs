@@ -1,3 +1,10 @@
+mod records;
+
+/// What the view shows when only error text is available.
+fn explain(error: &str) -> String {
+    super::explain(&roomkit::model::ErrorRecord::new("ProviderError", error))
+}
+
 #[test]
 fn diagnostics_explain_failures_without_echoing_private_provider_text() {
     for (raw, expected) in [
@@ -42,7 +49,7 @@ fn diagnostics_explain_failures_without_echoing_private_provider_text() {
         ),
         ("the provider account must sign in again secret", "Sign in"),
     ] {
-        let rendered = super::explain(raw);
+        let rendered = explain(raw);
         assert!(rendered.contains(expected));
         assert!(!rendered.contains("secret") && !rendered.contains("private.invalid"));
     }
@@ -212,12 +219,12 @@ fn a_provider_refusal_shows_the_provider_s_words() {
         format!("provider failed: anthropic (400): {words}"),
     ] {
         assert_eq!(
-            super::explain(&raw),
+            explain(&raw),
             format!("{REJECTED}\nProvider says: {words}"),
             "{raw}"
         );
     }
-    let told = super::explain("openai (403): the provider answered HTTP 403: Model not allowed");
+    let told = explain("openai (403): the provider answered HTTP 403: Model not allowed");
     assert!(
         told.starts_with("Provider access denied.")
             && told.ends_with("\nProvider says: Model not allowed"),
@@ -241,7 +248,7 @@ fn only_a_worded_refusal_shows_the_provider_s_words() {
         "tool failed (404): /home/person/private.txt",
     ] {
         let diagnostic = super::Diagnostic::classify(raw);
-        assert_eq!(super::explain(raw), diagnostic.summary, "{raw}");
+        assert_eq!(explain(raw), diagnostic.summary, "{raw}");
     }
 }
 
@@ -254,7 +261,7 @@ fn the_provider_s_words_are_bounded_and_keep_no_key() {
         "openai (401): the provider answered HTTP 401 (invalid_request_error, invalid_api_key): \
          Incorrect API key provided: {key}. See https://platform.example/account/api-keys."
     );
-    let told = super::explain(&raw);
+    let told = explain(&raw);
     assert!(
         told.ends_with(
             "\nProvider says: Incorrect API key provided: [redacted]. \
@@ -264,7 +271,7 @@ fn the_provider_s_words_are_bounded_and_keep_no_key() {
     );
 
     let long = "word ".repeat(200);
-    let told = super::explain(&format!("anthropic (400): {long}"));
+    let told = explain(&format!("anthropic (400): {long}"));
     let (_, words) = told.split_once("\nProvider says: ").unwrap_or_default();
     assert!(
         words.chars().count() <= 300 && words.ends_with('…'),
@@ -303,7 +310,7 @@ fn the_provider_s_words_mask_keys_and_keep_names() {
             "request 123e4567-e89b-12d3-a456-426614174000 failed",
         ),
     ] {
-        let told = super::explain(&format!("anthropic (400): {said}"));
+        let told = explain(&format!("anthropic (400): {said}"));
         assert!(
             told.ends_with(&format!("\nProvider says: {shown}")),
             "{told}"

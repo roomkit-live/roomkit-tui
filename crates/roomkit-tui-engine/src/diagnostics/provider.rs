@@ -4,6 +4,11 @@ type Description = (&'static str, &'static str);
 /// Both the HTTP adapters and `ProviderError::Display` reach the view as text.
 /// Read the first complete envelope, never a number embedded in a longer one.
 pub(super) fn status(error: &str) -> Option<u16> {
+    envelope(error).map(|(_, status)| status)
+}
+
+/// The start and status of the first complete envelope in lowercase text.
+pub(super) fn envelope(error: &str) -> Option<(usize, u16)> {
     let http = error.match_indices("http ").filter_map(|(at, tail)| {
         if at > 0 && error.as_bytes()[at - 1].is_ascii_alphanumeric() {
             return None;
@@ -29,9 +34,7 @@ pub(super) fn status(error: &str) -> Option<u16> {
         rest.starts_with("):")
             .then_some((at - provider.len(), status))
     });
-    http.chain(native)
-        .min_by_key(|(at, _)| *at)
-        .map(|(_, status)| status)
+    http.chain(native).min_by_key(|(at, _)| *at)
 }
 
 fn code(text: &str) -> Option<(u16, &str)> {
@@ -152,4 +155,14 @@ pub(super) fn fallback(status: Option<u16>) -> Option<Description> {
         ),
         _ => return None,
     })
+}
+
+/// An identified provider failed without a status or a more specific cause.
+pub(super) fn unclassified(retryable: bool) -> Description {
+    let summary = if retryable {
+        "The provider request failed. Retry the request; completed tool actions may remain."
+    } else {
+        "The provider request failed. Check the host diagnostics; completed tool actions may remain."
+    };
+    ("provider_failed", summary)
 }

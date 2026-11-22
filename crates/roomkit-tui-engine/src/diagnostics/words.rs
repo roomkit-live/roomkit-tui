@@ -27,28 +27,37 @@ const KEY_PART: usize = 16;
 /// refusal (4xx) and `error` carries them.
 pub(super) fn says(error: &str, status: Option<u16>) -> Option<String> {
     let status = status.filter(|status| (400..500).contains(status))?;
-    let start = words_start(error, status)?;
-    shown(&error[start..])
+    let (at, envelope_status) = super::provider::envelope(&error.to_ascii_lowercase())?;
+    if envelope_status != status {
+        return None;
+    }
+    let (prefix, envelope) = error.split_at(at);
+    let words = if prefix.ends_with("the provider answered ") {
+        http_words(envelope, status)?
+    } else {
+        let body = ADAPTERS
+            .iter()
+            .find_map(|name| envelope.strip_prefix(&format!("{name} ({status}): ")))?;
+        if body.starts_with(OPENAI_STATUS) {
+            http_words(body.strip_prefix("the provider answered ")?, status)?
+        } else {
+            OPENAI_WORDED
+                .iter()
+                .find_map(|prefix| body.strip_prefix(prefix))
+                .unwrap_or(body)
+        }
+    };
+    shown(words)
 }
 
-/// Where the provider's words start in `error`: after the OpenAI adapter's
-/// wording, else after the `name (status): ` envelope an adapter of the kit
-/// leads them with. Another failure worded alike is not a provider's.
-fn words_start(error: &str, status: u16) -> Option<usize> {
-    if let Some(at) = error.find(OPENAI_STATUS) {
-        // `HTTP 400 (type, code): ` names no colon before its own.
-        return error[at..].find(": ").map(|colon| at + colon + 2);
+/// The OpenAI adapter's status, optional error identifiers and message.
+fn http_words(envelope: &str, status: u16) -> Option<&str> {
+    let suffix = envelope.strip_prefix(&format!("HTTP {status}"))?;
+    if let Some(words) = suffix.strip_prefix(": ") {
+        return Some(words);
     }
-    let worded = OPENAI_WORDED
-        .iter()
-        .filter_map(|wording| error.find(wording).map(|at| at + wording.len()))
-        .min();
-    worded.or_else(|| {
-        ADAPTERS.iter().find_map(|name| {
-            let envelope = format!("{name} ({status}): ");
-            error.find(&envelope).map(|at| at + envelope.len())
-        })
-    })
+    let (identifiers, words) = suffix.strip_prefix(" (")?.split_once("): ")?;
+    (!identifiers.contains(['(', ')', '\n', '\r'])).then_some(words)
 }
 
 /// `words` on one line, any key they hold masked, cut at

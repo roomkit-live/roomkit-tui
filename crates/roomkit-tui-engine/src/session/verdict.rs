@@ -2,7 +2,7 @@
 //! delivers, its own or a steered message's: the outcome the views and the
 //! host are told, and the failure the views are told once.
 
-use roomkit::InboundResult;
+use roomkit::{InboundResult, model::ErrorRecord};
 use roomkit_tui_protocol::{Event, RunId, RunOutcome};
 
 use crate::cancellation::{self, Receiver};
@@ -19,7 +19,7 @@ pub(super) struct Settled {
     /// The delivery's end, or the message's commit when waiting failed.
     pub result: InboundResult,
     /// Why waiting for the end failed.
-    lost: Option<String>,
+    lost: Option<ErrorRecord>,
     /// The engine accepted the person's interruption of the run.
     interrupted: bool,
 }
@@ -49,7 +49,7 @@ impl Settled {
             cancellation::wait(delivery, run, room, channel, controls).await;
         let (result, lost) = match result {
             Ok(done) => (done, None),
-            Err(error) => (admitted, Some(error.to_string())),
+            Err(error) => (admitted, Some(crate::diagnostics::record(&error))),
         };
         Self {
             result,
@@ -66,9 +66,9 @@ pub(super) fn explained(
     channel: &ConversationChannel,
     room: &str,
     run: Option<&RunId>,
-    error: &str,
+    error: &ErrorRecord,
 ) -> String {
-    let diagnostic = crate::diagnostics::Diagnostic::classify(error);
+    let diagnostic = crate::diagnostics::Diagnostic::from_record(error);
     if diagnostic.exceeds_context()
         && !channel.streams()
         && let Some(run) = run
@@ -93,6 +93,13 @@ pub(super) struct Verdict {
 }
 
 impl Verdict {
+    /// A failure returned directly by the kit before the message settled.
+    pub(super) fn refused(error: &roomkit::RoomKitError) -> Self {
+        Self::failed(crate::diagnostics::explain(&crate::diagnostics::record(
+            error,
+        )))
+    }
+
     /// A message the engine never took, for the reason `failure` says.
     pub(super) fn failed(failure: String) -> Self {
         Self {
@@ -107,18 +114,18 @@ impl Verdict {
     /// and the engine accepted, ends a turn interrupted: any other cut, as
     /// the kit's close, fails it. `explain` words an engine or provider
     /// error.
-    pub(super) fn judge(settled: &Settled, explain: impl FnOnce(&str) -> String) -> Self {
+    pub(super) fn judge(settled: &Settled, explain: impl FnOnce(&ErrorRecord) -> String) -> Self {
         let result = &settled.result;
         let cancelled = result.cancellation_reason.as_deref();
         let stopped = settled.interrupted && cancelled == Some("caller_cancelled");
         let failure = if let Some(error) = &result.error {
-            Some(explain(&error.message))
+            Some(explain(error))
         } else if result.blocked {
             Some(BLOCKED.to_owned())
         } else if cancelled.is_some() && !stopped {
             Some(CANCELLED.to_owned())
         } else {
-            settled.lost.as_deref().map(explain)
+            settled.lost.as_ref().map(explain)
         };
         let outcome = match (&failure, stopped) {
             (Some(_), _) => RunOutcome::Failed,
@@ -171,8 +178,6 @@ impl Verdict {
 
 #[cfg(test)]
 mod tests {
-    use roomkit::model::ErrorRecord;
-
     use super::*;
 
     /// A delivery cut for `reason`, the person's interruption accepted or not.
@@ -189,7 +194,7 @@ mod tests {
     }
 
     fn judged(settled: &Settled) -> (RunOutcome, Option<String>) {
-        let verdict = Verdict::judge(settled, str::to_owned);
+        let verdict = Verdict::judge(settled, |e| e.message.clone());
         (verdict.outcome, verdict.failure)
     }
 
@@ -209,12 +214,12 @@ mod tests {
         let mut settled = cut(Some("caller_cancelled"), true);
         settled.result.blocked = true;
         settled.result.error = Some(ErrorRecord::new("ProviderError", "connect error"));
-        settled.lost = Some("lost".to_owned());
-        let verdict = Verdict::judge(&settled, |e| format!("said {e}"));
+        settled.lost = Some(ErrorRecord::new("Error", "lost"));
+        let verdict = Verdict::judge(&settled, |e| format!("said {}", e.message));
         assert_eq!(verdict.failure.as_deref(), Some("said connect error"));
         assert_eq!(verdict.ended(), TurnOutcome::Blocked);
         let mut lost = Settled::now(InboundResult::default());
-        lost.lost = Some("lost".to_owned());
+        lost.lost = Some(ErrorRecord::new("Error", "lost"));
         assert_eq!(judged(&lost), (RunOutcome::Failed, Some("lost".to_owned())));
     }
 }

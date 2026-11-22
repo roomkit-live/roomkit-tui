@@ -151,7 +151,7 @@ impl<S: ConversationStore> Steer<S> {
         };
         let verdict = match self.kit.process_inbound(message, options).await {
             Ok(admitted) => self.settle(admitted).await,
-            Err(error) => Verdict::failed(crate::diagnostics::explain(&error.to_string())),
+            Err(error) => Verdict::refused(&error),
         };
         verdict.tell(&self.channel, self.config.conversation());
         // Decisions taken in the message's own turn are kept, as a turn's.
@@ -181,7 +181,9 @@ impl<S: ConversationStore> Steer<S> {
         let (channel, controls) = (&self.channel, &mut self.controls);
         let settled = Settled::wait(admitted, own.clone(), &room, channel, controls).await;
         turn::publish_usage(&self.kit, &self.channel, &self.config, &row).await;
-        let explain = |error: &str| verdict::explained(&self.channel, &room, Some(&own), error);
+        let explain = |error: &roomkit::model::ErrorRecord| {
+            verdict::explained(&self.channel, &room, Some(&own), error)
+        };
         Verdict::judge(&settled, explain).heard_from(&self.channel, &room, Some(&own))
     }
 

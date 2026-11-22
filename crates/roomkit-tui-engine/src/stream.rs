@@ -205,7 +205,7 @@ impl<'a> Reader<'a> {
             match next {
                 Ok(item) => self.read(item),
                 Err(error) => {
-                    self.fail(&error.to_string());
+                    self.fail(&crate::diagnostics::record(&*error));
                     self.failure = Some(error);
                     break;
                 }
@@ -293,9 +293,9 @@ impl<'a> Reader<'a> {
         });
     }
 
-    fn fail(&mut self, error: &str) {
+    fn fail(&mut self, error: &roomkit::model::ErrorRecord) {
         self.outcome = RunOutcome::Failed;
-        let diagnostic = crate::diagnostics::Diagnostic::classify(error);
+        let diagnostic = crate::Diagnostic::from_record(error);
         self.notice(&crate::diagnostics::told(&diagnostic, error));
         self.channel.failure_told(self.room, self.run);
         if diagnostic.exceeds_context() {
@@ -348,7 +348,7 @@ impl<'a> Reader<'a> {
     fn require_answer(&mut self) {
         if self.outcome == RunOutcome::Completed && self.generated && !self.visible {
             let error = "model returned no visible answer";
-            self.fail(error);
+            self.fail(&roomkit::model::ErrorRecord::new("Error", error));
             self.failure = Some(error.into());
         }
     }

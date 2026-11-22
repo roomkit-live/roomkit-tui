@@ -1,3 +1,6 @@
+use roomkit::model::ErrorRecord;
+use serde_json::Value;
+
 mod provider;
 mod words;
 
@@ -13,7 +16,7 @@ pub struct Diagnostic {
     pub code: &'static str,
     /// Human-readable explanation and recovery guidance.
     pub summary: &'static str,
-    /// HTTP failure status read from a complete provider error envelope, if present.
+    /// HTTP failure status from the provider record or a complete text envelope.
     pub http_status: Option<u16>,
 }
 
@@ -90,7 +93,10 @@ const KNOWN: Known = &[
         "The Responses stream contains incomplete or conflicting output items. No pending tool calls were executed.",
     ),
     (
-        &["provider's answer is malformed"],
+        &[
+            "provider's answer is malformed",
+            "the provider answered with a body it could not read:",
+        ],
         "provider_malformed",
         "The provider returned an invalid response. Check protocol compatibility and host diagnostics.",
     ),
@@ -149,19 +155,54 @@ impl Diagnostic {
     pub fn classify(error: &str) -> Self {
         let lower = error.to_ascii_lowercase();
         let http_status = provider::status(&lower);
+        Self::describe(&lower, http_status, None, None)
+    }
+
+    /// Classify a recorded failure using the provider's attributes when available.
+    pub fn from_record(record: &ErrorRecord) -> Self {
+        if !roomkit_core::ops::failure_log::is_provider_error(record) {
+            return Self::classify(&record.message);
+        }
+        let attributes = &record.attributes;
+        let lower = record.message.to_ascii_lowercase();
+        // A null status means the provider received no status. An absent
+        // attribute allows a complete text envelope to supply it.
+        let status = match attributes.get("status_code") {
+            Some(value) => value
+                .as_u64()
+                .filter(|s| (400..=599).contains(s))
+                .map(|s| s as u16),
+            None => provider::status(&lower),
+        };
+        Self::describe(
+            &lower,
+            status,
+            attributes.get("context_overflow").and_then(Value::as_bool),
+            attributes.get("retryable").and_then(Value::as_bool),
+        )
+    }
+
+    fn describe(
+        lower: &str,
+        http_status: Option<u16>,
+        overflow: Option<bool>,
+        retryable: Option<bool>,
+    ) -> Self {
         let known = |table: Known| {
             table
                 .iter()
                 .find(|(fragments, ..)| fragments.iter().any(|f| lower.contains(f)))
                 .map(|(_, code, summary)| (*code, *summary))
         };
-        let (code, summary) = provider::usage_limit(&lower, http_status)
+        let (code, summary) = provider::usage_limit(lower, http_status)
             .or_else(|| provider::priority(http_status))
+            .or_else(|| (overflow == Some(true)).then_some(CONTEXT_LIMIT))
             .or_else(|| known(KNOWN))
-            .or_else(|| provider::request(&lower, http_status))
-            .or_else(|| reads_as_context_overflow(&lower).then_some(CONTEXT_LIMIT))
+            .or_else(|| provider::request(lower, http_status))
+            .or_else(|| (overflow.is_none() && reads_as_context_overflow(lower)).then_some(CONTEXT_LIMIT))
             .or_else(|| provider::fallback(http_status))
             .or_else(|| known(AFTER_CONTEXT))
+            .or_else(|| retryable.map(provider::unclassified))
             .unwrap_or((
                 "engine_failed",
                 "Engine execution failed. Check the host diagnostics; completed tool actions may remain.",
@@ -187,16 +228,43 @@ fn reads_as_context_overflow(lower: &str) -> bool {
     lower.contains("context too large") || roomkit_ai::is_context_overflow_message(lower)
 }
 
+/// Keep the attributes of a native stream error or a failure returned by a
+/// kit call, so both use the same classifier as a buffered delivery.
+pub(crate) fn record(error: &(dyn std::error::Error + Send + Sync + 'static)) -> ErrorRecord {
+    use roomkit::RoomKitError;
+
+    if let Some(
+        RoomKitError::Channel { error: inner, .. }
+        | RoomKitError::Router(inner)
+        | RoomKitError::Identity(inner)
+        | RoomKitError::Lock(inner),
+    ) = error.downcast_ref::<RoomKitError>()
+        && roomkit_core::ops::failure_log::is_provider_error(inner)
+    {
+        return inner.clone();
+    }
+    let wire = roomkit::turns::ErrorClasses::default().record(error);
+    ErrorRecord {
+        attributes: Box::new(wire.attributes),
+        ..ErrorRecord::new(wire.kind, error.to_string())
+    }
+}
+
 /// What a view shows for `error`: its diagnostic's summary, with the words
 /// a provider refused the request with below it.
-pub(crate) fn explain(error: &str) -> String {
-    told(&Diagnostic::classify(error), error)
+pub(crate) fn explain(record: &ErrorRecord) -> String {
+    told(&Diagnostic::from_record(record), record)
 }
 
 /// `diagnostic`'s summary for `error`, with the words a provider refused the
 /// request with below it.
-pub(crate) fn told(diagnostic: &Diagnostic, error: &str) -> String {
-    match words::says(error, diagnostic.http_status) {
+pub(crate) fn told(diagnostic: &Diagnostic, record: &ErrorRecord) -> String {
+    if !roomkit_core::ops::failure_log::is_provider_error(record)
+        && record.error_type != "ProviderError"
+    {
+        return diagnostic.summary.to_owned();
+    }
+    match words::says(&record.message, diagnostic.http_status) {
         Some(words) => format!("{}\nProvider says: {words}", diagnostic.summary),
         None => diagnostic.summary.to_owned(),
     }

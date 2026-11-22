@@ -403,7 +403,7 @@ async fn a_steered_message_s_failing_turn_is_told_once() {
     let notices = notices_until_finished(&client, &lifecycle, "two").await;
     assert_eq!(
         notices,
-        ["Cannot reach the model server. Check its address, network and availability."]
+        ["Provider server failed. Check its health and logs, then retry."]
     );
     let calls = lifecycle.calls("two");
     assert_eq!(calls.last(), Some(&Call::Finished(TurnOutcome::Failed)));
