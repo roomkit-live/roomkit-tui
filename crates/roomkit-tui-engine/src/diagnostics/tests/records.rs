@@ -138,3 +138,34 @@ fn words_come_only_from_the_envelope_that_identified_the_refusal() {
         check(&refused, "provider_access_denied", summary);
     }
 }
+
+#[test]
+fn a_provider_class_keeps_its_attributes_without_an_adapter_name() {
+    for (status, expected) in [
+        (403, "provider_access_denied"),
+        (503, "provider_server_error"),
+    ] {
+        let mut refused = ErrorRecord::new("ProviderError", "request failed");
+        refused
+            .attributes
+            .insert("status_code".into(), status.into());
+        let wrapped = roomkit::RoomKitError::Channel {
+            channel_id: roomkit::model::ChannelId::new("test").unwrap(),
+            error: refused.clone(),
+        };
+        assert_eq!(super::super::record(&wrapped), refused);
+        let diagnostic = Diagnostic::from_record(&refused);
+        assert_eq!(diagnostic.http_status, Some(status));
+        assert_eq!(diagnostic.code, expected);
+    }
+
+    let mut opaque = ErrorRecord::new("ProviderError", "openai (403): private detail");
+    opaque
+        .attributes
+        .insert("status_code".into(), serde_json::Value::Null);
+    check(
+        &opaque,
+        "provider_failed",
+        "The provider request failed. Check the host diagnostics; completed tool actions may remain.",
+    );
+}

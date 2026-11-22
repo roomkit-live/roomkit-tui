@@ -160,7 +160,7 @@ impl Diagnostic {
 
     /// Classify a recorded failure using the provider's attributes when available.
     pub fn from_record(record: &ErrorRecord) -> Self {
-        if !roomkit_core::ops::failure_log::is_provider_error(record) {
+        if record.attributes.is_empty() || !is_provider_record(record) {
             return Self::classify(&record.message);
         }
         let attributes = &record.attributes;
@@ -174,11 +174,15 @@ impl Diagnostic {
                 .map(|s| s as u16),
             None => provider::status(&lower),
         };
+        let retryable = attributes
+            .get("retryable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         Self::describe(
             &lower,
             status,
             attributes.get("context_overflow").and_then(Value::as_bool),
-            attributes.get("retryable").and_then(Value::as_bool),
+            Some(retryable),
         )
     }
 
@@ -228,6 +232,12 @@ fn reads_as_context_overflow(lower: &str) -> bool {
     lower.contains("context too large") || roomkit_ai::is_context_overflow_message(lower)
 }
 
+/// A provider can be identified by its recorded class or provider attribute.
+fn is_provider_record(record: &ErrorRecord) -> bool {
+    record.error_type == "ProviderError"
+        || roomkit_core::ops::failure_log::is_provider_error(record)
+}
+
 /// Keep the attributes of a native stream error or a failure returned by a
 /// kit call, so both use the same classifier as a buffered delivery.
 pub(crate) fn record(error: &(dyn std::error::Error + Send + Sync + 'static)) -> ErrorRecord {
@@ -239,7 +249,7 @@ pub(crate) fn record(error: &(dyn std::error::Error + Send + Sync + 'static)) ->
         | RoomKitError::Identity(inner)
         | RoomKitError::Lock(inner),
     ) = error.downcast_ref::<RoomKitError>()
-        && roomkit_core::ops::failure_log::is_provider_error(inner)
+        && is_provider_record(inner)
     {
         return inner.clone();
     }
@@ -259,9 +269,7 @@ pub(crate) fn explain(record: &ErrorRecord) -> String {
 /// `diagnostic`'s summary for `error`, with the words a provider refused the
 /// request with below it.
 pub(crate) fn told(diagnostic: &Diagnostic, record: &ErrorRecord) -> String {
-    if !roomkit_core::ops::failure_log::is_provider_error(record)
-        && record.error_type != "ProviderError"
-    {
+    if !is_provider_record(record) {
         return diagnostic.summary.to_owned();
     }
     match words::says(&record.message, diagnostic.http_status) {
