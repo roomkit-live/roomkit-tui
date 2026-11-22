@@ -140,7 +140,8 @@ fn words_come_only_from_the_envelope_that_identified_the_refusal() {
 }
 
 #[test]
-fn a_provider_class_keeps_its_attributes_without_an_adapter_name() {
+fn a_provider_class_keeps_its_attributes_without_an_adapter_name()
+-> Result<(), roomkit::model::ModelError> {
     for (class, status, expected) in [
         ("ProviderError", 403, "provider_access_denied"),
         (
@@ -154,7 +155,7 @@ fn a_provider_class_keeps_its_attributes_without_an_adapter_name() {
             .attributes
             .insert("status_code".into(), status.into());
         let wrapped = roomkit::RoomKitError::Channel {
-            channel_id: roomkit::model::ChannelId::new("test").unwrap(),
+            channel_id: roomkit::model::ChannelId::new("test")?,
             error: refused.clone(),
         };
         assert_eq!(super::super::record(&wrapped), refused);
@@ -176,4 +177,5 @@ fn a_provider_class_keeps_its_attributes_without_an_adapter_name() {
         "provider_failed",
         "The provider request failed. Check the host diagnostics; completed tool actions may remain.",
     );
+    Ok(())
 }
