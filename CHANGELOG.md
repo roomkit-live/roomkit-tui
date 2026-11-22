@@ -21,7 +21,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Built on RoomKit Rust 0.3.0 (b7db678), which no longer holds the model
   providers. The examples take `OpenAi` from `roomkit-providers-openai`, at a
   revision of roomkit-providers built on the same engine revision; the
-  provider's name in usage metadata, `OpenAIAIProvider`, is unchanged. The
+  provider's name in usage metadata, `OpenAIAIProvider`, is unchanged. That
+  provider reads the environment's proxy variables and the system's trust
+  store, where the engine's used neither: behind a proxy, an example's
+  `--check` reaches its local model through it unless `NO_PROXY` names
+  `127.0.0.1`, and a SOCKS proxy in `ALL_PROXY` is refused. The
   library crates name no provider, as before, and keep Rust 1.92 as their
   minimum; the examples need Rust 1.94, which that provider asks for, and
   `make msrv` checks the crates without them.
