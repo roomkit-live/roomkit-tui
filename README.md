@@ -21,7 +21,7 @@ terminal itself is engine-agnostic: any host that speaks its typed protocol can
 drive it.
 
 > [!NOTE]
-> **Early development (0.3).** The library crates are on crates.io, except the
+> **Early development (0.3.1).** The library crates are on crates.io, except the
 > RoomKit adapter, which is taken through Git. Their APIs will change before
 > 1.0. Feedback and contributions are welcome.
 
@@ -164,7 +164,7 @@ crates.io, for a host that speaks the protocol itself:
 
 ```toml
 [dependencies]
-roomkit-tui = "0.3"
+roomkit-tui = "0.3.1"
 ```
 
 `roomkit-tui-engine`, the RoomKit adapter, is not: it depends on the RoomKit
