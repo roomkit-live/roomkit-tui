@@ -10,6 +10,7 @@ use tokio::sync::{Notify, watch};
 
 mod cut;
 mod lifecycle;
+mod other_turns;
 
 /// The console and the agent of a test's room.
 #[derive(Clone, Copy)]

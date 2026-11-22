@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `SessionConfig::can_steer_any_turn`, false by default: a message sent while
+  the agent's turn runs goes to that turn whoever wrote the message the turn
+  answers. Since RoomKit Rust 4c51283 a running turn reads only its own
+  author's next messages, so a message for a turn the application opened,
+  such as a task's, waited a turn of its own. With the option the view hands
+  the message to the running turn itself and stores it as the room's record,
+  past the room's inbound hooks and its delivery to other channels.
+
 ## [0.3.1] - 2026-11-22
 
 ### Fixed

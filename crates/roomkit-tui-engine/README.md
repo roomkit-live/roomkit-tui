@@ -79,6 +79,18 @@ keeps a message busy: the host preparing a turn, work started by a command, a
 turn being interrupted, another agent's stream, images. A buffered console never
 steers, and its snapshot says so.
 
+RoomKit hands a running turn only its own author's next messages: a message
+for a turn someone else opened, such as the application's own instruction,
+waits a turn of its own. A host sets `SessionConfig::can_steer_any_turn` where
+the room's turns are its own, such as a task's. Once `admit` passed, the view
+then hands the message to the running turn itself (`RoomKit::steer`) and
+stores it as the room's record (`RoomKit::commit_event`): the room's inbound
+hooks do not run for it, and the room's other channels are not delivered it.
+`Event::MessageSteered` names the turn, as before. The turn still runs in its
+author's name and role, so set it only where the view's sender may ask what
+that author may. A message no loop takes, and an operation sent again, go
+RoomKit's way.
+
 `Command::Answer` starts a turn for what the conversation already holds, as for
 a message handed to a turn that was cut before reading it. The agent is told so
 by an instruction, which is never stored or shown, and reads the message where

@@ -18,15 +18,16 @@ pub(crate) const RECEIPT_TOOL_KEY: &str = "roomkit_tui_approval_tool_id";
 /// Prefix of a stored receipt's event identity.
 const RECEIPT_ID_PREFIX: &str = "tui-";
 
-/// The writers of each room's decisions: one at a time in a room, since two
-/// would store the same row, and each room apart, since a store waits for
-/// its room's lock, which a turn may hold long.
+/// The writers of one kind of row in each room, as a room's decisions: one
+/// at a time in a room, since two would store the same row, and each room
+/// apart, since a store waits for its room's lock, which a turn may hold
+/// long.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Writers(Arc<Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>>);
 
 impl Writers {
-    /// Wait for the turn to store the decisions of `room`.
-    async fn of(&self, room: &str) -> tokio::sync::OwnedMutexGuard<()> {
+    /// Wait for the turn to write in `room`.
+    pub(crate) async fn of(&self, room: &str) -> tokio::sync::OwnedMutexGuard<()> {
         let writer = {
             let mut rooms = self.0.lock().unwrap_or_else(PoisonError::into_inner);
             // A room no writer holds nor waits for is forgotten.

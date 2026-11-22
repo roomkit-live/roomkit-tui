@@ -64,6 +64,16 @@ pub struct SessionConfig {
     /// Whether a message may cut the run under way to be sent at once. False
     /// where stopping the run stops more than the turn, such as a task.
     pub can_cut_to_send: bool,
+    /// Whether a message sent while the agent's turn runs goes to that turn
+    /// whoever wrote the message the turn answers. False keeps RoomKit's
+    /// rule: a running turn reads only its own author's next messages, and
+    /// anyone else's waits a turn of its own. True where the room's turns
+    /// are the application's own, such as a task's: the view hands the
+    /// message to the turn itself and stores it as the room's record, past
+    /// the room's inbound hooks and its delivery to other channels. The
+    /// turn still runs in its author's name and role: set it only where
+    /// this view's sender may ask what that author may.
+    pub can_steer_any_turn: bool,
     /// Host-confirmed image support for this attachment and selected agent.
     pub can_attach_images: bool,
     /// Optional host-owned interaction mode, independent of engine/model state.
@@ -91,6 +101,7 @@ impl SessionConfig {
             cycle_command: None,
             group: None,
             can_cut_to_send: true,
+            can_steer_any_turn: false,
             can_attach_images: false,
             mode: None,
             pricing: None,

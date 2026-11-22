@@ -5,11 +5,22 @@
 //! the host hears start (RMK-1232). Only a turn of this view's agent,
 //! streamed to this console and not being interrupted, takes a message this
 //! way; anything else in the room keeps the message busy, as before.
+//!
+//! RoomKit hands a running turn only its own author's next messages. Where
+//! the host says the view steers any turn
+//! (`SessionConfig::can_steer_any_turn`), the view hands the message to the
+//! running turn itself and stores it as the room's record.
 
 use std::sync::Arc;
 
-use roomkit::model::{EventContent, InboundMessage, TextContent};
-use roomkit::{ConversationStore, InboundResult, ProcessInboundOptions, RoomKit};
+use roomkit::model::{
+    ChannelType, EventContent, EventSource, EventStatus, InboundMessage, InjectMessage,
+    ParticipantId, RoomEvent, TextContent,
+};
+use roomkit::{
+    CommitEventOptions, ConversationStore, InboundResult, ProcessInboundOptions, RoomKit,
+    SteerOptions,
+};
 use roomkit_tui_protocol::{Command, Event, MessageId, OperationId, Rejection, Request, RunId};
 
 use super::serve::View;
@@ -133,6 +144,17 @@ impl<S: ConversationStore> Steer<S> {
 
     async fn deliver(&mut self, content: EventContent) -> TurnOutcome {
         let key = turn::idempotency_key(&self.config, &self.channel, &self.operation);
+        // One view at a time commits a message it may hand over in a room,
+        // by either way: the same operation sent twice at once is handed once.
+        let handing = if self.config.can_steer_any_turn {
+            let room = self.config.conversation();
+            Some(self.channel.handing_over.of(room).await)
+        } else {
+            None
+        };
+        if handing.is_some() && self.hand_over(&content, &key).await {
+            return self.record(content, key).await;
+        }
         // Its own turn, should it get one, starts as any turn.
         let _own_turn = self.lifecycle.clone().map(|lifecycle| {
             let (config, operation) = (self.config.clone(), self.operation.clone());
@@ -140,16 +162,9 @@ impl<S: ConversationStore> Steer<S> {
                 .own_turns
                 .expect(&key, lifecycle, config, operation)
         });
-        let (channel, config) = (&self.channel, &self.config);
-        let mut message = InboundMessage::new(channel.id().clone(), &config.sender, content);
-        message.addressed_to = Some(vec![config.agent.clone()]);
-        message.idempotency_key = Some(key);
-        let options = ProcessInboundOptions {
-            room_id: Some(config.room.clone()),
-            organization_id: config.organization.clone(),
-            defer_delivery: true,
-        };
-        let verdict = match self.kit.process_inbound(message, options).await {
+        let admitted = self.enter(content, key).await;
+        drop(handing);
+        let verdict = match admitted {
             Ok(admitted) => self.settle(admitted).await,
             Err(error) => Verdict::refused(&error),
         };
@@ -160,6 +175,25 @@ impl<S: ConversationStore> Steer<S> {
             self.notice("Decision accepted, but its history could not be saved. This does not change tool execution.");
         }
         verdict.ended()
+    }
+
+    /// Send the message into the room under `key`, RoomKit's way: admitted
+    /// once committed, its delivery to come.
+    async fn enter(
+        &self,
+        content: EventContent,
+        key: String,
+    ) -> Result<InboundResult, roomkit::RoomKitError> {
+        let (channel, config) = (&self.channel, &self.config);
+        let mut message = InboundMessage::new(channel.id().clone(), &config.sender, content);
+        message.addressed_to = Some(vec![config.agent.clone()]);
+        message.idempotency_key = Some(key);
+        let options = ProcessInboundOptions {
+            room_id: Some(config.room.clone()),
+            organization_id: config.organization.clone(),
+            defer_delivery: true,
+        };
+        self.kit.process_inbound(message, options).await
     }
 
     /// Show the committed message, say which turn it went to, and wait for
@@ -185,6 +219,63 @@ impl<S: ConversationStore> Steer<S> {
             verdict::explained(&self.channel, &room, Some(&own), error)
         };
         Verdict::judge(&settled, explain).heard_from(&self.channel, &room, Some(&own))
+    }
+
+    /// Hand the message keyed `key` to the agent's running turn, whoever
+    /// wrote the message that turn answers: whether a loop took it, which
+    /// then reads it at its next stop, as its text. A message no loop takes
+    /// goes RoomKit's way, and so does an operation sent again, which
+    /// RoomKit answers as the replay it is.
+    async fn hand_over(&self, content: &EventContent, key: &str) -> bool {
+        let text = roomkit_core::rules::transcoding::text_of(content);
+        if text.is_empty() {
+            return false;
+        }
+        let (channel, config) = (&self.channel, &self.config);
+        // Unknown, the key is taken as held: RoomKit reads it itself.
+        let held = self.kit.store();
+        let held = held.check_idempotency(&config.room, key, Some(channel.id()));
+        if held.await.unwrap_or(true) {
+            return false;
+        }
+        let options = SteerOptions {
+            turn_id: None,
+            organization_id: config.organization.clone(),
+        };
+        let directive = InjectMessage::new(text);
+        let reached = self
+            .kit
+            .steer(&config.room, &config.agent, directive, options);
+        matches!(reached.await, Ok(reached) if reached > 0)
+    }
+
+    /// Store the message the running turn took, under `key`, as the
+    /// person's message to the agent, delivered, and show it. A record opens
+    /// no turn and runs no hook.
+    async fn record(&self, content: EventContent, key: String) -> TurnOutcome {
+        let (channel, config) = (&self.channel, &self.config);
+        let mut source = EventSource::new(channel.id().clone(), ChannelType::WEBSOCKET);
+        source.participant_id = ParticipantId::new(config.sender.clone()).ok();
+        let mut row = RoomEvent::new(config.room.clone(), source, content);
+        row.status = EventStatus::Delivered;
+        row.addressed_to = Some(vec![config.agent.clone()]);
+        row.idempotency_key = Some(key);
+        let options = CommitEventOptions {
+            organization_id: config.organization.clone(),
+        };
+        let Ok(row) = self.kit.commit_event(&config.room, row, options).await else {
+            self.notice("The running turn received this message, but it could not be saved to the conversation.");
+            return TurnOutcome::Failed;
+        };
+        channel.row(&row);
+        let room = config.conversation();
+        let event = Event::MessageSteered {
+            conversation: room.into(),
+            message: MessageId::new(row.id.to_string()),
+            run: self.turn.clone(),
+        };
+        channel.publish(room, event);
+        TurnOutcome::Completed
     }
 
     fn notice(&self, text: &str) {
