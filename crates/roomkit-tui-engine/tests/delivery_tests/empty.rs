@@ -7,7 +7,7 @@ async fn an_empty_answer_is_explained_once_preserves_usage_and_allows_retry() {
         let kit = RoomKit::new(Default::default());
         let provider = NamedProvider(ScriptedProvider::new([
             ScriptedRound::answering(text)
-                .with_finish_reason("max_tokens")
+                .with_finish_reason(FinishReason::Length)
                 .with_usage(
                     json!({"input_tokens":20, "output_tokens":1024})
                         .as_object()
@@ -63,7 +63,7 @@ async fn an_empty_generation_after_a_tool_keeps_the_engines_retry() {
     let kit = RoomKit::new(Default::default());
     let provider = ScriptedProvider::new([
         ScriptedRound::calling("", [("c1", "lookup_record", "{}")]),
-        ScriptedRound::answering("").with_finish_reason("end_turn"),
+        ScriptedRound::answering("").with_finish_reason(FinishReason::Stop),
         ScriptedRound::answering("The record is ready."),
     ]);
     let calls = Arc::new(AtomicUsize::new(0));

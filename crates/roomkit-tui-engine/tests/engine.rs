@@ -9,7 +9,9 @@
 use roomkit::model::{ChannelId, RoomId};
 use roomkit::{ConversationStore, CreateRoomOptions, GetTimelineOptions, RoomKit, RoomKitOptions};
 use roomkit_ai::testing::{ScriptedProvider, ScriptedRound};
-use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
+use roomkit_ai::{
+    AiChannel, AiChannelOptions, AiTool, FinishReason, ToolEntry, ToolHandler, ToolResult,
+};
 use roomkit_tui_engine::{
     AdapterError, ConversationChannel, LocalSession, PermissionRequest, SessionConfig,
 };

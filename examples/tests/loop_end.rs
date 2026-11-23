@@ -13,7 +13,9 @@ use roomkit::{
     model::{ChannelId, RoomId},
 };
 use roomkit_ai::testing::{ScriptedProvider, ScriptedRound};
-use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
+use roomkit_ai::{
+    AiChannel, AiChannelOptions, AiTool, FinishReason, ToolEntry, ToolHandler, ToolResult,
+};
 use roomkit_tui::{Client, Session, connection, render};
 use roomkit_tui_engine::{ConversationChannel, LocalSession, SessionConfig};
 use roomkit_tui_protocol::*;
@@ -123,7 +125,7 @@ async fn a_tool_only_stop_shows_its_reason_and_allows_continuation() {
         ),
         (
             "",
-            ScriptedRound::answering("").with_finish_reason("max_tokens"),
+            ScriptedRound::answering("").with_finish_reason(FinishReason::Length),
             "output or context limit",
         ),
         (

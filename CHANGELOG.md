@@ -18,11 +18,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Built on RoomKit Rust 0.3.0 (b7db678), which no longer holds the model
-  providers. The examples take `OpenAi` from `roomkit-providers-openai`, at a
-  revision of roomkit-providers built on the same engine revision; the
-  provider's name in usage metadata, `OpenAIAIProvider`, is unchanged. Like
-  the engine's, that provider follows the environment's proxy variables:
+- Built on RoomKit Rust 8f49956, after 0.3.0, which no longer holds the model
+  providers and ends a model's answer in the closed `FinishReason`
+  vocabulary, where it ended in a text: an application built on these crates
+  pins the same engine revision. The examples take `OpenAi` from
+  `roomkit-providers-openai`, at a revision of roomkit-providers built on
+  the same engine revision; the provider's name in usage metadata,
+  `OpenAIAIProvider`, is unchanged. Like the engine's, that provider
+  follows the environment's proxy variables:
   behind a proxy, an example's `--check` reaches its local model through it
   unless `NO_PROXY` names `127.0.0.1`. It refuses a SOCKS proxy named in
   `ALL_PROXY` when it is built, where the engine's failed at its first
