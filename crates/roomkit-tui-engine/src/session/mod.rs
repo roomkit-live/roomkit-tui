@@ -212,6 +212,12 @@ pub trait CommandHandler: Send + Sync {
         false
     }
 
+    /// Whether this command's form may be submitted during a turn. Forms
+    /// default to idle-only, independent of whether the command can be opened.
+    fn allow_form_while_busy(&self, _name: &str) -> bool {
+        false
+    }
+
     /// How to stop `run` of `session`'s conversation when this view did not
     /// start it, such as a task the engine runs there; none when it cannot be
     /// stopped from here. The future runs apart from the view.

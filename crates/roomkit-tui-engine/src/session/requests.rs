@@ -221,8 +221,12 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
             .session
             .channel
             .busy(self.session.config.conversation());
-        let allowed = matches!(&request.command, Command::CompleteInput { .. })
-            || matches!(&request.command, Command::Invoke { name, .. } if self.handler.allow_while_busy(name));
+        let allowed = match &request.command {
+            Command::CompleteInput { .. } => true,
+            Command::Invoke { name, .. } => self.handler.allow_while_busy(name),
+            Command::SubmitForm { name, .. } => self.handler.allow_form_while_busy(name),
+            _ => false,
+        };
         if busy && !allowed {
             let error = Rejection::busy("A request is still executing");
             return self.reply(&request, Some(error)).map(|()| None);

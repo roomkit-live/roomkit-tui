@@ -23,6 +23,10 @@ impl CommandHandler for Host {
         name == "status"
     }
 
+    fn allow_form_while_busy(&self, name: &str) -> bool {
+        name == "other"
+    }
+
     async fn handle(&self, _: Request, _: SessionConfig) -> Result<CommandResult, Rejection> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(CommandResult::Events(Vec::new()))
@@ -174,7 +178,23 @@ async fn only_opted_in_controls_run_while_busy_and_arguments_are_bounded() {
         reply(&client, 4).await.map(|r| r.code),
         Some(ErrorCode::Invalid)
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    for (id, name, expected) in [(5, "status", Some(ErrorCode::Busy)), (6, "other", None)] {
+        let form = Command::SubmitForm {
+            name: name.into(),
+            form: "current".into(),
+            values: Default::default(),
+        };
+        client
+            .try_send(Request::new(
+                RequestId::new(id),
+                format!("form-{id}"),
+                "room",
+                form,
+            ))
+            .unwrap();
+        assert_eq!(reply(&client, id).await.map(|r| r.code), expected);
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     open.send_replace(true);
     collect_operation(&client).await;
     drop(client);
