@@ -33,11 +33,10 @@ pub(super) fn render(view: &View<'_>, message: &Message, cols: usize) -> Vec<Lin
             },
         ));
     }
-    let key = format!("{}\u{0}{}", message.actor, message.id);
     let width = cols.saturating_sub(4 + gutter.width());
     let mut content = view
         .renderers
-        .markdown(&key, &message.text, width, options.markdown);
+        .message_body(message, width, options.markdown);
     if own && content.is_empty() {
         content.push(Vec::new());
     }

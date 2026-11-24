@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Hosts can set additional emphasis for individual message bodies with
+  `Renderers::set_message_emphasis`. It applies to live and restored messages
+  in plain text and Markdown.
+
 - `SessionConfig::can_steer_any_turn`, false by default: a message sent while
   the agent's turn runs goes to that turn whoever wrote the message the turn
   answers. Since RoomKit Rust 4c51283 a running turn reads only its own

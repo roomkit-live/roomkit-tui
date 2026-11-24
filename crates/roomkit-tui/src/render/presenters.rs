@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Mutex;
 
-use roomkit_tui_protocol::{ActorId, CallId, RunId, ToolCall};
+use roomkit_tui_protocol::{ActorId, CallId, Message, RunId, ToolCall};
 
-use super::{Line, Tone, line, span, tool_cache};
+use super::{Emphasis, Line, Tone, line, span, tool_cache};
 use crate::UiOptions;
 
 /// A host-registered tool presentation. Return plain text, never terminal codes.
@@ -53,6 +53,7 @@ pub trait ToolRenderer: Send + Sync {
 /// Optional presentations keyed by tool name. Unknown tools use generic output.
 #[derive(Default)]
 pub struct Renderers {
+    message_emphasis: Option<fn(&Message) -> Option<Emphasis>>,
     tools: BTreeMap<String, Box<dyn ToolRenderer>>,
     markdown: Mutex<crate::markdown::Cache>,
     tool_cache: Mutex<tool_cache::Cache>,
@@ -67,6 +68,13 @@ impl fmt::Debug for Renderers {
 }
 
 impl Renderers {
+    /// Choose additional body emphasis by message identity. Applies to live and
+    /// restored messages in Markdown and plain text. Return `None` to use the
+    /// normal presentation. The function is called on each draw.
+    pub fn set_message_emphasis(&mut self, select: fn(&Message) -> Option<Emphasis>) {
+        self.message_emphasis = Some(select);
+    }
+
     /// Register or replace one tool's presentation.
     pub fn register(&mut self, name: impl Into<String>, renderer: impl ToolRenderer + 'static) {
         self.tools.insert(name.into(), Box::new(renderer));
@@ -110,6 +118,25 @@ impl Renderers {
             line.insert(0, span("   │ ", Tone::Border));
         }
         details
+    }
+
+    pub(super) fn message_body(
+        &self,
+        message: &Message,
+        width: usize,
+        markdown: bool,
+    ) -> Vec<Line> {
+        let key = format!("{}\u{0}{}", message.actor, message.id);
+        let mut lines = self.markdown(&key, &message.text, width, markdown);
+        if let Some(style) = self.message_emphasis.and_then(|select| select(message)) {
+            for span in lines.iter_mut().flatten() {
+                span.emphasis.bold |= style.bold;
+                span.emphasis.italic |= style.italic;
+                span.emphasis.underline |= style.underline;
+                span.emphasis.strike |= style.strike;
+            }
+        }
+        lines
     }
 
     pub(super) fn markdown(

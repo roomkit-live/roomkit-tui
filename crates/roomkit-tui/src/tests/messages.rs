@@ -116,3 +116,51 @@ fn older_snapshots_do_not_guess_the_local_author() {
     assert_eq!(snapshot.local_actor, Some("viewer".into()));
     assert_eq!(serde_json::to_value(snapshot).unwrap(), encoded);
 }
+
+#[test]
+fn host_emphasis_distinguishes_correspondence_in_live_and_restored_history() {
+    let mail = Item::Message(Message::new("peer-1", "agent", "Peer **answer**"));
+    let local = Item::Message(Message::new("local", "agent", "Local answer"));
+    let mut history = snapshot();
+    history.items.push(local);
+    let mut live = Session::default();
+    live.apply(Event::Snapshot(history.clone()));
+    live.apply(Event::Item {
+        conversation: history.conversation.clone(),
+        item: mail.clone(),
+    });
+    history.items.push(mail);
+    let mut restored = Session::default();
+    restored.apply(Event::Snapshot(history));
+    let mut renderers = Renderers::default();
+    renderers.set_message_emphasis(|message| {
+        (message.id.as_str() == "peer-1").then_some(render::Emphasis {
+            italic: true,
+            ..Default::default()
+        })
+    });
+    for markdown in [true, false] {
+        let options = UiOptions {
+            markdown,
+            ..Default::default()
+        };
+        for session in [&live, &restored] {
+            let frame =
+                render::screen_with_options(session, 80, 24, &renderers, &options, Duration::ZERO);
+            let spans: Vec<_> = frame.spans.iter().flatten().collect();
+            assert!(
+                spans
+                    .iter()
+                    .any(|s| s.text.contains("Peer") && s.emphasis.italic)
+            );
+            assert!(spans.iter().any(|s| s.text.contains("answer")
+                && s.emphasis.italic
+                && s.emphasis.bold == markdown));
+            assert!(
+                spans
+                    .iter()
+                    .any(|s| s.text.contains("Local") && !s.emphasis.italic)
+            );
+        }
+    }
+}
