@@ -91,7 +91,9 @@ pub(super) fn menu(session: &Session, cols: usize, height: usize) -> Vec<Line> {
     let count = height.saturating_sub(2).max(1);
     if menu.entries.is_empty() {
         lines.push(panel(
-            "No matching choices",
+            menu.empty_message
+                .as_deref()
+                .unwrap_or("No matching choices"),
             cols,
             Tone::Muted,
             Tone::Border,
@@ -126,7 +128,16 @@ pub(super) fn menu(session: &Session, cols: usize, height: usize) -> Vec<Line> {
         }
     }
     lines.push(line(
-        rule(" ↑↓ select · Enter/Tab insert · Esc close ", cols, '╰', '╯'),
+        rule(
+            if session.choosing_action_argument() {
+                " ↑↓ select · Enter/Tab choose · Esc close "
+            } else {
+                " ↑↓ select · Enter/Tab insert · Esc close "
+            },
+            cols,
+            '╰',
+            '╯',
+        ),
         Tone::Border,
     ));
     lines

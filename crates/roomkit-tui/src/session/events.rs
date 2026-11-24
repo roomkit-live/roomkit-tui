@@ -186,6 +186,15 @@ impl Session {
                 panel,
             } => self.on_panel_updated(&conversation, panel),
             Event::ModeChanged { conversation, mode } => self.on_mode(&conversation, mode),
+            Event::InputChoices {
+                conversation,
+                request,
+                choices,
+            } => {
+                if self.is_current(&conversation) {
+                    self.receive_action_choices(request, choices);
+                }
+            }
             Event::Choices {
                 conversation,
                 command,

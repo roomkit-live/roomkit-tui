@@ -133,6 +133,9 @@ pub struct InputAction {
     pub prefix: char,
     /// Advertised command receiving the remaining text verbatim.
     pub command: String,
+    /// Whether the host offers first-argument choices on demand for this prefix.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub complete: bool,
     /// Short input-mode guidance supplied by the application.
     pub description: String,
 }
@@ -142,8 +145,16 @@ impl InputAction {
     pub fn new(prefix: char, command: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
             prefix,
+            complete: false,
             command: command.into(),
             description: description.into(),
         }
+    }
+
+    /// Offer a selector while the person types the first argument.
+    #[must_use]
+    pub fn with_completion(mut self) -> Self {
+        self.complete = true;
+        self
     }
 }

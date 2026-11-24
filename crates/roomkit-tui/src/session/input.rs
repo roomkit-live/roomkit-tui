@@ -370,6 +370,7 @@ impl Session {
             self.editor.cursor(),
             self.command_prefix,
         );
+        self.refresh_action_choices();
     }
 
     /// Insert the highlighted completion. This never sends an execution request.

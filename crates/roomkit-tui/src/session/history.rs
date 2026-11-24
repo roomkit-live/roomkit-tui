@@ -93,6 +93,7 @@ impl Session {
         self.deciding.clear();
         self.interrupting = None;
         self.pending.clear();
+        self.action_choices = None;
         self.forget_waited_send();
         self.scroll = 0;
         self.approval_drawn = None;

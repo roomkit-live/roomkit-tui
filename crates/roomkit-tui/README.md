@@ -178,6 +178,8 @@ without losing the draft. An exact command without inline argument choices can
 also be submitted directly with Enter. No model setting is changed locally by a
 selection; model changes remain host-confirmed.
 
+An input prefix can opt into on-demand completion with `InputAction::with_completion()`. On `CompleteInput`, return `InputChoices` for the same request and conversation. The terminal filters locally by label, value and description. Enter or Tab invokes the action with the opaque value alone, so the host can open the selected form or conversation. Typing past the first argument keeps the ordinary submission path.
+
 Hosts can send `Event::Choices` to open a separate filterable selector for any
 advertised command. Each entry has a label, description and opaque value;
 Enter invokes the command with that value, while Escape preserves the draft and

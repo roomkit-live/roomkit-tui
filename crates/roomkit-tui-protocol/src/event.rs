@@ -122,6 +122,15 @@ pub enum Event {
         /// Authoritative mode selection and available choices.
         mode: ModeState,
     },
+    /// First arguments for a prefix being edited. Late results are ignored.
+    InputChoices {
+        /// Conversation that owns the catalogue.
+        conversation: ConversationId,
+        /// The exact completion request these choices answer.
+        request: RequestId,
+        /// Human-readable labels and their whitespace-free first arguments.
+        choices: Vec<Choice>,
+    },
     /// Open a filterable selector for an advertised application command.
     /// Choosing an entry invokes that command with the entry's exact value.
     /// Dismissing the selector has no application side effect.

@@ -39,6 +39,16 @@ pub(super) fn composer_key(
     Outcome::Stay
 }
 
+/// One read-only lookup per first argument being edited, including after paste.
+pub(super) fn request_choices(session: &mut Session, client: &Client) -> bool {
+    let Some(command) = session.choice_request() else {
+        return false;
+    };
+    let request = try_request(session, client, command);
+    session.started_choice_request(request);
+    true
+}
+
 /// Keys that act on the menu, the history or the timeline rather than the
 /// draft. Returns whether the key was handled.
 fn composer_navigation(
@@ -70,6 +80,9 @@ fn composer_navigation(
         KeyCode::Down => session.editor.history_or_vertical(false),
         KeyCode::Char('p') if control => session.editor.history_previous(),
         KeyCode::Char('n') if control => session.editor.history_next(),
+        KeyCode::Tab if session.menu.visible && session.choosing_action_argument() => {
+            choose_argument(session, client);
+        }
         KeyCode::Tab => session.complete(),
         KeyCode::Esc if menu => session.menu.dismiss(),
         KeyCode::Esc if session.sends_after_interruption() => session.keep_draft(),
@@ -169,11 +182,23 @@ pub(super) fn send_waiting(session: &mut Session, client: &Client, now: Duration
     true
 }
 
+/// Activate only the selected address. The host opens its form or conversation;
+/// text already following an address takes the ordinary submission path.
+fn choose_argument(session: &mut Session, client: &Client) {
+    if let Some(command) = session.chosen_action() {
+        send(session, client, command, true);
+    }
+}
+
 /// Enter sends the draft. With completions open, an exact command without
 /// choices is sent; anything else accepts the highlighted completion.
 fn submit(session: &mut Session, client: &Client) {
     // This draft already leaves as soon as it can.
     if session.sends_after_interruption() {
+        return;
+    }
+    if session.menu.visible && session.choosing_action_argument() {
+        choose_argument(session, client);
         return;
     }
     if session.menu.visible && !session.menu.entries.is_empty() {

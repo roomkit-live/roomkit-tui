@@ -1,5 +1,6 @@
 //! Pure UI state. Model settings and execution completion are host-confirmed.
 
+mod action_choices;
 mod actions;
 mod bounds;
 mod decisions;
@@ -113,6 +114,7 @@ pub struct Session {
     pub(crate) images: Vec<ImageUpload>,
     pub(crate) draft_epoch: u64,
     pub(crate) menu: CommandMenu,
+    action_choices: Option<action_choices::ActionChoices>,
     pub(crate) picker: Option<ChoicePicker>,
     pub(crate) application_info: Option<String>,
     pub(crate) background: Option<BackgroundStatus>,
@@ -186,6 +188,7 @@ impl Session {
             images: Vec::new(),
             draft_epoch: 0,
             menu: CommandMenu::default(),
+            action_choices: None,
             picker: None,
             application_info: None,
             background: None,

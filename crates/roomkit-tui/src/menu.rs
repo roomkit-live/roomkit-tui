@@ -24,6 +24,7 @@ pub struct CommandMenu {
     pub(crate) visible: bool,
     /// Whether the menu contains first-argument choices.
     pub(crate) arguments: bool,
+    pub(crate) empty_message: Option<String>,
     query: String,
     dismissed: Option<String>,
 }
@@ -63,6 +64,7 @@ impl CommandMenu {
             self.query = text.into();
         }
         self.entries.clear();
+        self.empty_message = None;
         self.visible = false;
         self.arguments = false;
         if cursor != text.len() || text.contains('\n') || commands.is_empty() {
@@ -112,6 +114,14 @@ impl CommandMenu {
         }
         self.selected = self.selected.min(self.entries.len().saturating_sub(1));
         self.visible = self.dismissed.as_deref() != Some(text);
+    }
+
+    pub(crate) fn show_action(&mut self, entries: Vec<MenuEntry>, empty_message: Option<String>) {
+        self.arguments = true;
+        self.visible = self.dismissed.as_ref() != Some(&self.query);
+        self.entries = entries;
+        self.empty_message = empty_message;
+        self.selected = self.selected.min(self.entries.len().saturating_sub(1));
     }
 
     /// Move the highlight, wrapping at either end of the result list.

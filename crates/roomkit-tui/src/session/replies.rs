@@ -18,6 +18,12 @@ impl Session {
         let Some(command) = self.pending.remove(&request) else {
             return;
         };
+        if matches!(command, Command::CompleteInput { .. }) {
+            if let Some(error) = error {
+                self.refuse_action_choices(request, &error.message);
+            }
+            return;
+        }
         let silent = self.answered_waited(request, error.as_ref(), at);
         let Some(error) = error else {
             self.on_accepted(&command);

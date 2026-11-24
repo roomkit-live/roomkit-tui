@@ -129,7 +129,9 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
                 self.answer_question(&request, question.clone(), answers.clone())?;
                 Ok(None)
             }
-            Command::Invoke { .. } | Command::SubmitForm { .. } => self.invoke(request),
+            Command::CompleteInput { .. } | Command::Invoke { .. } | Command::SubmitForm { .. } => {
+                self.invoke(request)
+            }
             Command::Submit { .. } | Command::SubmitImages { .. } | Command::Answer { .. } => {
                 self.submit(request)
             }
@@ -219,7 +221,8 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
             .session
             .channel
             .busy(self.session.config.conversation());
-        let allowed = matches!(&request.command, Command::Invoke { name, .. } if self.handler.allow_while_busy(name));
+        let allowed = matches!(&request.command, Command::CompleteInput { .. })
+            || matches!(&request.command, Command::Invoke { name, .. } if self.handler.allow_while_busy(name));
         if busy && !allowed {
             let error = Rejection::busy("A request is still executing");
             return self.reply(&request, Some(error)).map(|()| None);
@@ -376,6 +379,15 @@ impl<'h, S: ConversationStore, H: CommandHandler> View<'h, S, H> {
 /// Bounds and advertisement of an application command.
 fn invocation(request: &Request, config: &SessionConfig) -> Result<(), Rejection> {
     match &request.command {
+        Command::CompleteInput { name }
+            if config.advertises(name)
+                && config
+                    .input_actions
+                    .iter()
+                    .any(|a| a.complete && a.command == *name) =>
+        {
+            Ok(())
+        }
         Command::Invoke { name, arguments } if config.advertises(name) => {
             if arguments.len() > MAX_TEXT_BYTES {
                 return Err(Rejection::invalid("Command arguments exceed 64 KiB"));

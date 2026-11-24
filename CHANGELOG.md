@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Hosts can offer live first-argument choices for composer prefixes. Typing filters the list and Enter or Tab opens the selected choice.
+
 - Hosts can set additional emphasis for individual message bodies with
   `Renderers::set_message_emphasis`. It applies to live and restored messages
   in plain text and Markdown.

@@ -17,20 +17,24 @@ pub struct ChoicePicker {
     choices: Vec<Choice>,
 }
 
+pub(crate) fn bounded_choices(choices: Vec<Choice>) -> Vec<Choice> {
+    choices
+        .into_iter()
+        .take(500)
+        .filter(|choice| choice.value.len() <= 1024)
+        .map(|choice| {
+            Choice::new(choice.value, bounded(&choice.label, 256))
+                .with_description(bounded(&choice.description, 512))
+        })
+        .collect()
+}
+
 impl ChoicePicker {
     pub(crate) fn new(command: String, title: String, choices: Vec<Choice>) -> Self {
         Self {
             command,
             title: bounded(&title, 256),
-            choices: choices
-                .into_iter()
-                .take(500)
-                .filter(|choice| choice.value.len() <= 1024)
-                .map(|choice| {
-                    Choice::new(choice.value, bounded(&choice.label, 256))
-                        .with_description(bounded(&choice.description, 512))
-                })
-                .collect(),
+            choices: bounded_choices(choices),
             filter: Editor::default(),
             selected: 0,
         }

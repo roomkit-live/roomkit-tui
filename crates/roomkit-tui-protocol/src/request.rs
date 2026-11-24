@@ -36,6 +36,12 @@ pub enum Command {
         /// Agent selected in the current snapshot.
         agent: ActorId,
     },
+    /// Read the available first arguments of an advertised input action.
+    /// This request must not execute the action.
+    CompleteInput {
+        /// Command advertised by an input action with completion enabled.
+        name: String,
+    },
     /// Invoke one of the commands advertised by the host.
     Invoke {
         /// Name without its slash.

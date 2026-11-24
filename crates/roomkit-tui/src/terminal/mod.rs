@@ -132,6 +132,7 @@ impl View {
                 return Ok(reason);
             }
             let now = self.now();
+            self.redraw.dirty |= composer::request_choices(&mut self.session, &self.client);
             self.redraw.dirty |= composer::send_waiting(&mut self.session, &self.client, now);
             self.redraw.dirty |= self.clipboard.poll(&mut self.session, now);
             self.redraw.dirty |= self.session.expire_quit_hint(now);
