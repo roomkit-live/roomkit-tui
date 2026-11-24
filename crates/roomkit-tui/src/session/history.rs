@@ -130,8 +130,13 @@ impl Session {
         let position = self.streams(run, &message, position);
         let thought = position.and_then(|_| self.open_thought(run));
         self.update_text(run, &message, actor, text, position);
-        if let (Some(thought), Some(snapshot)) = (thought, &mut self.snapshot) {
-            place_reasoning(&mut snapshot.items, &thought, &message);
+        if let Some(snapshot) = &mut self.snapshot {
+            if let Some(thought) = thought {
+                place_reasoning(&mut snapshot.items, &thought, &message);
+            }
+            if trim_items(&mut snapshot.items, self.limits.items.get()) {
+                self.forget_missing_tools();
+            }
         }
     }
 
@@ -168,9 +173,6 @@ impl Session {
         let mut draft = Message::new(message.clone(), actor, bounded(text, limit));
         draft.position = position;
         insert(&mut snapshot.items, Item::Message(draft), handed);
-        if trim_items(&mut snapshot.items, self.limits.items.get()) {
-            self.forget_missing_tools();
-        }
     }
 
     /// `run` streams `draft`, until the draft is finalized.

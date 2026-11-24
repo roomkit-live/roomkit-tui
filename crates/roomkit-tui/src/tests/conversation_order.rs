@@ -175,3 +175,27 @@ fn reasoning_after_blank_positioned_text_still_precedes_the_first_word() {
     assert!(matches!(session.snapshot().map(|s| s.items.as_slice()),
         Some([Item::Thinking(_), Item::Message(answer), Item::Message(peer)]) if answer.text == " Waiting" && peer.text == "Peer"));
 }
+
+#[test]
+fn a_short_view_bounds_reasoning_after_placing_its_answer() {
+    let mut session = Session::new(crate::Limits {
+        items: std::num::NonZeroUsize::MIN.saturating_add(1),
+        ..Default::default()
+    });
+    session.apply(Event::Snapshot(snapshot()));
+    started(&mut session, "run");
+    publish(&mut session, stored("Peer", 4, None));
+    session.apply(Event::ThinkingDelta {
+        conversation: "room-a".into(),
+        actor: "agent".into(),
+        run: "run".into(),
+        text: "Considering".into(),
+    });
+    fragment(&mut session, 3, "Waiting");
+    session.apply(Event::MessageFinalized {
+        conversation: "room-a".into(),
+        draft: "draft".into(),
+        message: stored("Waiting", 5, Some(3)),
+    });
+    assert_eq!(texts(&session), ["Waiting", "Peer"]);
+}
