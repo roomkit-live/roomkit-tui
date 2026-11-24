@@ -74,7 +74,7 @@ pub(super) fn place(handed: Option<&Handed>, items: &[Item]) -> usize {
 }
 
 impl Session {
-    /// `id` was just handed to the turn: it goes below all the turn wrote.
+    /// Record unread input. Hosts without row positions place it after current output.
     pub(super) fn hold_unread(&mut self, id: &MessageId) {
         let Some(run) = self.handed.as_ref().map(|handed| handed.run.clone()) else {
             return;
@@ -93,10 +93,9 @@ impl Session {
         let Some(snapshot) = &mut self.snapshot else {
             return;
         };
-        let at = snapshot
-            .items
-            .iter()
-            .rposition(|old| matches!(old, Item::Message(m) if m.id == *id));
+        let at = snapshot.items.iter().rposition(
+            |old| matches!(old, Item::Message(m) if m.id == *id && m.position.is_none()),
+        );
         if let Some(at) = at {
             let message = snapshot.items.remove(at);
             snapshot.items.push(message);

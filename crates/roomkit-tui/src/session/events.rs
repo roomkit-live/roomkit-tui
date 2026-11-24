@@ -52,12 +52,6 @@ impl Session {
     /// say nothing: a model may write them between the two.
     fn reasoning_ended_by(&mut self, event: &Event, at: Option<Duration>) {
         match event {
-            Event::TextDelta {
-                conversation,
-                run,
-                text,
-                ..
-            } if !text.trim().is_empty() => self.run_thinking_ends(conversation, run, at),
             Event::Item {
                 conversation,
                 item: Item::Tool { run, .. },
@@ -109,7 +103,12 @@ impl Session {
                 actor,
                 run,
                 text,
-            } => self.on_text_delta(&conversation, message, actor, &run, &text, None),
+            } => {
+                self.on_text_delta(&conversation, message, actor, &run, &text, None);
+                if !text.trim().is_empty() {
+                    self.run_thinking_ends(&conversation, &run, at);
+                }
+            }
             Event::ThinkingDelta {
                 conversation,
                 actor,
