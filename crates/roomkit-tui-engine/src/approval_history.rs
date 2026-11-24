@@ -98,7 +98,11 @@ fn receipt_row(
 /// Persistence is deferred until the room lock is released. Present receipts
 /// beside their calls without rewriting the audit timeline or its timestamps.
 /// Call only with the authorized, visible rows of one room.
-pub(crate) fn replay_order(rows: Vec<RoomEvent>) -> Vec<RoomEvent> {
+pub(crate) fn replay_order(mut rows: Vec<RoomEvent>) -> Vec<RoomEvent> {
+    rows.sort_by_key(|row| {
+        roomkit_tui_protocol::RowPosition::stored(row.index, crate::projection::follows_index(row))
+            .key()
+    });
     let positions: Vec<_> = rows
         .iter()
         .enumerate()
@@ -205,6 +209,33 @@ mod tests {
             .iter()
             .map(|r| r.id.to_string())
             .collect()
+    }
+
+    #[test]
+    fn writing_order_uses_local_rows_and_preserves_unanchored_history() {
+        let mut question = row("question", "person", "turn", None);
+        let mut peer = row("peer", "screen", "turn", None);
+        let mut first = row("waiting", "agent", "turn", None);
+        let mut second = row("answer", "agent", "turn", None);
+        question.index = 0;
+        peer.index = 1;
+        first.index = 2;
+        second.index = 3;
+        let rows = || {
+            vec![
+                question.clone(),
+                peer.clone(),
+                first.clone(),
+                second.clone(),
+            ]
+        };
+        assert_eq!(ids(rows()), ["question", "peer", "waiting", "answer"]);
+        first.metadata.insert("follows_index".into(), json!(0));
+        second.metadata.insert("follows_index".into(), json!(2));
+        assert_eq!(
+            ids(vec![question, peer, first, second]),
+            ["question", "waiting", "peer", "answer"]
+        );
     }
 
     #[test]

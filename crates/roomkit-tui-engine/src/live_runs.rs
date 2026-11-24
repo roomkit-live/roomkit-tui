@@ -16,6 +16,7 @@ struct Draft {
     message: MessageId,
     actor: ActorId,
     text: String,
+    anchor: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -51,13 +52,22 @@ impl Runs<'_> {
                     });
                 }
             }
+            Event::DraftPosition {
+                message,
+                actor,
+                run,
+                follows_index,
+                ..
+            } => {
+                self.written(room, run, (message, actor), "", Some(*follows_index));
+            }
             Event::TextDelta {
                 message,
                 actor,
                 run,
                 text,
                 ..
-            } => self.written(room, run, (message, actor), text),
+            } => self.written(room, run, (message, actor), text, None),
             Event::MessageFinalized { draft, .. } => self.finalized(room, draft),
             Event::RunFinished { run, .. } => self.finished(room, run),
             _ => {}
@@ -70,6 +80,7 @@ impl Runs<'_> {
         run: &RunId,
         (message, actor): (&MessageId, &ActorId),
         text: &str,
+        anchor: Option<u64>,
     ) {
         let runs = self.0.get_mut(room).into_iter().flatten();
         let Some(live) = runs.into_iter().find(|live| live.run == *run) else {
@@ -79,10 +90,15 @@ impl Runs<'_> {
             message: message.clone(),
             actor: actor.clone(),
             text: String::new(),
+            anchor,
         });
         if draft.message != *message {
             draft.message = message.clone();
             draft.text.clear();
+            draft.anchor = None;
+        }
+        if anchor.is_some() {
+            draft.anchor = anchor;
         }
         draft.text.push_str(text);
         keep_the_end(&mut draft.text);
@@ -124,6 +140,15 @@ impl Runs<'_> {
                 answers: None,
             });
             if let Some(draft) = &live.draft {
+                if let Some(follows_index) = draft.anchor {
+                    events.push(Event::DraftPosition {
+                        conversation: room.into(),
+                        message: draft.message.clone(),
+                        actor: draft.actor.clone(),
+                        run: live.run.clone(),
+                        follows_index,
+                    });
+                }
                 events.push(Event::TextDelta {
                     conversation: room.into(),
                     message: draft.message.clone(),
@@ -188,10 +213,27 @@ mod tests {
         let live = LiveRuns::default();
         let mut runs = live.lock();
         runs.apply("room", &started("r1"));
+        runs.apply(
+            "room",
+            &Event::DraftPosition {
+                conversation: "room".into(),
+                message: "d0".into(),
+                actor: "agent".into(),
+                run: "r1".into(),
+                follows_index: 7,
+            },
+        );
         runs.apply("room", &delta("r1", "d0", "Hel"));
         runs.apply("room", &delta("r1", "d0", "lo"));
         let told = runs.catch_up("room");
         assert!(matches!(&told[0], Event::RunStarted { run, .. } if run.as_str() == "r1"));
+        assert!(matches!(
+            &told[1],
+            Event::DraftPosition {
+                follows_index: 7,
+                ..
+            }
+        ));
         assert_eq!(text_of(&told), [("d0".to_owned(), "Hello".to_owned())]);
         assert!(runs.catch_up("other").is_empty());
 

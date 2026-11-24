@@ -89,13 +89,27 @@ impl Session {
             } => self.on_operation_finished(&conversation, &operation, outcome),
             Event::Reply { request, error } => self.on_reply(request, error, at),
             Event::Notice { conversation, text } => self.on_notice(&conversation, &text),
+            Event::DraftPosition {
+                conversation,
+                message,
+                actor,
+                run,
+                follows_index,
+            } => self.on_text_delta(
+                &conversation,
+                message,
+                actor,
+                &run,
+                "",
+                Some(roomkit_tui_protocol::RowPosition::draft(follows_index)),
+            ),
             Event::TextDelta {
                 conversation,
                 message,
                 actor,
                 run,
                 text,
-            } => self.on_text_delta(&conversation, message, actor, &run, &text),
+            } => self.on_text_delta(&conversation, message, actor, &run, &text, None),
             Event::ThinkingDelta {
                 conversation,
                 actor,

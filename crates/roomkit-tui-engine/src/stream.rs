@@ -93,7 +93,13 @@ impl Channel for ConversationChannel {
         let requester = self.run_requester(trigger, &room);
         let agent = responder.as_str().to_owned();
         let approvals = self.approvals.start(&room, &agent, run.clone(), requester);
-        let mut reader = Reader::new(self, &room, &run, agent.as_str().into());
+        let mut reader = Reader::new(
+            self,
+            &room,
+            &run,
+            agent.as_str().into(),
+            projection::follows_index(&response),
+        );
         self.start_own_turn(trigger, &room, &run).await;
         reader.read_all(&mut stream).await;
         // Unanswered requests go before RunFinished; the room stays busy until
@@ -169,6 +175,7 @@ struct Reader<'a> {
     run: &'a RunId,
     actor: ActorId,
     segment: u64,
+    next_anchor: Option<u64>,
     outcome: RunOutcome,
     ending: Option<(RunOutcome, Option<&'static str>)>,
     failure: Option<ChannelError>,
@@ -182,6 +189,7 @@ impl<'a> Reader<'a> {
         room: &'a str,
         run: &'a RunId,
         actor: ActorId,
+        next_anchor: Option<u64>,
     ) -> Self {
         Self {
             channel,
@@ -189,6 +197,7 @@ impl<'a> Reader<'a> {
             run,
             actor,
             segment: 0,
+            next_anchor,
             outcome: RunOutcome::Completed,
             ending: None,
             failure: None,
@@ -248,6 +257,15 @@ impl<'a> Reader<'a> {
     }
 
     fn text(&mut self, text: String) {
+        if let Some(follows_index) = self.next_anchor.take() {
+            self.publish(Event::DraftPosition {
+                conversation: self.room.into(),
+                message: self.draft(),
+                actor: self.actor.clone(),
+                run: self.run.clone(),
+                follows_index,
+            });
+        }
         self.visible |= !text.trim().is_empty();
         self.publish(Event::TextDelta {
             conversation: self.room.into(),
@@ -259,6 +277,7 @@ impl<'a> Reader<'a> {
     }
 
     fn row(&mut self, row: &RoomEvent) {
+        self.next_anchor = Some(row.index);
         if let Some(event) = crate::measurements::event(row) {
             self.publish(event);
         }

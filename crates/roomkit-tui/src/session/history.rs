@@ -19,7 +19,7 @@ fn blank_draft_to_the_end(
     actor: &ActorId,
 ) {
     let blank = items.iter().rposition(|item| {
-        matches!(item, Item::Message(m) if m.id == *message && m.actor == *actor && m.text.trim().is_empty())
+        matches!(item, Item::Message(m) if m.position.is_none() && m.id == *message && m.actor == *actor && m.text.trim().is_empty())
     });
     if let Some(at) = blank {
         let draft = items.remove(at);
@@ -108,6 +108,7 @@ impl Session {
         actor: ActorId,
         run: &RunId,
         text: &str,
+        position: Option<roomkit_tui_protocol::RowPosition>,
     ) {
         if !self.is_current(conversation)
             || (self.last_run.as_ref() != Some(run) && !self.is_live(run))
@@ -134,8 +135,9 @@ impl Session {
             }
             return;
         }
-        let draft = Item::Message(Message::new(message, actor, bounded(text, limit)));
-        snapshot.items.insert(place(handed, &snapshot.items), draft);
+        let mut draft = Message::new(message, actor, bounded(text, limit));
+        draft.position = position;
+        insert(&mut snapshot.items, Item::Message(draft), handed);
         if trim_items(&mut snapshot.items, self.limits.items.get()) {
             self.forget_missing_tools();
         }
@@ -183,7 +185,14 @@ impl Session {
                 // already follows it.
                 Some(at) if !known => {
                     bound_item(&mut item, limit);
-                    snapshot.items[at] = item;
+                    replace(
+                        &mut snapshot.items,
+                        at,
+                        item,
+                        self.handed
+                            .as_ref()
+                            .filter(|h| Some(&h.run) == run.as_ref()),
+                    );
                     return;
                 }
                 Some(at) => {
@@ -214,13 +223,24 @@ impl Session {
         let Some(snapshot) = &mut self.snapshot else {
             return;
         };
-        if let Some(existing) = snapshot
+        if let Some(at) = snapshot
             .items
-            .iter_mut()
-            .rev()
-            .find(|old| old.same_identity(&item))
+            .iter()
+            .rposition(|old| old.same_identity(&item))
         {
-            *existing = item;
+            // A result updates the call where it began, including when live progress
+            // supplied its identity before a committed row supplied its index.
+            if let (Item::Tool { call, .. }, Some(position)) =
+                (&mut item, snapshot.items[at].position())
+            {
+                call.position = Some(position);
+            }
+            replace(
+                &mut snapshot.items,
+                at,
+                item,
+                self.handed.as_ref().filter(|_| of_turn),
+            );
             return;
         }
         if let Item::Tool { run, .. } = &item {
@@ -230,9 +250,43 @@ impl Session {
             return;
         };
         let handed = self.handed.as_ref().filter(|_| of_turn);
-        snapshot.items.insert(place(handed, &snapshot.items), item);
+        insert(&mut snapshot.items, item, handed);
         if trim_items(&mut snapshot.items, self.limits.items.get()) {
             self.forget_missing_tools();
         }
+    }
+}
+
+/// Objects without a host position keep the placement used for unread input.
+/// A positioned draft may precede a message delivered before its first word.
+fn insert(items: &mut Vec<Item>, item: Item, handed: Option<&Handed>) {
+    let end = place(handed, items);
+    let at = item
+        .position()
+        .and_then(|pos| {
+            items[..end]
+                .iter()
+                .position(|old| old.position().is_some_and(|p| p.key() > pos.key()))
+        })
+        .unwrap_or(end);
+    items.insert(at, item);
+}
+
+/// Reconcile at the existing location unless the committed position corrects
+/// a draft's estimate (for example after a tool row hidden from its stream).
+fn replace(items: &mut Vec<Item>, at: usize, item: Item, handed: Option<&Handed>) {
+    let misplaced = item.position().is_some_and(|pos| {
+        items[..at]
+            .iter()
+            .any(|old| old.position().is_some_and(|p| p.key() > pos.key()))
+            || items[at + 1..]
+                .iter()
+                .any(|old| old.position().is_some_and(|p| p.key() < pos.key()))
+    });
+    if misplaced {
+        items.remove(at);
+        insert(items, item, handed);
+    } else {
+        items[at] = item;
     }
 }

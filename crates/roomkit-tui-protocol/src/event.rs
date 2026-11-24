@@ -159,6 +159,19 @@ pub enum Event {
         /// Why the request was refused; `None` means accepted.
         error: Option<Rejection>,
     },
+    /// The row after which a draft is being written. Sent once before its deltas.
+    DraftPosition {
+        /// Target conversation.
+        conversation: ConversationId,
+        /// Draft extended by the following deltas.
+        message: MessageId,
+        /// Author of the draft.
+        actor: ActorId,
+        /// Owning execution.
+        run: RunId,
+        /// Last row the writer followed.
+        follows_index: u64,
+    },
     /// Append text to an identified in-progress message.
     TextDelta {
         /// Target conversation.

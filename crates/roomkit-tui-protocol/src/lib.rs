@@ -26,7 +26,9 @@ mod sidebar;
 mod validity;
 
 pub use commands::{Choice, CommandSpec, InputAction, ModeState};
-pub use conversation::{Actor, Item, Message, Snapshot, Thinking, ToolCall, ToolState};
+pub use conversation::{
+    Actor, Item, Message, RowPosition, Snapshot, Thinking, ToolCall, ToolState,
+};
 pub use event::{Event, RunOutcome};
 pub use forms::{FieldKind, FormField, FormSpec, FormValues};
 pub use ids::{

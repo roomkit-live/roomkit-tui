@@ -28,6 +28,37 @@ impl Actor {
     }
 }
 
+/// Where a stored row or an unfinished text belongs in a conversation.
+/// Rows sharing an anchor are ordered by their storage index; drafts follow them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RowPosition {
+    anchor: u64,
+    index: Option<u64>,
+}
+
+impl RowPosition {
+    /// A committed row, optionally anchored to the row preceding its writing.
+    pub fn stored(index: u64, follows_index: Option<u64>) -> Self {
+        Self {
+            anchor: follows_index.unwrap_or(index),
+            index: Some(index),
+        }
+    }
+
+    /// Text already being written, before its storage index exists.
+    pub fn draft(follows_index: u64) -> Self {
+        Self {
+            anchor: follows_index,
+            index: None,
+        }
+    }
+
+    /// The host's reading order, independent of timestamps and arrival order.
+    pub fn key(self) -> (u64, u64) {
+        (self.anchor, self.index.unwrap_or(u64::MAX))
+    }
+}
+
 /// A rendered conversation message. Only the host determines its author.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -36,6 +67,9 @@ pub struct Message {
     pub id: MessageId,
     /// Author identity.
     pub actor: ActorId,
+    /// Position supplied by a host with indexed conversation history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<RowPosition>,
     /// Message body; terminals must treat control characters as untrusted.
     pub text: String,
 }
@@ -50,6 +84,7 @@ impl Message {
         Self {
             id: id.into(),
             actor: actor.into(),
+            position: None,
             text: text.into(),
         }
     }
@@ -93,6 +128,9 @@ impl ToolState {
 pub struct ToolCall {
     /// Identity scoped to its run.
     pub id: CallId,
+    /// Position of the stored call, when reported by the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<RowPosition>,
     /// Stable tool name used to select an optional presentation.
     pub name: String,
     /// Actual execution arguments.
@@ -122,6 +160,7 @@ impl ToolCall {
         Self {
             id: id.into(),
             name: name.into(),
+            position: None,
             arguments,
             intent: None,
             state,
@@ -218,6 +257,15 @@ pub enum Item {
 }
 
 impl Item {
+    /// Position supplied for this item, when it corresponds to an indexed row.
+    pub fn position(&self) -> Option<RowPosition> {
+        match self {
+            Self::Message(message) => message.position,
+            Self::Tool { call, .. } => call.position,
+            _ => None,
+        }
+    }
+
     /// Whether both items have the same scoped identity, so that `other`
     /// replaces `self` in a conversation.
     pub fn same_identity(&self, other: &Self) -> bool {
