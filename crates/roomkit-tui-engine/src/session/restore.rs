@@ -54,8 +54,15 @@ pub(crate) async fn snapshot<S: ConversationStore>(
     context.recent_events = rows;
     let mut history = History::default();
     let visible = roomkit::visible_events(&context, channel.id());
+    if let Some(latest) = visible
+        .iter()
+        .filter(|row| measurements::holds_a_turn(row, config))
+        .max_by_key(|row| row.index)
+    {
+        (history.context, history.usage) = measurements::restore(latest, config);
+    }
     for row in approval_history::replay_order(visible) {
-        history.add(&row, config);
+        history.add(&row);
     }
     for receipt in channel.approvals.receipts(config.conversation()) {
         projection::upsert(&mut history.items, Item::Approval(receipt.decision));
@@ -130,7 +137,7 @@ struct History {
 }
 
 impl History {
-    fn add(&mut self, row: &RoomEvent, config: &SessionConfig) {
+    fn add(&mut self, row: &RoomEvent) {
         let actor = projection::actor(row);
         self.names.entry(actor).or_insert_with(|| {
             row.source
@@ -138,12 +145,6 @@ impl History {
                 .as_ref()
                 .map_or_else(|| row.source.channel_id.to_string(), ToString::to_string)
         });
-        // A person's message says nothing of the measure; an agent's replaces
-        // it, even with none, and so does any row of its that holds a turn's
-        // record, one that wrote no message: no stale measure reads as current.
-        if measurements::holds_a_turn(row, config) {
-            (self.context, self.usage) = measurements::restore(row, config);
-        }
         if let Some(item) = projection::item(row) {
             projection::upsert(&mut self.items, item);
         }

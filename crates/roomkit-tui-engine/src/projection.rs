@@ -137,9 +137,12 @@ pub(crate) fn item(row: &RoomEvent) -> Option<Item> {
     })
 }
 
-pub(crate) fn upsert(items: &mut Vec<Item>, item: Item) {
+pub(crate) fn upsert(items: &mut Vec<Item>, mut item: Item) {
     match items.iter_mut().find(|old| old.same_identity(&item)) {
-        Some(old) => *old = item,
+        Some(old) => {
+            item.preserve_call_position(old);
+            *old = item;
+        }
         None => items.push(item),
     }
 }
@@ -147,6 +150,26 @@ pub(crate) fn upsert(items: &mut Vec<Item>, item: Item) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_restored_tool_keeps_its_start_position_through_its_result() {
+        let tool = |index, state| {
+            let mut call = ToolCall::new("call", "test", Value::Null, state);
+            call.position = Some(roomkit_tui_protocol::RowPosition::stored(index, None));
+            Item::Tool {
+                actor: "agent".into(),
+                run: "run".into(),
+                call,
+            }
+        };
+        let start = tool(2, ToolState::Pending);
+        let position = start.position();
+        let mut items = vec![start];
+        upsert(&mut items, tool(4, ToolState::Succeeded));
+        assert!(
+            matches!(items.as_slice(), [Item::Tool { call, .. }] if call.position == position && call.state == ToolState::Succeeded)
+        );
+    }
 
     #[test]
     fn a_short_run_id_is_kept_as_written() {

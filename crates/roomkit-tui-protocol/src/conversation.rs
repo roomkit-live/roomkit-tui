@@ -266,6 +266,13 @@ impl Item {
         }
     }
 
+    /// Keep the position where the same tool call first appeared as its state changes.
+    pub fn preserve_call_position(&mut self, previous: &Self) {
+        if let (Self::Tool { call, .. }, Self::Tool { call: old, .. }) = (self, previous) {
+            call.position = old.position.or(call.position);
+        }
+    }
+
     /// Whether both items have the same scoped identity, so that `other`
     /// replaces `self` in a conversation.
     pub fn same_identity(&self, other: &Self) -> bool {
