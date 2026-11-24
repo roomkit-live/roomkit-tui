@@ -123,12 +123,14 @@ fn a_positioned_call_follows_an_earlier_indexed_steered_message() {
     let mut session = session();
     started(&mut session, "run");
     publish(&mut session, stored("Steered", 4, None));
+    // A call can be published while the engine is still handing the message over.
+    indexed_tool(&mut session, 5);
     session.apply(Event::MessageSteered {
         conversation: "room-a".into(),
         message: "Steered".into(),
         run: "run".into(),
     });
-    indexed_tool(&mut session, 5);
+    publish(&mut session, stored("Steered", 4, None));
     assert!(matches!(
         session.snapshot().map(|s| s.items.as_slice()),
         Some([Item::Message(_), Item::Tool { .. }])
@@ -149,4 +151,27 @@ fn reasoning_stays_before_its_answer_when_a_peer_arrived_first() {
     fragment(&mut session, 3, "Waiting");
     assert!(matches!(session.snapshot().map(|s| s.items.as_slice()),
         Some([Item::Thinking(_), Item::Message(answer), Item::Message(peer)]) if answer.text == "Waiting" && peer.text == "Peer"));
+}
+
+#[test]
+fn reasoning_after_blank_positioned_text_still_precedes_the_first_word() {
+    let mut session = session();
+    started(&mut session, "run");
+    publish(&mut session, stored("Peer", 4, None));
+    fragment(&mut session, 3, " ");
+    session.apply(Event::ThinkingDelta {
+        conversation: "room-a".into(),
+        actor: "agent".into(),
+        run: "run".into(),
+        text: "Considering".into(),
+    });
+    session.apply(Event::TextDelta {
+        conversation: "room-a".into(),
+        message: "draft".into(),
+        actor: "agent".into(),
+        run: "run".into(),
+        text: "Waiting".into(),
+    });
+    assert!(matches!(session.snapshot().map(|s| s.items.as_slice()),
+        Some([Item::Thinking(_), Item::Message(answer), Item::Message(peer)]) if answer.text == " Waiting" && peer.text == "Peer"));
 }
