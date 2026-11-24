@@ -62,7 +62,7 @@ impl Session {
         }
     }
 
-    fn open_thought(&self, run: &RunId) -> Option<CallId> {
+    pub(super) fn open_thought(&self, run: &RunId) -> Option<CallId> {
         self.thoughts
             .blocks
             .iter()

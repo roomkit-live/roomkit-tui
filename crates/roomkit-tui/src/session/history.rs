@@ -1,13 +1,24 @@
 //! History: the snapshot, streamed text and items. Run boundaries are in
 //! `runs`.
 
-use roomkit_tui_protocol::{ActorId, ConversationId, Item, Message, MessageId, RunId, Snapshot};
+use roomkit_tui_protocol::{
+    ActorId, ConversationId, Item, Message, MessageId, RowPosition, RunId, Snapshot,
+};
 
 use super::bounds::{bound_in_place, bound_item, bound_labels, bounded, trim_items};
+use super::history_order::{insert, place_reasoning, replace};
 use super::measures::ContextGauge;
 use super::steering::{Handed, remember};
 use super::unread::{is_output_of, place};
 use super::{ObservedRun, Session};
+
+/// A draft can outlive its row in a bounded view.
+#[derive(Debug)]
+pub(super) struct StreamingDraft {
+    message: MessageId,
+    run: RunId,
+    position: Option<RowPosition>,
+}
 
 /// Blank so far, as what a model streams before a tool call, a draft takes no
 /// room on screen: its text starts where the turn's output ends, below what
@@ -108,7 +119,7 @@ impl Session {
         actor: ActorId,
         run: &RunId,
         text: &str,
-        position: Option<roomkit_tui_protocol::RowPosition>,
+        position: Option<RowPosition>,
     ) {
         if !self.is_current(conversation)
             || (self.last_run.as_ref() != Some(run) && !self.is_live(run))
@@ -116,26 +127,45 @@ impl Session {
             return;
         }
         self.text_comes(run);
-        self.streams(run, &message);
+        let position = self.streams(run, &message, position);
+        let thought = position.and_then(|_| self.open_thought(run));
+        self.update_text(run, &message, actor, text, position);
+        if let (Some(thought), Some(snapshot)) = (thought, &mut self.snapshot) {
+            place_reasoning(&mut snapshot.items, &thought, &message);
+        }
+    }
+
+    fn update_text(
+        &mut self,
+        run: &RunId,
+        message: &MessageId,
+        actor: ActorId,
+        text: &str,
+        position: Option<RowPosition>,
+    ) {
         let limit = self.limits.text_bytes.get();
         let Some(snapshot) = &mut self.snapshot else {
             return;
         };
         let handed = self.handed.as_ref().filter(|handed| handed.run == *run);
-        blank_draft_to_the_end(&mut snapshot.items, handed, &message, &actor);
+        blank_draft_to_the_end(&mut snapshot.items, handed, message, &actor);
         // The streamed message is almost always the newest item.
-        let existing = snapshot.items.iter_mut().rev().find_map(|item| match item {
-            Item::Message(m) if m.id == message && m.actor == actor => Some(m),
-            _ => None,
-        });
-        if let Some(existing) = existing {
+        if let Some(at) = snapshot.items.iter().rposition(
+            |item| matches!(item, Item::Message(m) if m.id == *message && m.actor == actor),
+        ) && let Item::Message(existing) = &mut snapshot.items[at]
+        {
             if existing.text.len() < limit {
                 existing.text.push_str(text);
                 bound_in_place(&mut existing.text, limit);
             }
+            if position.is_some() && position != existing.position {
+                existing.position = position;
+                let item = snapshot.items.remove(at);
+                insert(&mut snapshot.items, item, handed);
+            }
             return;
         }
-        let mut draft = Message::new(message, actor, bounded(text, limit));
+        let mut draft = Message::new(message.clone(), actor, bounded(text, limit));
         draft.position = position;
         insert(&mut snapshot.items, Item::Message(draft), handed);
         if trim_items(&mut snapshot.items, self.limits.items.get()) {
@@ -144,16 +174,38 @@ impl Session {
     }
 
     /// `run` streams `draft`, until the draft is finalized.
-    fn streams(&mut self, run: &RunId, draft: &MessageId) {
-        if !self.drafts.iter().any(|(id, _)| id == draft) {
-            remember(&mut self.drafts, (draft.clone(), run.clone()));
+    fn streams(
+        &mut self,
+        run: &RunId,
+        message: &MessageId,
+        position: Option<RowPosition>,
+    ) -> Option<RowPosition> {
+        if let Some(draft) = self
+            .drafts
+            .iter_mut()
+            .find(|draft| draft.message == *message)
+        {
+            draft.position = position.or(draft.position);
+            return draft.position;
         }
+        remember(
+            &mut self.drafts,
+            StreamingDraft {
+                message: message.clone(),
+                run: run.clone(),
+                position,
+            },
+        );
+        position
     }
 
     /// The run that streamed `draft`, now finalized.
     fn finalizes(&mut self, draft: &MessageId) -> Option<RunId> {
-        let at = self.drafts.iter().position(|(id, _)| id == draft)?;
-        Some(self.drafts.remove(at).1)
+        let at = self
+            .drafts
+            .iter()
+            .position(|entry| entry.message == *draft)?;
+        Some(self.drafts.remove(at).run)
     }
 
     pub(super) fn on_message_finalized(
@@ -228,13 +280,7 @@ impl Session {
             .iter()
             .rposition(|old| old.same_identity(&item))
         {
-            // A result updates the call where it began, including when live progress
-            // supplied its identity before a committed row supplied its index.
-            if let (Item::Tool { call, .. }, Some(position)) =
-                (&mut item, snapshot.items[at].position())
-            {
-                call.position = Some(position);
-            }
+            item.preserve_call_position(&snapshot.items[at]);
             replace(
                 &mut snapshot.items,
                 at,
@@ -254,39 +300,5 @@ impl Session {
         if trim_items(&mut snapshot.items, self.limits.items.get()) {
             self.forget_missing_tools();
         }
-    }
-}
-
-/// Objects without a host position keep the placement used for unread input.
-/// A positioned draft may precede a message delivered before its first word.
-fn insert(items: &mut Vec<Item>, item: Item, handed: Option<&Handed>) {
-    let end = place(handed, items);
-    let at = item
-        .position()
-        .and_then(|pos| {
-            items[..end]
-                .iter()
-                .position(|old| old.position().is_some_and(|p| p.key() > pos.key()))
-        })
-        .unwrap_or(end);
-    items.insert(at, item);
-}
-
-/// Reconcile at the existing location unless the committed position corrects
-/// a draft's estimate (for example after a tool row hidden from its stream).
-fn replace(items: &mut Vec<Item>, at: usize, item: Item, handed: Option<&Handed>) {
-    let misplaced = item.position().is_some_and(|pos| {
-        items[..at]
-            .iter()
-            .any(|old| old.position().is_some_and(|p| p.key() > pos.key()))
-            || items[at + 1..]
-                .iter()
-                .any(|old| old.position().is_some_and(|p| p.key() < pos.key()))
-    });
-    if misplaced {
-        items.remove(at);
-        insert(items, item, handed);
-    } else {
-        items[at] = item;
     }
 }

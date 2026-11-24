@@ -6,6 +6,7 @@ mod decisions;
 mod events;
 mod execution;
 mod history;
+mod history_order;
 mod input;
 mod labels;
 mod measures;
@@ -151,7 +152,7 @@ pub struct Session {
     answered: Vec<MessageId>,
     /// Drafts streamed and not finalized yet, oldest first, with the run
     /// that streams each.
-    drafts: Vec<(MessageId, RunId)>,
+    drafts: Vec<history::StreamingDraft>,
     interrupting: Option<RunId>,
     /// What was handed to the turn under way, which Ctrl+S may cut.
     handed: Option<steering::Handed>,
