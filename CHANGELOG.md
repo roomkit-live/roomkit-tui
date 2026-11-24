@@ -11,6 +11,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Hosts can set additional emphasis for individual message bodies with
   `Renderers::set_message_emphasis`. It applies to live and restored messages
   in plain text and Markdown.
+- Streamed messages keep their writing order when another message arrives before
+  the first word. Attaching during the turn and reopening history use the same
+  row positions supplied by the host.
 
 - `SessionConfig::can_steer_any_turn`, false by default: a message sent while
   the agent's turn runs goes to that turn whoever wrote the message the turn

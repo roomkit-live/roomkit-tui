@@ -6,6 +6,7 @@ mod bounds;
 mod cards;
 mod commands;
 mod composer;
+mod conversation_order;
 mod estimates;
 mod forms;
 mod layout;

@@ -64,6 +64,10 @@ pub(crate) fn actor(row: &RoomEvent) -> ActorId {
     }
 }
 
+pub(crate) fn follows_index(row: &RoomEvent) -> Option<u64> {
+    row.metadata.get("follows_index").and_then(Value::as_u64)
+}
+
 pub(crate) fn item(row: &RoomEvent) -> Option<Item> {
     if row.r#type == EventType::Observation
         && let Some(record) = row.metadata.get(crate::approval_history::RECEIPT_KEY)
@@ -104,6 +108,7 @@ pub(crate) fn item(row: &RoomEvent) -> Option<Item> {
             state,
         )
         .with_text(text);
+        tool.position = Some(roomkit_tui_protocol::RowPosition::stored(row.index, None));
         tool.intent.clone_from(&call.intent);
         // Preserve only authoritative structured content; never recover it by
         // parsing model text or observing pre-policy tool output.
@@ -119,11 +124,16 @@ pub(crate) fn item(row: &RoomEvent) -> Option<Item> {
     // roomkit-core exposes it (roomkit keeps it private, as Python does);
     // a copy here would drift from it silently, a pin bump fails loudly.
     matches!(row.r#type, EventType::Message | EventType::System).then(|| {
-        Item::Message(Message::new(
+        let mut message = Message::new(
             MessageId::new(row.id.to_string()),
             actor(row),
             roomkit_core::rules::transcoding::text_of(&row.content),
-        ))
+        );
+        message.position = Some(roomkit_tui_protocol::RowPosition::stored(
+            row.index,
+            follows_index(row),
+        ));
+        Item::Message(message)
     })
 }
 
