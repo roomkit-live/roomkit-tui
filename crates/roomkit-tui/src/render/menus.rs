@@ -109,16 +109,14 @@ pub(super) fn menu(session: &Session, cols: usize, height: usize) -> Vec<Line> {
             .min(cols / 3);
         for (index, entry) in menu.entries.iter().enumerate().skip(start).take(count) {
             let chosen = index == menu.selected;
-            let text = if cols >= 60 {
-                format!(
-                    "{} {}  {}",
-                    if chosen { "›" } else { " " },
-                    pad(&entry.label, name_width),
-                    entry.description
-                )
-            } else {
-                format!("{} {}", if chosen { "›" } else { " " }, entry.label)
-            };
+            let marker = if chosen { "›" } else { " " };
+            let text = entry_text(
+                entry,
+                marker,
+                name_width,
+                cols,
+                session.choosing_action_argument(),
+            );
             lines.push(panel(
                 &text,
                 cols,
@@ -141,4 +139,27 @@ pub(super) fn menu(session: &Session, cols: usize, height: usize) -> Vec<Line> {
         Tone::Border,
     ));
     lines
+}
+
+fn entry_text(
+    entry: &crate::MenuEntry,
+    marker: &str,
+    aligned_width: usize,
+    cols: usize,
+    action_choice: bool,
+) -> String {
+    if cols < 60 {
+        return format!("{marker} {}", entry.label);
+    }
+    // A host choice may differ from another one only at the end of its label.
+    let width = if action_choice {
+        aligned_width.max(sanitize(&entry.label).width()).min(cols)
+    } else {
+        aligned_width
+    };
+    format!(
+        "{marker} {}  {}",
+        pad(&entry.label, width),
+        entry.description
+    )
 }

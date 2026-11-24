@@ -8,12 +8,12 @@ pub struct MenuEntry {
     pub label: String,
     /// Help supplied by the application.
     pub description: String,
-    /// Text inserted into the composer, never directly executed.
+    /// Completion text or the exact host argument for an input action.
     pub replacement: String,
     pub(crate) argument: bool,
 }
 
-/// A filtered command/choice menu. Selecting an entry only edits the draft.
+/// A filtered menu of command completions or host input-action choices.
 #[derive(Clone, Debug, Default)]
 pub struct CommandMenu {
     /// Current matches in host order.

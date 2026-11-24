@@ -84,3 +84,18 @@ fn escaped_and_mid_sentence_prefixes_are_literal_and_late_choices_preserve_the_d
     assert!(!session.menu().is_visible());
     assert_eq!(session.draft(), "@");
 }
+
+#[test]
+fn complete_action_labels_remain_visible_on_an_eighty_column_terminal() {
+    let (mut session, client, host) = action_session();
+    session.set_draft("@");
+    assert!(composer::request_choices(&mut session, &client));
+    let label = "Choose workspace · project · secondary profile";
+    session.apply(Event::InputChoices {
+        conversation: "room".into(),
+        request: host.try_recv().unwrap().id,
+        choices: vec![Choice::new("id:2", label).with_description("Secondary")],
+    });
+    let frame = crate::render::screen(&session, 80, 24, &Default::default());
+    assert!(frame.lines.iter().any(|line| line.contains(label)));
+}
