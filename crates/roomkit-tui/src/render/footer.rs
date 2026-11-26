@@ -141,9 +141,9 @@ pub(super) fn settings(
         if let Some(model) = &snapshot.model {
             parts.push(span(
                 if compact {
-                    format!(" · {}", model.model)
+                    format!(" · {}", model.label())
                 } else {
-                    format!(" · {}/{}", model.provider, model.model)
+                    format!(" · {}/{}", model.provider, model.label())
                 },
                 Tone::Accent,
             ));

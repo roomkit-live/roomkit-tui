@@ -163,7 +163,7 @@ fn agent(session: &Session) -> Vec<Line> {
         Tone::Text,
     )];
     if let Some(model) = &snapshot.model {
-        lines.push(line(&model.model, Tone::Accent));
+        lines.push(line(model.label(), Tone::Accent));
         let effort = model.effort.as_deref().unwrap_or("n/a");
         lines.push(line(format!("Effort: {effort}"), Tone::Muted));
     }

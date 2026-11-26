@@ -11,6 +11,9 @@ pub struct ModelInfo {
     pub provider: String,
     /// Provider-specific model identity.
     pub model: String,
+    /// Optional name for display. Usage reports and commands keep the model identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     /// Effective effort, if supported and known. `None` displays as unavailable.
     pub effort: Option<String>,
 }
@@ -21,8 +24,24 @@ impl ModelInfo {
         Self {
             provider: provider.into(),
             model: model.into(),
+            display_name: None,
             effort: None,
         }
+    }
+
+    /// Set the name shown in the terminal.
+    #[must_use]
+    pub fn with_display_name(mut self, name: impl Into<String>) -> Self {
+        self.display_name = Some(name.into());
+        self
+    }
+
+    /// The name shown in the terminal, falling back to the provider's model ID.
+    pub fn label(&self) -> &str {
+        self.display_name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or(&self.model)
     }
 
     /// Set the effective effort.

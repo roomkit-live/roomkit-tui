@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Hosts can supply a display name for the active model in the sidebar and footer. Usage reports still use its provider ID.
+
 - Hosts can offer live first-argument choices for composer prefixes. Typing filters the list and Enter or Tab opens the selected choice.
 
 - Hosts can set additional emphasis for individual message bodies with

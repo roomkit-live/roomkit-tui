@@ -141,3 +141,41 @@ fn sidebar_reflows_live_usage_and_keeps_keyboard_selection_visible() {
         }
     }
 }
+
+#[test]
+fn a_models_display_name_is_shown_and_usage_keeps_its_id() {
+    let mut s = session();
+    s.apply(Event::ModelChanged {
+        conversation: "room-a".into(),
+        model: ModelInfo::new("local", "pinned-identity").with_display_name("Example Q6"),
+    });
+    s.apply(Event::SidebarChanged {
+        conversation: "room-a".into(),
+        sidebar: Some(sidebar_spec()),
+    });
+    for visible in [true, false] {
+        s.sidebar_visible = Some(visible);
+        let frame = render::screen(&s, 140, 30, &Renderers::default());
+        let text = frame.lines.join("\n");
+        assert!(text.contains("Example Q6"), "{text}");
+        assert!(!text.contains("pinned-identity"));
+    }
+    started(&mut s, "r");
+    s.apply(Event::ContextUpdated {
+        conversation: "room-a".into(),
+        run: "r".into(),
+        provider: "local".into(),
+        model: "pinned-identity".into(),
+        usage: ContextUsage::new(123),
+    });
+    assert_eq!(
+        s.snapshot
+            .as_ref()
+            .unwrap()
+            .context
+            .as_ref()
+            .unwrap()
+            .tokens,
+        123
+    );
+}

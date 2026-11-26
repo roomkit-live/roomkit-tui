@@ -37,6 +37,9 @@ pub(super) fn bound_labels(snapshot: &mut Snapshot) {
 pub(super) fn bound_model(model: &mut ModelInfo) {
     bound_in_place(&mut model.provider, MAX_LABEL_BYTES);
     bound_in_place(&mut model.model, MAX_LABEL_BYTES);
+    if let Some(label) = &mut model.display_name {
+        bound_in_place(label, MAX_LABEL_BYTES);
+    }
     if let Some(effort) = &mut model.effort {
         bound_in_place(effort, MAX_LABEL_BYTES);
     }
