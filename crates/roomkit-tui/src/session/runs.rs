@@ -180,7 +180,7 @@ impl Session {
 
     /// Usage and context describe the latest run.
     fn measure_latest_run(&mut self) {
-        self.gauge.exceeded = false;
+        self.gauge.refusal = super::measures::Refusal::None;
         if let Some(snapshot) = &mut self.snapshot {
             if let Some(previous) = snapshot.context.take() {
                 self.gauge.previous = Some(previous);

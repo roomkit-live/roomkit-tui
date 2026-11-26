@@ -89,9 +89,14 @@ impl Session {
             .or_else(|| self.gauge.previous.as_ref().map(|usage| (usage, true)))
     }
 
+    /// Why the latest run failed, even if compaction has since updated its estimate.
+    pub(crate) fn run_exceeded_context(&self) -> bool {
+        self.gauge.refusal != super::measures::Refusal::None
+    }
+
     /// Whether the latest run's request was refused past the model's context
     /// window: no measurement of it will come.
     pub(crate) fn context_exceeded(&self) -> bool {
-        self.gauge.exceeded
+        self.gauge.refusal == super::measures::Refusal::Current
     }
 }

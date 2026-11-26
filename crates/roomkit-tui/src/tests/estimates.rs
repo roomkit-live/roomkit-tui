@@ -236,6 +236,9 @@ fn failed_run_keeps_its_context_limit_and_host_action_in_the_status() {
         outcome: RunOutcome::Failed,
     });
     assert!(footer(&session).contains("Context limit exceeded · Open model settings"));
+    session.apply(estimate(15_000));
+    assert!(!session.context_exceeded());
+    assert!(footer(&session).contains("Context limit exceeded · Open model settings"));
     started(&mut session, "other");
     session.apply(Event::RunFinished {
         conversation: "room-a".into(),

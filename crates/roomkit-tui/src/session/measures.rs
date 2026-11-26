@@ -8,6 +8,15 @@ use roomkit_tui_protocol::{
 use super::Session;
 use super::bounds::{bound_in_place, bound_model, bounded};
 
+/// A newer context estimate updates the gauge while the last run keeps its failure reason.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Refusal {
+    #[default]
+    None,
+    Current,
+    BeforeEstimate,
+}
+
 /// What the context gauge keeps beside the snapshot's measurement. A new
 /// snapshot, or another model, starts it over.
 #[derive(Debug, Default)]
@@ -16,7 +25,7 @@ pub(super) struct ContextGauge {
     /// measures.
     pub(super) previous: Option<ContextUsage>,
     /// The latest run's request was refused past the model's context window.
-    pub(super) exceeded: bool,
+    pub(super) refusal: Refusal,
     /// The host's estimate this view already knows, shown or measured over:
     /// sent again, it is not news.
     pub(super) known_estimate: Option<ContextUsage>,
@@ -145,7 +154,7 @@ impl Session {
     fn on_context_exceeded(&mut self, conversation: &ConversationId, run: &RunId) {
         if self.is_current(conversation) && self.last_run.as_ref() == Some(run) {
             self.measured_over_estimate();
-            self.gauge.exceeded = true;
+            self.gauge.refusal = Refusal::Current;
         }
     }
 
@@ -180,7 +189,9 @@ impl Session {
         }
         // The estimate postdates the refused request: the refusal no longer
         // describes what the gauge shows.
-        self.gauge.exceeded = false;
+        if self.gauge.refusal == Refusal::Current {
+            self.gauge.refusal = Refusal::BeforeEstimate;
+        }
         self.gauge.known_estimate = Some(usage);
     }
 

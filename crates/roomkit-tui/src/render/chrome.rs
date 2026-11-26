@@ -150,7 +150,7 @@ fn status(view: &View<'_>) -> Line {
         match session.execution_outcome() {
             Some(RunOutcome::Completed) => ("✓ Execution Completed".into(), Tone::Success),
             Some(RunOutcome::Interrupted) => ("− Execution Interrupted".into(), Tone::Warning),
-            Some(RunOutcome::Failed) if session.context_exceeded() => {
+            Some(RunOutcome::Failed) if session.run_exceeded_context() => {
                 let mut label = String::from("× Context limit exceeded");
                 if let Some(hint) = session
                     .snapshot
