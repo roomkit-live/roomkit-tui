@@ -218,3 +218,30 @@ fn an_estimate_seen_during_a_run_gives_way_to_the_run_s_record() {
     session.apply(estimate(92_000));
     assert_eq!(shown(&session), Some((147_015, false)));
 }
+
+#[test]
+fn failed_run_keeps_its_context_limit_and_host_action_in_the_status() {
+    let mut snapshot = measured_before();
+    snapshot.model.as_mut().unwrap().context_limit_hint = Some("Open model settings".into());
+    let mut session = Session::default();
+    session.apply(Event::Snapshot(snapshot));
+    started(&mut session, "refused");
+    session.apply(Event::ContextExceeded {
+        conversation: "room-a".into(),
+        run: "refused".into(),
+    });
+    session.apply(Event::RunFinished {
+        conversation: "room-a".into(),
+        run: "refused".into(),
+        outcome: RunOutcome::Failed,
+    });
+    assert!(footer(&session).contains("Context limit exceeded · Open model settings"));
+    started(&mut session, "other");
+    session.apply(Event::RunFinished {
+        conversation: "room-a".into(),
+        run: "other".into(),
+        outcome: RunOutcome::Failed,
+    });
+    assert!(footer(&session).contains("Execution Failed"));
+    assert!(!footer(&session).contains("Open model settings"));
+}

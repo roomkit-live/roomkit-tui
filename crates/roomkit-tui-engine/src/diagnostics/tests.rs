@@ -328,3 +328,22 @@ fn a_chatgpt_usage_code_does_not_override_access_or_server_failures() {
         assert_eq!(super::Diagnostic::classify(&raw).code, code);
     }
 }
+
+#[test]
+fn llama_cpp_context_refusals_are_classified_in_views_and_logs() {
+    let raw = "llamacpp (400): the provider answered HTTP 400 (exceed_context_size_error, 400): request (17969 tokens) exceeds the available context size (16384 tokens), try increasing it";
+    let diagnostic = super::Diagnostic::classify(raw);
+    assert_eq!(diagnostic.code, "context_limit");
+    assert_eq!(diagnostic.context_tokens, Some((17969, 16384)));
+    let typed = raw.split_once(": request").unwrap_or((raw, "")).0;
+    assert_eq!(super::Diagnostic::classify(typed).code, "context_limit");
+    assert_eq!(super::Diagnostic::classify(typed).context_tokens, None);
+    assert_eq!(
+        super::Diagnostic::classify(&raw.replace("17969", "invalid")).context_tokens,
+        None
+    );
+    assert_eq!(
+        super::Diagnostic::classify(&raw.replace("400", "429")).code,
+        "provider_quota"
+    );
+}

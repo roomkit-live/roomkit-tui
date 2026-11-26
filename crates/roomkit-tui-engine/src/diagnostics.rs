@@ -18,6 +18,8 @@ pub struct Diagnostic {
     pub summary: &'static str,
     /// HTTP failure status from the provider record or a complete text envelope.
     pub http_status: Option<u16>,
+    /// Request tokens and server capacity, when the server reports both on a context refusal.
+    pub context_tokens: Option<(u64, u64)>,
 }
 
 /// Failures known by fragments: any listed fragment of the lowercase error
@@ -215,6 +217,9 @@ impl Diagnostic {
             code,
             summary,
             http_status,
+            context_tokens: (code == CONTEXT_LIMIT.0)
+                .then(|| llama_counts(lower))
+                .flatten(),
         }
     }
 
@@ -229,7 +234,19 @@ impl Diagnostic {
 /// reads one, or the kit's own failure when its compaction cannot make room
 /// ("Context too large but …").
 fn reads_as_context_overflow(lower: &str) -> bool {
-    lower.contains("context too large") || roomkit_ai::is_context_overflow_message(lower)
+    lower.contains("context too large")
+        || lower.contains("(exceed_context_size_error)")
+        || lower.contains("(exceed_context_size_error, ")
+        || llama_counts(lower).is_some()
+        || roomkit_ai::is_context_overflow_message(lower)
+}
+
+/// llama.cpp reports both tokenizer measurements in its HTTP error message.
+fn llama_counts(lower: &str) -> Option<(u64, u64)> {
+    let (_, rest) = lower.split_once("request (")?;
+    let (needed, rest) = rest.split_once(" tokens) exceeds the available context size (")?;
+    let (capacity, _) = rest.split_once(" tokens)")?;
+    Some((needed.parse().ok()?, capacity.parse().ok()?))
 }
 
 /// A provider can be identified by its recorded class or provider attribute.
@@ -271,6 +288,11 @@ pub(crate) fn explain(record: &ErrorRecord) -> String {
 /// `diagnostic`'s summary for `error`, with the words a provider refused the
 /// request with below it.
 pub(crate) fn told(diagnostic: &Diagnostic, record: &ErrorRecord) -> String {
+    if let Some((needed, capacity)) = diagnostic.context_tokens {
+        return format!(
+            "The request needs {needed} tokens. The server context limit is {capacity} tokens. Increase the context size or shorten the request and retry."
+        );
+    }
     if !is_provider_record(record) {
         return diagnostic.summary.to_owned();
     }

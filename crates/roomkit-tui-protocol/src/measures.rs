@@ -14,6 +14,9 @@ pub struct ModelInfo {
     /// Optional name for display. Usage reports and commands keep the model identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    /// Host-specific action for a request that exceeds this model's context window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_limit_hint: Option<String>,
     /// Effective effort, if supported and known. `None` displays as unavailable.
     pub effort: Option<String>,
 }
@@ -25,6 +28,7 @@ impl ModelInfo {
             provider: provider.into(),
             model: model.into(),
             display_name: None,
+            context_limit_hint: None,
             effort: None,
         }
     }

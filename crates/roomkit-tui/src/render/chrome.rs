@@ -150,6 +150,19 @@ fn status(view: &View<'_>) -> Line {
         match session.execution_outcome() {
             Some(RunOutcome::Completed) => ("✓ Execution Completed".into(), Tone::Success),
             Some(RunOutcome::Interrupted) => ("− Execution Interrupted".into(), Tone::Warning),
+            Some(RunOutcome::Failed) if session.context_exceeded() => {
+                let mut label = String::from("× Context limit exceeded");
+                if let Some(hint) = session
+                    .snapshot
+                    .as_ref()
+                    .and_then(|s| s.model.as_ref())
+                    .and_then(|m| m.context_limit_hint.as_deref())
+                {
+                    label.push_str(" · ");
+                    label.push_str(hint);
+                }
+                (label, Tone::Error)
+            }
             Some(RunOutcome::Failed) => ("× Execution Failed".into(), Tone::Error),
             Some(_) => ("• Execution Finished".into(), Tone::Muted),
             None => ("○ Ready".into(), Tone::Muted),

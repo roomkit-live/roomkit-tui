@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A failed run shows a context-limit status with an optional host action. For llama.cpp refusals, diagnostics report the requested tokens and server capacity when available.
+
 - Hosts can supply a display name for the active model in the sidebar and footer. Usage reports still use its provider ID.
 
 - Hosts can offer live first-argument choices for composer prefixes. Typing filters the list and Enter or Tab opens the selected choice.
