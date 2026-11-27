@@ -13,7 +13,7 @@ roomkit-tui-engine.workspace = true
 roomkit.workspace = true
 roomkit-ai.workspace = true
 roomkit-providers-openai.workspace = true
-roomkit-sqlite.workspace = true
+roomkit-providers-sqlite.workspace = true
 tokio = { workspace = true, features = ["net"] }
 uuid.workspace = true
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }

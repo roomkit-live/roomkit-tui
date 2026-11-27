@@ -12,7 +12,7 @@ use roomkit::model::{ChannelId, RoomId};
 use roomkit::{CreateRoomOptions, GetRoomOptions, ListBindingsOptions, RoomKit, RoomKitOptions};
 use roomkit_ai::{AiChannel, AiChannelOptions, AiTool, ToolEntry, ToolHandler, ToolResult};
 use roomkit_providers_openai::{OpenAi, OpenAiConfig};
-use roomkit_sqlite::{SqliteStore, SqliteStoreOptions};
+use roomkit_providers_sqlite::{SqliteStore, SqliteStoreOptions};
 use roomkit_tui::{connection, render::Renderers};
 use roomkit_tui_engine::{ConversationChannel, LocalSession, SessionConfig};
 use roomkit_tui_protocol::ModelInfo;

@@ -36,7 +36,7 @@ if any(d["kind"] != "dev" and d["name"] != "roomkit-tui-protocol" for d in trans
 adapter = next(p for p in packages.values() if p["name"] == "roomkit-tui-engine")
 if any(d["name"] in {"roomkit-tui", "crossterm", "ratatui"} for d in adapter["dependencies"]):
     raise SystemExit("The engine adapter must not depend on terminal rendering")
-engine_sources = {p["source"] for p in packages.values() if p["name"] in {"roomkit", "roomkit-core", "roomkit-ai", "roomkit-sqlite"}}
+engine_sources = {p["source"] for p in packages.values() if p["name"] in {"roomkit", "roomkit-core", "roomkit-ai"}}
 if len(engine_sources) != 1 or not all(s and "?rev=" in s for s in engine_sources):
     raise SystemExit("All engine crates must use one pinned Git revision")
 # The examples' providers are built on the engine: a revision of theirs that

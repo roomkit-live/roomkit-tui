@@ -236,9 +236,11 @@ async fn sqlite_restart_and_retried_operation_do_not_execute_the_tool_twice() {
     let calls = Arc::new(AtomicUsize::new(0));
     {
         let kit = RoomKit::new(RoomKitOptions::with_store(
-            roomkit_sqlite::SqliteStore::new(roomkit_sqlite::SqliteStoreOptions {
-                path: std::path::PathBuf::from(&file),
-            }),
+            roomkit_providers_sqlite::SqliteStore::new(
+                roomkit_providers_sqlite::SqliteStoreOptions {
+                    path: std::path::PathBuf::from(&file),
+                },
+            ),
         ));
         let provider = ScriptedProvider::new([
             ScriptedRound::calling(
@@ -263,9 +265,11 @@ async fn sqlite_restart_and_retried_operation_do_not_execute_the_tool_twice() {
     }
     {
         let kit = RoomKit::new(RoomKitOptions::with_store(
-            roomkit_sqlite::SqliteStore::new(roomkit_sqlite::SqliteStoreOptions {
-                path: std::path::PathBuf::from(&file),
-            }),
+            roomkit_providers_sqlite::SqliteStore::new(
+                roomkit_providers_sqlite::SqliteStoreOptions {
+                    path: std::path::PathBuf::from(&file),
+                },
+            ),
         ));
         let channel = ConversationChannel::new(ChannelId::new("console").unwrap());
         kit.register_channel(channel.clone()).unwrap();

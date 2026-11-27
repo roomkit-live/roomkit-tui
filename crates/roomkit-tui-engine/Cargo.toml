@@ -25,7 +25,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-roomkit-sqlite.workspace = true
+roomkit-providers-sqlite.workspace = true
 uuid.workspace = true
 
 [lints]

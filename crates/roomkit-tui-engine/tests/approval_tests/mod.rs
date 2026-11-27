@@ -162,7 +162,7 @@ async fn verify_decision_history(linked: bool) {
         uuid::Uuid::new_v4()
     ));
     let kit = RoomKit::new(RoomKitOptions::with_store(
-        roomkit_sqlite::SqliteStore::new(roomkit_sqlite::SqliteStoreOptions {
+        roomkit_providers_sqlite::SqliteStore::new(roomkit_providers_sqlite::SqliteStoreOptions {
             path: std::path::PathBuf::from(&file),
         }),
     ));
@@ -302,7 +302,7 @@ async fn verify_decision_history(linked: bool) {
     kit.close().await.unwrap();
     drop(kit);
     let kit = RoomKit::new(RoomKitOptions::with_store(
-        roomkit_sqlite::SqliteStore::new(roomkit_sqlite::SqliteStoreOptions {
+        roomkit_providers_sqlite::SqliteStore::new(roomkit_providers_sqlite::SqliteStoreOptions {
             path: std::path::PathBuf::from(&file),
         }),
     ));
