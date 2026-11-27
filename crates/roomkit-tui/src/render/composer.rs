@@ -268,6 +268,9 @@ fn cursor(
 ) -> Option<(u16, u16)> {
     let session = view.session;
     if let Some(picker) = &session.picker {
+        if picker.pending.is_some() {
+            return None;
+        }
         let filter = fit(&picker.filter.text()[..picker.filter.cursor()], cols - 12);
         return Some(((10 + filter.width()) as u16, (bottom_start + 1) as u16));
     }

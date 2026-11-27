@@ -4,6 +4,7 @@ mod exit;
 mod forms;
 mod history;
 mod keys;
+mod picker;
 mod recall;
 mod send_now;
 

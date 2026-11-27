@@ -60,10 +60,12 @@ pub(super) fn choice_picker(picker: &crate::ChoicePicker, cols: usize, height: u
             Tone::Border,
         ));
     }
-    lines.push(line(
-        rule(" ↑↓ choose · Enter confirm · Esc cancel ", cols, '╰', '╯'),
-        Tone::Border,
-    ));
+    let hint = if picker.pending.is_some() {
+        " Waiting for response… · Esc hide "
+    } else {
+        " ↑↓ choose · Enter confirm · Esc cancel "
+    };
+    lines.push(line(rule(hint, cols, '╰', '╯'), Tone::Border));
     lines
 }
 

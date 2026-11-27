@@ -328,6 +328,15 @@ impl Session {
             }
             _ => {}
         }
+        if let Command::Invoke { name, .. } = &request.command
+            && let Some(picker) = self
+                .picker
+                .as_mut()
+                .filter(|picker| picker.command == *name)
+            && picker.pending.is_none()
+        {
+            picker.pending = Some(request.id);
+        }
         self.pending.insert(request.id, request.command.clone());
     }
 

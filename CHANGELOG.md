@@ -52,6 +52,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Choice selectors show when a request is pending. Repeated Enter presses submit once, a failed selection can be retried, and a late reply keeps a newer selector open.
+
 - Provider failures use their recorded HTTP status and context limit in both
   streamed and buffered turns. An unreadable response gets its own diagnostic,
   and an unclassified provider failure gives retry guidance when available.

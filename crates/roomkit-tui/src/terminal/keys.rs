@@ -170,6 +170,9 @@ fn picker_key(session: &mut Session, client: &Client, key: KeyEvent) {
         session.picker = None;
         return;
     }
+    if session.picker.as_ref().is_some_and(|p| p.pending.is_some()) {
+        return;
+    }
     if key.code == KeyCode::Enter {
         if let Some(command) = session
             .picker

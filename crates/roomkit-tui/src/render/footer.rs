@@ -41,6 +41,8 @@ pub(super) fn hints(session: &Session, cols: usize, sidebar: bool, elapsed: Dura
     let quit = quit_hint(session, elapsed).map(|hint| format!(" {hint}"));
     let hints = if let Some(hint) = quit.as_deref() {
         hint
+    } else if session.picker.as_ref().is_some_and(|p| p.pending.is_some()) {
+        " Waiting for response… · Esc hide"
     } else if session.picker.is_some() {
         " Type to filter · ↑↓ choose · Enter confirm · Esc cancel"
     } else if session.menu.visible {

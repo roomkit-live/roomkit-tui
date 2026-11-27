@@ -1,4 +1,4 @@
-use roomkit_tui_protocol::{Choice, Command};
+use roomkit_tui_protocol::{Choice, Command, RequestId};
 
 use crate::{editor::Editor, session::bounded};
 
@@ -14,6 +14,7 @@ pub struct ChoicePicker {
     pub(crate) filter: Editor,
     /// Index into the currently filtered matches.
     pub(crate) selected: usize,
+    pub(crate) pending: Option<RequestId>,
     choices: Vec<Choice>,
 }
 
@@ -37,6 +38,7 @@ impl ChoicePicker {
             choices: bounded_choices(choices),
             filter: Editor::default(),
             selected: 0,
+            pending: None,
         }
     }
 

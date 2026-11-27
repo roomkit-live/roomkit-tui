@@ -24,6 +24,13 @@ impl Session {
             }
             return;
         }
+        if let Some(picker) = self.picker.as_mut().filter(|p| p.pending == Some(request)) {
+            if error.is_some() {
+                picker.pending = None;
+            } else {
+                self.picker = None;
+            }
+        }
         let silent = self.answered_waited(request, error.as_ref(), at);
         let Some(error) = error else {
             self.on_accepted(&command);
@@ -64,11 +71,6 @@ impl Session {
                 self.images.clear();
                 self.draft_epoch = self.draft_epoch.wrapping_add(1);
                 self.refresh_menu();
-            }
-            Command::Invoke { name, .. }
-                if self.picker.as_ref().is_some_and(|p| p.command == *name) =>
-            {
-                self.picker = None;
             }
             Command::SubmitForm { form, .. } => {
                 if let Some(current) = self
